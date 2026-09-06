@@ -6,6 +6,8 @@ compose="$root/deploy/e2e/docker-compose.yml"
 project=${COMPOSE_PROJECT_NAME:-aven-e2e-$$}
 built_images=""
 key_dir=$(mktemp -d)
+hardening="$key_dir/hardening.json"
+bun "$root/deploy/e2e/render-hardening.ts" "$hardening"
 openssl genpkey -algorithm ED25519 -out "$key_dir/tenant-private.pem" >/dev/null 2>&1
 openssl pkey -in "$key_dir/tenant-private.pem" -pubout -out "$key_dir/tenant-public.pem" >/dev/null 2>&1
 E2E_TENANT_PRIVATE_KEY=$(sed ':a;N;$!ba;s/\n/\\n/g' "$key_dir/tenant-private.pem")
@@ -35,17 +37,17 @@ export E2E_DATABASE_HOST_PORT E2E_STATIC_HOST_PORT E2E_MAILPIT_HOST_PORT
 export E2E_ARTIFACT_STORE_HOST_PORT
 
 teardown() {
-  docker compose --project-name "$project" --file "$compose" --profile hosting down --volumes --remove-orphans >/dev/null 2>&1 || true
+  docker compose --project-name "$project" --file "$compose" --file "$hardening" --profile hosting down --volumes --remove-orphans >/dev/null 2>&1 || true
 }
 finish() {
   status=$?
   trap - EXIT INT TERM
-	rm -rf "$key_dir"
   if [ "$status" -ne 0 ]; then
-    docker compose --project-name "$project" --file "$compose" ps --all || true
-    docker compose --project-name "$project" --file "$compose" logs --no-color --tail=200 || true
+    docker compose --project-name "$project" --file "$compose" --file "$hardening" --profile hosting ps --all || true
+    docker compose --project-name "$project" --file "$compose" --file "$hardening" --profile hosting logs --no-color --tail=200 || true
   fi
   teardown
+  rm -rf "$key_dir"
   if [ -n "$built_images" ]; then
     for image in $built_images; do
       docker image rm "$image" >/dev/null 2>&1 || true
@@ -92,6 +94,9 @@ E2E_AVEN_CEO_IPV6=""
 export E2E_AVEN_CEO_IPV4 E2E_AVEN_CEO_IPV6
 
 if [ "${E2E_SKIP_IMAGE_BUILD:-false}" != "true" ]; then
+  E2E_DATABASE_IMAGE="aven-e2e-database:$project"
+  E2E_PROXY_IMAGE="aven-e2e-proxy:$project"
+  export E2E_DATABASE_IMAGE E2E_PROXY_IMAGE
   E2E_IDENTITY_IMAGE="aven-e2e-identity:$project"
   E2E_API_IMAGE="aven-e2e-api:$project"
   E2E_CHECKOUT_IMAGE="aven-e2e-checkout:$project"
@@ -104,6 +109,9 @@ if [ "${E2E_SKIP_IMAGE_BUILD:-false}" != "true" ]; then
   export E2E_PLATFORM_PROVISIONER_IMAGE E2E_INTENT_SERVICE_IMAGE E2E_ACTOR_RUNNER_IMAGE
   export E2E_ARTIFACT_STORE_IMAGE E2E_STATIC_SITE_HOST_IMAGE
   built_images="$E2E_IDENTITY_IMAGE $E2E_API_IMAGE $E2E_CHECKOUT_IMAGE $E2E_PLATFORM_PROVISIONER_IMAGE $E2E_INTENT_SERVICE_IMAGE $E2E_ACTOR_RUNNER_IMAGE $E2E_ARTIFACT_STORE_IMAGE $E2E_STATIC_SITE_HOST_IMAGE"
+  built_images="$built_images $E2E_DATABASE_IMAGE $E2E_PROXY_IMAGE"
+  docker build --file "$root/deploy/database/Dockerfile" --tag "$E2E_DATABASE_IMAGE" "$root"
+  docker build --file "$root/deploy/proxy/Dockerfile" --tag "$E2E_PROXY_IMAGE" "$root"
   docker build --secret id=npm_token,env=NODE_AUTH_TOKEN --file "$root/services/identity/Dockerfile" --tag "$E2E_IDENTITY_IMAGE" "$root"
   docker build --secret id=npm_token,env=NODE_AUTH_TOKEN --file "$root/services/aven-api/Dockerfile" --tag "$E2E_API_IMAGE" "$root"
   docker build --secret id=npm_token,env=NODE_AUTH_TOKEN --file "$root/services/checkout/Dockerfile" --tag "$E2E_CHECKOUT_IMAGE" "$root"
@@ -114,8 +122,13 @@ if [ "${E2E_SKIP_IMAGE_BUILD:-false}" != "true" ]; then
   docker build --file "$root/services/static-site-host/Dockerfile" --tag "$E2E_STATIC_SITE_HOST_IMAGE" "$root"
 fi
 
-docker compose --project-name "$project" --file "$compose" config --quiet
-docker compose --project-name "$project" --file "$compose" --profile hosting up --detach --wait --wait-timeout 360
+docker compose --project-name "$project" --file "$compose" --file "$hardening" config --quiet
+if [ -n "$built_images" ]; then
+  # Internally generated, whitespace-free image names; deliberate word splitting.
+  # shellcheck disable=SC2086
+  bash "$root/scripts/scan-container-os.sh" $built_images
+fi
+docker compose --project-name "$project" --file "$compose" --file "$hardening" --profile hosting up --detach --wait --wait-timeout 360
 
 E2E_SILENT_VOICE_FIXTURE=$(cargo run --quiet --locked \
   --manifest-path "$root/libs/aven-voice-runtime/Cargo.toml" \
@@ -136,6 +149,9 @@ bun run --cwd "$root/services/actor-runner" test:e2e:persistence
 TEST_ADMIN_DATABASE_URL="postgres://postgres:platform-admin-e2e@127.0.0.1:$E2E_DATABASE_HOST_PORT/postgres" \
 bun run --cwd "$root/services/checkout" test
 
+TEST_IDENTITY_ADMIN_DATABASE_URL="postgres://postgres:platform-admin-e2e@127.0.0.1:$E2E_DATABASE_HOST_PORT/postgres" \
+bun run --cwd "$root/services/identity" test
+
 E2E_IDENTITY_ORIGIN="http://127.0.0.1:$E2E_IDENTITY_HOST_PORT" \
 E2E_IDENTITY_BROWSER_ORIGIN="http://localhost:$E2E_IDENTITY_HOST_PORT" \
 E2E_CHECKOUT_ORIGIN="http://127.0.0.1:$E2E_CHECKOUT_HOST_PORT" \
@@ -151,4 +167,4 @@ E2E_SILENT_VOICE_FIXTURE="$E2E_SILENT_VOICE_FIXTURE" \
 E2E_SILENT_DUPLEX_FIXTURE="$E2E_SILENT_DUPLEX_FIXTURE" \
 bunx playwright test --config "$root/deploy/e2e/playwright.config.ts"
 
-docker compose --project-name "$project" --file "$compose" ps
+docker compose --project-name "$project" --file "$compose" --file "$hardening" ps

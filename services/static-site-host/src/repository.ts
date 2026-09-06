@@ -1,20 +1,10 @@
-import { lstat, mkdir, readdir, readFile, rename, rm, stat, symlink } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readdir, readFile, rename, rm, stat, symlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { type DirectoryBinding, validateBinding } from './binding.js'
 import type { SiteHostConfig } from './config.js'
+import { boundedCommand, validateArtifactTree } from './bounded-command.js'
 
 export { type DirectoryBinding, validateBinding } from './binding.js'
-
-async function command(args: string[]): Promise<string> {
-	const process = Bun.spawn(args, { stdout: 'pipe', stderr: 'pipe' })
-	const [code, stdout, stderr] = await Promise.all([
-		process.exited,
-		new Response(process.stdout).text(),
-		new Response(process.stderr).text()
-	])
-	if (code !== 0) throw new Error(`${args[0]} failed: ${stderr.trim().slice(0, 500)}`)
-	return stdout.trim()
-}
 
 async function inspectTree(root: string, maxFiles: number, maxBytes: number) {
 	let files = 0
@@ -45,14 +35,21 @@ export async function materialize(
 	config: SiteHostConfig
 ): Promise<{ root: string; artifactRevision: string; sourceRevision: string }> {
 	validateBinding(binding)
-	const repositoryKey = new Bun.CryptoHasher('sha256')
-		.update(`${binding.id}:${binding.repository_full_name}`)
-		.digest('hex')
-	const repository = join(config.dataRoot, 'repositories', `${repositoryKey}.git`)
 	await mkdir(join(config.dataRoot, 'repositories'), { recursive: true })
-	if (!(await stat(repository).catch(() => null)))
-		await command(['git', 'init', '--bare', repository])
-	await command(['git', '--git-dir', repository, 'remote', 'remove', 'origin']).catch(() => '')
+	const repository = await mkdtemp(join(config.dataRoot, 'repositories', 'fetch-'))
+	const deadline = Date.now() + 180_000
+	const command = async (args: string[]) => {
+		if (Date.now() >= deadline) throw new Error('repository synchronization timed out')
+		return (await boundedCommand([args[0], '-c', 'protocol.version=2',
+			'-c', 'protocol.file.allow=never', '-c', 'core.hooksPath=/dev/null',
+			'-c', 'http.lowSpeedLimit=1024', '-c', 'http.lowSpeedTime=30',
+			'-c', 'fetch.fsckObjects=true', ...args.slice(1)], {
+			timeoutMs: Math.min(120_000, deadline - Date.now()),
+			disk: { root: repository, maxBytes: config.maxBytes * 2, maxEntries: config.maxFiles * 3 + 1000 }
+		})).trim()
+	}
+	try {
+	await command(['git', 'init', '--bare', repository])
 	await command(['git', '--git-dir', repository, 'remote', 'add', 'origin', binding.clone_url])
 	await command([
 		'git',
@@ -61,6 +58,7 @@ export async function materialize(
 		'fetch',
 		'--force',
 		'--depth=1',
+		'--no-tags',
 		'origin',
 		`+${binding.source_ref}:refs/aven/source`,
 		`+${binding.artifact_ref}:refs/aven/artifact`
@@ -80,6 +78,9 @@ export async function materialize(
 		'refs/aven/artifact'
 	])
 	const bindingRoot = join(config.dataRoot, 'bindings', binding.id)
+	const tree = await command(['git', '--git-dir', repository, 'ls-tree', '-r', '-l', '-z',
+		'refs/aven/artifact', '--', binding.artifact_path])
+	validateArtifactTree(tree, config.maxFiles, config.maxBytes)
 	const release = join(bindingRoot, 'releases', artifactRevision)
 	if (!(await stat(release).catch(() => null))) {
 		const staging = join(bindingRoot, `.staging-${crypto.randomUUID()}`)
@@ -122,4 +123,7 @@ export async function materialize(
 	for (const obsolete of oldReleases.slice(1))
 		await rm(join(releasesRoot, obsolete.entry), { recursive: true, force: true })
 	return { root: release, artifactRevision, sourceRevision }
+	} finally {
+		await rm(repository, { recursive: true, force: true })
+	}
 }

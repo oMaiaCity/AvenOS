@@ -5,6 +5,7 @@ import {
 	type IdentityClaims,
 	requireIdentity
 } from '@avenos/aven-identity'
+import { BodyLimitError, readBoundedBytes, readBoundedJson } from '@avenos/http-boundary'
 import type { ArtifactHandler } from './artifacts/handler.js'
 import type { FacadeConfig } from './config.js'
 import type { CustomerHandler } from './customers/handler.js'
@@ -118,8 +119,9 @@ export function createFacadeHandler(
 					message: 'The LLM gateway is not configured.'
 				})
 			try {
-				return json(200, await llmGateway.complete(await request.json()))
+				return json(200, await llmGateway.complete(await readBoundedJson(request, 2 * 1024 * 1024)))
 			} catch (error) {
+				if (error instanceof BodyLimitError) return json(error.status, { code: error.code })
 				if (error instanceof AppError)
 					return json(error.status, { code: error.code, message: error.message })
 				throw error
@@ -151,12 +153,12 @@ export function createFacadeHandler(
 			if (url.pathname === '/api/llm/completions' && request.method === 'POST') {
 				if (!llmGateway)
 					throw new AppError(503, 'LLM_GATEWAY_UNAVAILABLE', 'The LLM gateway is not configured.')
-				return json(200, await llmGateway.complete(await request.json()))
+				return json(200, await llmGateway.complete(await readBoundedJson(request, 2 * 1024 * 1024)))
 			}
 			if (url.pathname === '/api/llm/v1/chat/completions' && request.method === 'POST') {
 				if (!llmGateway)
 					throw new AppError(503, 'LLM_GATEWAY_UNAVAILABLE', 'The LLM gateway is not configured.')
-				return llmGateway.openAiChatCompletion(await request.json())
+				return llmGateway.openAiChatCompletion(await readBoundedJson(request, 2 * 1024 * 1024))
 			}
 			if (url.pathname === '/api/environments' && request.method === 'GET')
 				return customers
@@ -204,7 +206,7 @@ export function createFacadeHandler(
 				const target = new URL(targetPath, targetConfig.baseUrl)
 				const body = ['GET', 'HEAD'].includes(request.method)
 					? undefined
-					: await request.arrayBuffer()
+					: await readBoundedBytes(request, customerMatch[2] === 'intents' ? 256 * 1024 : 1024 * 1024)
 				const response = await fetcher(
 					new Request(target, {
 						method: request.method,
@@ -244,7 +246,7 @@ export function createFacadeHandler(
 			const target = new URL(targetPath, downstream.baseUrl)
 			const body = ['GET', 'HEAD'].includes(request.method)
 				? undefined
-				: await request.arrayBuffer()
+				: await readBoundedBytes(request, 1024 * 1024)
 			const response = await fetcher(
 				new Request(target, {
 					method: request.method,
@@ -263,6 +265,7 @@ export function createFacadeHandler(
 			}
 			return new Response(response.body, { status: response.status, headers })
 		} catch (error) {
+			if (error instanceof BodyLimitError) return json(error.status, { code: error.code })
 			if (error instanceof AppError)
 				return json(error.status, { code: error.code, message: error.message })
 			if (error instanceof IdentityAuthenticationError)

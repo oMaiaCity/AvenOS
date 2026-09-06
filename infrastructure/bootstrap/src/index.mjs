@@ -36,14 +36,11 @@ for (const kind of ['state', 'backup']) {
 			...(adoptedBuckets.has(kind) ? { import: name } : {})
 		}
 	)
-	const versioning =
-		kind === 'state'
-			? new minio.S3BucketVersioning(
-					`${config.target}-state-versioning`,
+	const versioning = new minio.S3BucketVersioning(
+					`${config.target}-${kind}-versioning`,
 					{ bucket: bucket.bucket, versioningConfiguration: { status: 'Enabled' } },
 					{ ...protect, dependsOn: [bucket] }
 				)
-			: undefined
 	new minio.S3BucketPolicy(
 		`${config.target}-${kind}-policy`,
 		{

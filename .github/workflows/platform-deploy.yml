@@ -4,322 +4,89 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: One target, or all three in identity → next → production order
+        description: Selected target; all installs identity, verifies next, then installs production
         default: all
         required: true
         type: choice
         options: [all, identity, next, production]
-      ref:
-        description: Git ref to build and deploy
+      release_run_id:
+        description: Successful platform-release run from protected next (immutable images)
         required: true
         type: string
+      next_proof_run_id:
+        description: Successful platform-deploy run that verified this release in next (production-only)
+        required: false
+        type: string
       recover_from_backup:
-        description: Restore the newest verified backups into fresh empty volumes before starting services
+        description: Restore the newest verified backup into a fresh empty target
         default: false
         required: true
         type: boolean
 
 permissions:
   contents: read
-  packages: write
+  actions: read
+  packages: read
 
 jobs:
-  validate-environment-prefix:
+  validate:
     runs-on: ubuntu-latest
     outputs:
-      targets: ${{ steps.targets.outputs.targets }}
+      manifest: ${{ steps.release.outputs.manifest }}
     steps:
-      - name: Require an activated infrastructure generation
-        id: targets
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+      - name: Verify release provenance and target authority before requesting secrets
+        id: release
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_RUN_ID: ${{ inputs.release_run_id }}
+          NEXT_PROOF_RUN_ID: ${{ inputs.next_proof_run_id }}
+          DEPLOYMENT_TARGET: ${{ inputs.target }}
+          RECOVER_FROM_BACKUP: ${{ inputs.recover_from_backup }}
           DEPLOYMENT_ENVIRONMENT_PREFIX: ${{ vars.DEPLOYMENT_ENVIRONMENT_PREFIX }}
           DEPLOYMENT_TARGETS_JSON: ${{ vars.DEPLOYMENT_TARGETS_JSON }}
-          REQUESTED_TARGET: ${{ inputs.target }}
-          RECOVER_FROM_BACKUP: ${{ inputs.recover_from_backup }}
-        run: |
-          set -euo pipefail
-          [[ "$DEPLOYMENT_ENVIRONMENT_PREFIX" =~ ^avenos-[0-9a-f]{10}$ ]]
-          if [[ "$REQUESTED_TARGET" == all ]]; then
-            [[ "$RECOVER_FROM_BACKUP" == false ]] || {
-              echo 'Bulk restore is intentionally unsupported; use the recovery procedure one target at a time.' >&2
-              exit 64
-            }
-            targets='["identity","next","production"]'
-          else
-            targets=$(jq -cn --arg target "$REQUESTED_TARGET" '[$target]')
-          fi
-          jq -e --argjson requested "$targets" '
-            . as $prepared |
-            type == "array" and
-            ($requested | all(. as $target | $prepared | index($target) != null))
-          ' <<<"$DEPLOYMENT_TARGETS_JSON" >/dev/null || {
-            echo "One or more requested targets were not prepared by the active bootstrap" >&2
-            exit 64
-          }
-          echo "targets=$targets" >> "$GITHUB_OUTPUT"
+        run: bun scripts/verify-platform-release.ts
 
-  verify:
-    needs: validate-environment-prefix
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    services:
-      checkout-postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_PASSWORD: aven-dev
-        ports:
-          - 55432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 2s
-          --health-timeout 3s
-          --health-retries 30
-    env:
-      NODE_AUTH_TOKEN: ${{ secrets.PACKAGE_READ_TOKEN }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ inputs.ref }}
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.13
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: 1.93.1
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            app/src-tauri -> ../../target/rust
-            services/artifact-store -> ../../target/rust
-          key: platform-linux
-      - uses: ./.github/actions/bun-install
-        with:
-          token: ${{ secrets.PACKAGE_READ_TOKEN }}
-      - uses: ./.github/actions/setup-platform-test-host
-      - name: Static, unit, infrastructure, and deployment-source checks
-        run: |
-          bun run check:docs
-          bun run check
-          bun run check:identity
-          bun run check:api
-          bun run check:checkout
-          bun run --cwd libs/aven-identity check
-          bun run --cwd libs/aven-hosting check
-          bun run --cwd services/static-site-host check
-          bun run --cwd libs/aven-customer-contracts check
-          bun run --cwd libs/aven-customer-runtime check
-          bun run --cwd libs/aven-actors check
-          bun run --cwd libs/aven-artifact-store check
-          bun run --cwd libs/aven-document-ingest check
-          bun run --cwd libs/aven-llm-client check
-          bun run --cwd services/platform-provisioner check
-          bun run --cwd services/intent-service check
-          bun run --cwd services/actor-runner check
-          bun run test:identity
-          bun run test:api
-          bun run test:checkout
-          bun run --cwd libs/aven-identity test
-          bun run --cwd libs/aven-hosting test
-          bun run --cwd services/static-site-host test
-          bun run --cwd libs/aven-customer-contracts test
-          bun run --cwd libs/aven-customer-runtime test
-          bun run --cwd libs/aven-actors test
-          bun run --cwd libs/aven-artifact-store test
-          cargo test --locked --workspace --manifest-path services/artifact-store/Cargo.toml
-          bun run --cwd services/platform-provisioner test
-          bun run --cwd services/intent-service test
-          bun run --cwd services/actor-runner test
-          bun run test:infra
-          bun run test:bootstrap
-          bun run test:deploy
-          bun run test:recovery
-      - name: Test app integration
-        run: bun test
-        working-directory: app
-      - run: xvfb-run --auto-servernum bun run test:e2e:platform
+  identity:
+    needs: validate
+    if: inputs.target == 'all' || inputs.target == 'identity'
+    uses: ./.github/workflows/platform-deploy-target.yml
+    secrets: inherit
+    with:
+      target: identity
+      manifest: ${{ needs.validate.outputs.manifest }}
+      recover_from_backup: ${{ inputs.recover_from_backup }}
 
-  publish:
-    needs: verify
-    runs-on: ubuntu-latest
-    outputs:
-      identity: ghcr.io/myavenceo/aven-identity@${{ steps.identity.outputs.digest }}
-      api: ghcr.io/myavenceo/aven-api@${{ steps.api.outputs.digest }}
-      checkout: ghcr.io/myavenceo/aven-checkout@${{ steps.checkout.outputs.digest }}
-      static_host: ghcr.io/myavenceo/aven-static-site-host@${{ steps.static_host.outputs.digest }}
-      provisioner: ghcr.io/myavenceo/aven-platform-provisioner@${{ steps.provisioner.outputs.digest }}
-      intent: ghcr.io/myavenceo/aven-intent-service@${{ steps.intent.outputs.digest }}
-      actor: ghcr.io/myavenceo/aven-actor-runner@${{ steps.actor.outputs.digest }}
-      artifact: ghcr.io/myavenceo/aven-artifact-store@${{ steps.artifact.outputs.digest }}
-      operations: ghcr.io/myavenceo/aven-operations@${{ steps.operations.outputs.digest }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ inputs.ref }}
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - id: identity
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: services/identity/Dockerfile
-          push: true
-          tags: ghcr.io/myavenceo/aven-identity:run-${{ github.run_id }}-${{ github.run_attempt }}
-          secrets: |
-            npm_token=${{ secrets.PACKAGE_READ_TOKEN }}
-      - id: api
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: services/aven-api/Dockerfile
-          push: true
-          tags: ghcr.io/myavenceo/aven-api:run-${{ github.run_id }}-${{ github.run_attempt }}
-          secrets: |
-            npm_token=${{ secrets.PACKAGE_READ_TOKEN }}
-      - id: checkout
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: services/checkout/Dockerfile
-          push: true
-          tags: ghcr.io/myavenceo/aven-checkout:run-${{ github.run_id }}-${{ github.run_attempt }}
-          secrets: |
-            npm_token=${{ secrets.PACKAGE_READ_TOKEN }}
-      - id: static_host
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: services/static-site-host/Dockerfile
-          push: true
-          tags: ghcr.io/myavenceo/aven-static-site-host:run-${{ github.run_id }}-${{ github.run_attempt }}
-      - id: provisioner
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: services/platform-provisioner/Dockerfile
-          push: true
-          tags: ghcr.io/myavenceo/aven-platform-provisioner:run-${{ github.run_id }}-${{ github.run_attempt }}
-          secrets: |
-            npm_token=${{ secrets.PACKAGE_READ_TOKEN }}
-      - id: intent
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: services/intent-service/Dockerfile
-          push: true
-          tags: ghcr.io/myavenceo/aven-intent-service:run-${{ github.run_id }}-${{ github.run_attempt }}
-          secrets: |
-            npm_token=${{ secrets.PACKAGE_READ_TOKEN }}
-      - id: actor
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: services/actor-runner/Dockerfile
-          push: true
-          tags: ghcr.io/myavenceo/aven-actor-runner:run-${{ github.run_id }}-${{ github.run_attempt }}
-          secrets: |
-            npm_token=${{ secrets.PACKAGE_READ_TOKEN }}
-      - id: artifact
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: services/artifact-store/Dockerfile
-          push: true
-          tags: ghcr.io/myavenceo/aven-artifact-store:run-${{ github.run_id }}-${{ github.run_attempt }}
-      - id: operations
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: deploy/operations/Dockerfile
-          push: true
-          tags: ghcr.io/myavenceo/aven-operations:run-${{ github.run_id }}-${{ github.run_attempt }}
+  next:
+    needs: [validate, identity]
+    if: >-
+      ${{ !cancelled() && needs.validate.result == 'success' &&
+      (needs.identity.result == 'success' || needs.identity.result == 'skipped') &&
+      (inputs.target == 'all' || inputs.target == 'next') }}
+    uses: ./.github/workflows/platform-deploy-target.yml
+    secrets: inherit
+    with:
+      target: next
+      manifest: ${{ needs.validate.outputs.manifest }}
+      recover_from_backup: ${{ inputs.recover_from_backup }}
 
-  deploy:
-    needs: [validate-environment-prefix, publish]
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    strategy:
-      fail-fast: true
-      max-parallel: 1
-      matrix:
-        target: ${{ fromJSON(needs.validate-environment-prefix.outputs.targets) }}
-    environment: ${{ format('{0}-{1}', vars.DEPLOYMENT_ENVIRONMENT_PREFIX, matrix.target) }}
-    concurrency:
-      group: aven-platform-deploy-${{ vars.DEPLOYMENT_ENVIRONMENT_PREFIX }}-${{ matrix.target }}
-      cancel-in-progress: false
-    env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.PULUMI_STATE_S3_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.PULUMI_STATE_S3_SECRET_ACCESS_KEY }}
-      AWS_REGION: ${{ vars.PULUMI_STATE_S3_REGION }}
-      AWS_DEFAULT_REGION: ${{ vars.PULUMI_STATE_S3_REGION }}
-      AWS_EC2_METADATA_DISABLED: "true"
-      PULUMI_CONFIG_PASSPHRASE: ${{ secrets.PULUMI_CONFIG_PASSPHRASE }}
-      PULUMI_STACK: ${{ vars.PULUMI_STACK }}
-      NEXT_PULUMI_STACK: ${{ vars.NEXT_PULUMI_STACK }}
-      NEXT_PULUMI_BACKEND: ${{ vars.NEXT_PULUMI_BACKEND }}
-      NEXT_STATE_S3_ACCESS_KEY_ID: ${{ secrets.NEXT_STATE_S3_ACCESS_KEY_ID }}
-      NEXT_STATE_S3_SECRET_ACCESS_KEY: ${{ secrets.NEXT_STATE_S3_SECRET_ACCESS_KEY }}
-      NEXT_PULUMI_CONFIG_PASSPHRASE: ${{ secrets.NEXT_PULUMI_CONFIG_PASSPHRASE }}
-      PRODUCTION_PULUMI_STACK: ${{ vars.PRODUCTION_PULUMI_STACK }}
-      PRODUCTION_PULUMI_BACKEND: ${{ vars.PRODUCTION_PULUMI_BACKEND }}
-      PRODUCTION_STATE_S3_ACCESS_KEY_ID: ${{ secrets.PRODUCTION_STATE_S3_ACCESS_KEY_ID }}
-      PRODUCTION_STATE_S3_SECRET_ACCESS_KEY: ${{ secrets.PRODUCTION_STATE_S3_SECRET_ACCESS_KEY }}
-      PRODUCTION_PULUMI_CONFIG_PASSPHRASE: ${{ secrets.PRODUCTION_PULUMI_CONFIG_PASSPHRASE }}
-      PULUMI_BACKEND: s3://${{ vars.PULUMI_STATE_S3_BUCKET }}/avenos/platform?endpoint=${{ vars.PULUMI_STATE_S3_REGION }}.your-objectstorage.com&region=${{ vars.PULUMI_STATE_S3_REGION }}&s3ForcePathStyle=true&awssdk=v2
-      POLAR_API_KEY: ${{ secrets.POLAR_API_KEY }}
-      POLAR_WEBHOOK_SECRET: ${{ secrets.POLAR_WEBHOOK_SECRET }}
-      POLAR_SERVER: ${{ vars.POLAR_SERVER }}
-      POLAR_ORGANIZATION_ID: ${{ vars.POLAR_ORGANIZATION_ID }}
-      SMTP_URL: ${{ secrets.SMTP_URL }}
-      SMTP_FROM: ${{ vars.SMTP_FROM }}
-      SMTP_REPLY_TO: ${{ vars.SMTP_REPLY_TO }}
-      DOWNLOAD_URL: ${{ vars.DOWNLOAD_URL }}
-      ACME_EMAIL: ${{ vars.ACME_EMAIL }}
-      ANDROID_APP_CERT_SHA256_FINGERPRINTS: ${{ vars.ANDROID_APP_CERT_SHA256_FINGERPRINTS }}
-      IDENTITY_IMAGE: ${{ needs.publish.outputs.identity }}
-      API_IMAGE: ${{ needs.publish.outputs.api }}
-      CHECKOUT_IMAGE: ${{ needs.publish.outputs.checkout }}
-      STATIC_SITE_HOST_IMAGE: ${{ needs.publish.outputs.static_host }}
-      PLATFORM_PROVISIONER_IMAGE: ${{ needs.publish.outputs.provisioner }}
-      INTENT_SERVICE_IMAGE: ${{ needs.publish.outputs.intent }}
-      ACTOR_RUNNER_IMAGE: ${{ needs.publish.outputs.actor }}
-      ARTIFACT_STORE_IMAGE: ${{ needs.publish.outputs.artifact }}
-      OPERATIONS_IMAGE: ${{ needs.publish.outputs.operations }}
-      LLM_GATEWAY_CREDENTIALS_JSON: ${{ secrets.LLM_GATEWAY_CREDENTIALS_JSON }}
-      LLM_GATEWAY_TIMEOUT_SECONDS: ${{ vars.LLM_GATEWAY_TIMEOUT_SECONDS }}
-      GHCR_USER: ${{ github.actor }}
-      GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      BACKUP_REPOSITORY_BASE: ${{ vars.BACKUP_REPOSITORY_BASE }}
-      BACKUP_S3_ACCESS_KEY_ID: ${{ secrets.BACKUP_S3_ACCESS_KEY_ID }}
-      BACKUP_S3_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_S3_SECRET_ACCESS_KEY }}
-      BACKUP_S3_REGION: ${{ vars.BACKUP_S3_REGION }}
-      BACKUP_RESTIC_PASSWORD: ${{ secrets.BACKUP_RESTIC_PASSWORD }}
-      DEPLOYMENT_TARGET: ${{ matrix.target }}
-      RECOVER_FROM_BACKUP: ${{ inputs.recover_from_backup }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ inputs.ref }}
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.13
-      - name: Install identity DNS lookup tool
-        if: matrix.target == 'identity'
-        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends dnsutils
-      - name: Record deployed commit
-        run: echo "DEPLOYED_REF_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
-      - name: Resolve current Phala model catalog
-        if: matrix.target != 'identity'
-        run: |
-          set -euo pipefail
-          catalog=$(bun run --silent models:redpill-phala)
-          test -n "$catalog"
-          echo "LLM_GATEWAY_MODELS_JSON=$catalog" >> "$GITHUB_ENV"
-      - name: Install Pulumi CLI
-        uses: pulumi/actions@8e5e406f4007fca908480587cb9893c07090f58d # v7
-      - name: Render and deploy selected target
-        shell: bash
-        run: bash deploy/release/deploy.sh
+  production:
+    needs: [validate, identity, next]
+    if: >-
+      ${{ !cancelled() && needs.validate.result == 'success' &&
+      (needs.identity.result == 'success' || needs.identity.result == 'skipped') &&
+      (needs.next.result == 'success' || needs.next.result == 'skipped') &&
+      (inputs.target == 'all' || inputs.target == 'production') }}
+    uses: ./.github/workflows/platform-deploy-target.yml
+    secrets: inherit
+    with:
+      target: production
+      manifest: ${{ needs.validate.outputs.manifest }}
+      recover_from_backup: ${{ inputs.recover_from_backup }}

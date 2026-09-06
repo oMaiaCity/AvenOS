@@ -18,6 +18,8 @@ const parsed = parse(
 )
 if (!Array.isArray(parsed.runcmd) || !Array.isArray(parsed.write_files))
 	throw new Error('cloud-init did not parse into the expected structure')
+if (JSON.stringify(parsed.updates?.network?.when) !== JSON.stringify(['boot-new-instance']))
+	throw new Error('cloud-init did not disable subsequent network hotplug handling')
 for (const user of parsed.users.slice(1)) {
 	if (!Array.isArray(user.ssh_authorized_keys) || user.ssh_authorized_keys.length !== 1)
 		throw new Error(`cloud-init did not preserve one authorized key for ${user.name}`)

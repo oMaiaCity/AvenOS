@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto'
 import {
 	customerComponentCatalog,
 	databaseNameForEnvironment,
+	membershipAllows,
+	type MembershipRole,
 	type TenantGrantClaims
 } from '@avenos/aven-customer-contracts'
 import type { IdentityClaims } from '@avenos/aven-identity'
@@ -220,9 +222,10 @@ export class CustomerStore {
 				desired_state: string
 				observed_state: string
 				component_state: string
+				membership_role: MembershipRole
 			}>(
 				`SELECT e.database_name,e.routing_generation,e.desired_state,e.observed_state,
-				 c.observed_state AS component_state
+				 c.observed_state AS component_state,m.role AS membership_role
 				 FROM customer_environments e
 				 JOIN customer_environment_memberships m ON m.environment_id=e.id AND m.subject_id=$2
 				 JOIN customer_environment_components c ON c.environment_id=e.id AND c.component_ref=$3
@@ -232,6 +235,8 @@ export class CustomerStore {
 		).rows[0]
 		if (!row)
 			throw new CustomerAuthorizationError(404, 'ENVIRONMENT_NOT_FOUND', 'Environment not found.')
+		if (!membershipAllows(row.membership_role, componentRef, actions))
+			throw new CustomerAuthorizationError(403, 'MEMBERSHIP_ACTION_DENIED', 'Your customer role does not permit this action.')
 		if (
 			row.desired_state !== 'ready' ||
 			row.observed_state !== 'ready' ||
@@ -248,6 +253,7 @@ export class CustomerStore {
 			sub: claims.sub,
 			sid: claims.sid,
 			role: claims.role,
+			membershipRole: row.membership_role,
 			environmentId,
 			databaseName: row.database_name,
 			routingGeneration: Number(row.routing_generation),

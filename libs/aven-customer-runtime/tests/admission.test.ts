@@ -39,6 +39,7 @@ describe('customer request admission', () => {
 				sub: subject,
 				sid: identity.sid,
 				role: identity.role,
+				membershipRole: 'owner',
 				environmentId,
 				databaseName: databaseNameForEnvironment(environmentId),
 				routingGeneration: 1,

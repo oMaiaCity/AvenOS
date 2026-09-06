@@ -83,6 +83,7 @@ export interface GeneratedSecrets {
 		infrastructureApplyRunId?: number
 		identityDns?: { ipv4: string; ipv6: string; verified: boolean }
 		deployRunId?: number
+		releaseRunId?: number
 		verifiedAt?: string
 	}
 	targets: Record<
@@ -312,6 +313,7 @@ export function bootstrapStackReadyForMigration(
 		['minio:index/s3Bucket:S3Bucket', `${target}-state`],
 		['minio:index/s3Bucket:S3Bucket', `${target}-backup`],
 		['minio:index/s3BucketVersioning:S3BucketVersioning', `${target}-state-versioning`],
+		['minio:index/s3BucketVersioning:S3BucketVersioning', `${target}-backup-versioning`],
 		['minio:index/s3BucketPolicy:S3BucketPolicy', `${target}-state-policy`],
 		['minio:index/s3BucketPolicy:S3BucketPolicy', `${target}-backup-policy`]
 	].every(([type, name]) => identities.has(`${type}::${name}`))
@@ -624,6 +626,7 @@ export function loadOrCreateGeneratedSecrets(path: string): GeneratedSecrets {
 			for (const name of [
 				'infrastructurePreviewRunId',
 				'infrastructureApplyRunId',
+				'releaseRunId',
 				'deployRunId'
 			] as const) {
 				const runId = generated.initialRollout[name]
@@ -844,6 +847,7 @@ export function recoveryCsv(input: BootstrapInput, generated: GeneratedSecrets):
 		for (const [title, runId] of [
 			['Infrastructure preview', rollout.infrastructurePreviewRunId],
 			['Infrastructure apply', rollout.infrastructureApplyRunId],
+			['Verified immutable release', rollout.releaseRunId],
 			['Software deployment', rollout.deployRunId]
 		] as const) {
 			if (!runId) continue
@@ -1031,8 +1035,12 @@ export function githubEnvironmentProtection(protectedDeployment: boolean, review
 		wait_timer: 0,
 		prevent_self_review: requiresReview,
 		reviewers: requiresReview ? [{ type: 'User', id: reviewerId }] : [],
-		deployment_branch_policy: { protected_branches: true, custom_branch_policies: false }
+		deployment_branch_policy: { protected_branches: false, custom_branch_policies: true }
 	}
+}
+
+export function githubDeploymentBranches(target: Target): string[] {
+	return target === 'next' ? ['next', 'prod'] : ['prod']
 }
 
 export function githubEnvironmentVariableChanges(

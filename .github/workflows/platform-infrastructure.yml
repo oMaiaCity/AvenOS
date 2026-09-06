@@ -31,8 +31,14 @@ jobs:
           DEPLOYMENT_ENVIRONMENT_PREFIX: ${{ vars.DEPLOYMENT_ENVIRONMENT_PREFIX }}
           DEPLOYMENT_TARGETS_JSON: ${{ vars.DEPLOYMENT_TARGETS_JSON }}
           REQUESTED_TARGET: ${{ inputs.target }}
+          WORKFLOW_REF: ${{ github.ref }}
         run: |
           set -euo pipefail
+          [[ "$GITHUB_ACTOR" != *'[bot]' ]] || { echo 'Infrastructure changes require an operator dispatch.' >&2; exit 64; }
+          case "$WORKFLOW_REF:$REQUESTED_TARGET" in
+            refs/heads/prod:all|refs/heads/prod:identity|refs/heads/prod:next|refs/heads/prod:production|refs/heads/next:next) ;;
+            *) echo 'Infrastructure requires protected next (next only) or prod.' >&2; exit 64 ;;
+          esac
           [[ "$DEPLOYMENT_ENVIRONMENT_PREFIX" =~ ^avenos-[0-9a-f]{10}$ ]]
           if [[ "$REQUESTED_TARGET" == all ]]; then
             targets='["identity","next","production"]'

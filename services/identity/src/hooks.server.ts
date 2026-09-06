@@ -1,12 +1,33 @@
+import { BodyLimitError, readBoundedBytes } from '@avenos/http-boundary'
 import { json } from '@sveltejs/kit'
 import { svelteKitHandler } from 'better-auth/svelte-kit'
 import { building } from '$app/environment'
+import { enrollmentContext, setupAllowedPaths } from '$lib/server/enrollment.js'
 import { ProofOfWorkError, protectedAuthPaths } from '$lib/server/proof-of-work.js'
 import { runtime } from '$lib/server/runtime.js'
 
 export const handle = async ({ event, resolve }) => {
 	if (building) return resolve(event)
-	const { auth, config, proofOfWork } = await runtime()
+	if (!['GET', 'HEAD', 'OPTIONS'].includes(event.request.method)) {
+		try {
+			const path = event.url.pathname
+			const limit =
+				path === '/api/passkeys' || path === '/internal/v1/accounts'
+					? 4096
+					: path === '/internal/v1/authorizations/roles'
+						? 32768
+						: path.startsWith('/api/auth/device/')
+							? 16384
+							: 128 * 1024
+			const bytes = await readBoundedBytes(event.request, limit)
+			event.request = new Request(event.request, { body: bytes })
+		} catch (error) {
+			if (error instanceof BodyLimitError)
+				return json({ code: error.code }, { status: error.status })
+			throw error
+		}
+	}
+	const { auth, config, proofOfWork, database } = await runtime()
 	const origin = event.request.headers.get('origin')
 	const allowedOrigins = new Set([
 		config.PUBLIC_BASE_URL,
@@ -47,7 +68,24 @@ export const handle = async ({ event, resolve }) => {
 			throw error
 		}
 	}
-	const response = await svelteKitHandler({ event, resolve, auth, building })
+	if (event.url.pathname.startsWith('/api/')) {
+		const session = await auth.api.getSession({ headers: event.request.headers })
+		if (session) {
+			const row = (
+				await database.pool.query<{ setup_token_hash: string | null; pending: boolean }>(
+					`SELECT s.setup_token_hash, EXISTS(SELECT 1 FROM setup_links l
+				 WHERE l.user_id=s.user_id AND l.token_hash=s.setup_token_hash AND l.expires_at > now()) AS pending
+				 FROM session s WHERE s.id=$1`,
+					[session.session.id]
+				)
+			).rows[0]
+			if (row?.setup_token_hash && (!row.pending || !setupAllowedPaths.has(normalizedPath)))
+				return json({ code: 'PASSKEY_ENROLLMENT_REQUIRED' }, { status: 403 })
+		}
+	}
+	const response = await enrollmentContext.run({}, () =>
+		svelteKitHandler({ event, resolve, auth, building })
+	)
 	response.headers.set('x-content-type-options', 'nosniff')
 	response.headers.set('referrer-policy', 'no-referrer')
 	response.headers.set('x-frame-options', 'DENY')

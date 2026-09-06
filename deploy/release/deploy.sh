@@ -4,6 +4,7 @@ set -euo pipefail
 common_required=(
   DEPLOYMENT_TARGET PULUMI_STACK PULUMI_BACKEND GHCR_USER GHCR_TOKEN
   OPERATIONS_IMAGE BACKUP_REPOSITORY_BASE BACKUP_S3_ACCESS_KEY_ID
+  DATABASE_IMAGE PROXY_IMAGE
   BACKUP_S3_SECRET_ACCESS_KEY BACKUP_S3_REGION BACKUP_RESTIC_PASSWORD
 )
 for name in "${common_required[@]}"; do
@@ -141,8 +142,18 @@ deploy_bundle() {
 
 wait_for_url() {
   local url=$1
-  for _ in {1..60}; do curl --fail --silent "$url" >/dev/null && break; sleep 5; done
-  curl --fail --show-error --silent "$url" >/dev/null
+  for _ in {1..60}; do curl --connect-timeout 5 --max-time 10 --fail --silent "$url" >/dev/null && break; sleep 5; done
+  curl --connect-timeout 5 --max-time 10 --fail --show-error --silent "$url" >/dev/null
+}
+
+wait_for_capabilities() {
+  local url=$1
+  if ! wait_for_url "$url"; then
+    echo "Deployment is ready but degraded. Capability observations from $url:" >&2
+    # This endpoint has a fixed, secret-free response contract. Do not print general provider errors.
+    curl --connect-timeout 5 --max-time 10 --max-filesize 8192 --silent "$url" || true
+    return 1
+  fi
 }
 
 if [[ "$DEPLOYMENT_TARGET" == identity ]]; then
@@ -173,6 +184,8 @@ if [[ "$DEPLOYMENT_TARGET" == identity ]]; then
   install -m 600 /dev/null "$stage/identity/.env"
   {
     dotenv IDENTITY_IMAGE "$IDENTITY_IMAGE"
+    dotenv DATABASE_IMAGE "$DATABASE_IMAGE"
+    dotenv PROXY_IMAGE "$PROXY_IMAGE"
     dotenv OPERATIONS_IMAGE "$OPERATIONS_IMAGE"
     dotenv IDENTITY_DOMAIN aven.id
     dotenv TRUSTED_WEB_ORIGINS 'https://next.aven.ceo,https://portal.next.aven.ceo,https://aven.ceo,https://portal.aven.ceo'
@@ -184,6 +197,7 @@ if [[ "$DEPLOYMENT_TARGET" == identity ]]; then
     dotenv IDENTITY_BACKUP_PASSWORD "$identityBackupPassword"
     dotenv IDENTITY_BETTER_AUTH_SECRET "$identityBetterAuthSecret"
     dotenv IDENTITY_PROVISIONING_SECRETS "$nextProvisioningSecret,$productionProvisioningSecret"
+    dotenv IDENTITY_MAIL_ORIGINS 'https://portal.next.aven.ceo,https://portal.aven.ceo'
     dotenv ANDROID_APP_CERT_SHA256_FINGERPRINTS "${ANDROID_APP_CERT_SHA256_FINGERPRINTS:-}"
     dotenv NEXT_PLATFORM_PUBLIC_IPV4 "$next_ipv4"
     dotenv NEXT_PLATFORM_PUBLIC_IPV6 "$next_ipv6"
@@ -203,6 +217,7 @@ if [[ "$DEPLOYMENT_TARGET" == identity ]]; then
   install -m 755 "$root/deploy/identity/db-init.sh" "$stage/identity/db-init.sh"
   deploy_bundle "$identity_ip" identity "$identity_host_key"
   wait_for_url https://aven.id/api/health/ready
+  wait_for_capabilities https://aven.id/api/health/capabilities
   echo 'Shared identity deployment is healthy.'
   exit 0
 fi
@@ -296,6 +311,8 @@ system_sites=$(printf '[{"hostname":"%s","repository":"myavenceo/aven-brands","s
   dotenv POLAR_ORGANIZATION_ID "${POLAR_ORGANIZATION_ID:-}"
   dotenv POLAR_WEBHOOK_SECRET "$POLAR_WEBHOOK_SECRET"
   dotenv SMTP_URL "$SMTP_URL"
+  dotenv DATABASE_IMAGE "$DATABASE_IMAGE"
+  dotenv PROXY_IMAGE "$PROXY_IMAGE"
   dotenv SMTP_FROM "$SMTP_FROM"
   dotenv SMTP_REPLY_TO "${SMTP_REPLY_TO:-}"
   dotenv ACME_EMAIL "${ACME_EMAIL:-ops@aven.ceo}"
@@ -315,4 +332,6 @@ deploy_bundle "$platform_ip" platform "$platform_host_key"
 wait_for_url "https://$api_domain/health/live"
 wait_for_url "https://$checkout_domain/api/health/ready"
 wait_for_url "https://$public_domain/"
+wait_for_capabilities "https://$checkout_domain/api/health/capabilities"
+wait_for_capabilities "https://$api_domain/api/health/capabilities"
 echo "$DEPLOYMENT_TARGET platform deployment is healthy."

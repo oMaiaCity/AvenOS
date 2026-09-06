@@ -12,6 +12,7 @@
 		"test:e2e:persistence": "vitest run tests/sql-runner.persistence.e2e.test.ts tests/split-architecture.e2e.test.ts tests/artifact-store-port.persistence.e2e.test.ts"
 	},
 	"dependencies": {
+		"@avenos/http-boundary": "workspace:*",
 		"@avenos/actors": "workspace:*",
 		"@avenos/artifact-store": "workspace:*",
 		"@avenos/document-ingest": "workspace:*",

@@ -9,6 +9,9 @@
 		"infrastructure/*"
 	],
 	"scripts": {
+		"release:promote": "bun scripts/promote-release.ts",
+		"check:secrets": "bash scripts/security-scan.sh",
+		"check:rust-advisories": "bun scripts/rust-advisories.ts",
 		"dev:app": "bun --env-file=.env run --cwd app dev",
 		"dev:api": "bun --env-file=.env run --cwd services/aven-api dev",
 		"dev:identity": "bun --env-file=.env run --cwd services/identity dev",
@@ -60,6 +63,7 @@
 		"bootstrap:deployment:preflight": "bun ./scripts/deployment-credentials-preflight.ts",
 		"models:redpill-phala": "bun ./scripts/redpill-model-catalog.ts",
 		"test:deploy": "bash deploy/validate.sh",
+		"test:proxy-boundary": "bun deploy/e2e/proxy-address.ts",
 		"test:recovery": "bash deploy/operations/test-recovery.sh",
 		"test:e2e:platform": "bash deploy/e2e/run.sh",
 		"test:e2e:polar-sandbox": "bash deploy/e2e/polar-sandbox/run.sh",
@@ -90,5 +94,12 @@
 		"semver": "^7.8.4",
 		"sharp": "^0.35.3",
 		"terminal-kit": "3.1.4"
+	},
+	"overrides": {
+		"cookie": "0.7.2",
+		"esbuild": "0.28.1",
+		"dompurify": "3.4.14",
+		"fast-uri": "3.1.7",
+		"nanoid": "3.3.18"
 	}
 }

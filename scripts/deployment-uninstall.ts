@@ -150,13 +150,24 @@ async function run(
 		stdout: capture ? 'pipe' : 'inherit',
 		stderr: capture ? 'pipe' : 'inherit'
 	})
+	const started = Date.now()
+	const detail = activeProgress?.detail ?? 'Waiting for the provider operation.'
+	const heartbeat = setInterval(() => {
+		if (activeProgress)
+			emitProgress(
+				'active',
+				activeProgress.label,
+				`${detail} ${command} is still running (${Math.floor((Date.now() - started) / 1000)}s).`
+			)
+	}, 15_000)
+	heartbeat.unref()
 	const [exitCode, stdout, stderr] = capture
 		? await Promise.all([
 				child.exited,
 				new Response(child.stdout).text(),
 				new Response(child.stderr).text()
-			])
-		: [await child.exited, '', '']
+			]).finally(() => clearInterval(heartbeat))
+		: [await child.exited.finally(() => clearInterval(heartbeat)), '', '']
 	if (capture && !options.quiet) {
 		if (stdout) process.stdout.write(stdout)
 		if (stderr) process.stderr.write(stderr)
@@ -429,6 +440,7 @@ async function destroyPlatform(target: Target): Promise<void> {
 		stack,
 		platformCwd
 	)
+	updateProgress('Resource deletion finished; removing saved Pulumi stack history.')
 	await run('pulumi', ['stack', 'rm', stack, '--yes', '--remove-backups', '--cwd', platformCwd], {
 		env,
 		quiet: true

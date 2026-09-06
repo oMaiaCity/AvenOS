@@ -6,6 +6,7 @@ import { IdentityVerifier } from '@avenos/aven-identity'
 import { DOCUMENT_INGEST_SKILL } from '@avenos/document-ingest/execution'
 import { LlmDocumentModelGateway } from '@avenos/document-ingest/llm-gateway'
 import { createDocumentSkillExecutor } from '@avenos/document-ingest/server'
+import { BoundarySignals } from '@avenos/http-boundary'
 import { HttpLlmGatewayClient } from '@avenos/llm-client/http'
 import { createApplicationExecutor } from './application-executor.js'
 import { loadActorRunnerConfig } from './config.js'
@@ -88,9 +89,16 @@ const handler = createActorRunnerHandler(
 	}
 )
 
+const boundary = new BoundarySignals('facade-to-runner', (summary) =>
+	console.warn(JSON.stringify(summary))
+)
 Bun.serve({
 	port: config.PORT,
-	fetch: handler,
+	async fetch(request, server) {
+		const response = await handler(request)
+		boundary.record(response.status, server.requestIP(request)?.address)
+		return response
+	},
 	error() {
 		return new Response('Service unavailable', { status: 500 })
 	}

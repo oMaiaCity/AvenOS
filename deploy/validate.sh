@@ -26,12 +26,9 @@ bash -n \
 bash "$root/deploy/release/test-deploy.sh"
 bun test "$root/deploy/local/llm-catalog.test.ts" "$root/deploy/e2e/llm-catalog.test.ts"
 
-grep -Fq "if: matrix.target != 'identity'" "$root/.github/workflows/platform-deploy.yml"
-if grep -Fq "if: inputs.target != 'identity'" "$root/.github/workflows/platform-deploy.yml"; then
-  echo 'bulk deployment must skip platform-only model discovery for the identity matrix job' >&2
-  exit 1
-fi
-for workflow in platform-ci.yml platform-deploy.yml; do
+grep -Fq "if: inputs.target != 'identity'" "$root/.github/workflows/platform-deploy-target.yml"
+bun test "$root/scripts/lib/platform-release.test.ts" "$root/deploy/e2e/mail-topology.test.ts"
+for workflow in platform-ci.yml platform-release.yml; do
   grep -Fq 'uses: ./.github/actions/setup-platform-test-host' "$root/.github/workflows/$workflow" || {
     echo "$workflow must use the shared native platform test-host setup" >&2
     exit 1
@@ -45,7 +42,7 @@ grep -Fq 'bunx playwright install chromium' "$root/.github/actions/setup-platfor
   echo 'the platform test host must install the Chromium binary required by the browser E2E test' >&2
   exit 1
 }
-for workflow in platform-ci.yml platform-deploy.yml; do
+for workflow in platform-ci.yml platform-release.yml; do
   install_line=$(grep -n 'uses: ./.github/actions/bun-install' "$root/.github/workflows/$workflow" | head -1 | cut -d: -f1)
   host_line=$(grep -n 'uses: ./.github/actions/setup-platform-test-host' "$root/.github/workflows/$workflow" | head -1 | cut -d: -f1)
   if [[ -z "$install_line" || -z "$host_line" || "$install_line" -ge "$host_line" ]]; then
@@ -89,6 +86,8 @@ env \
 env \
   IDENTITY_IMAGE=identity:test \
   OPERATIONS_IMAGE=operations:test \
+  DATABASE_IMAGE=database:test \
+  PROXY_IMAGE=proxy:test \
   IDENTITY_POSTGRES_PASSWORD=test \
   IDENTITY_AUTH_PASSWORD=test-auth \
   IDENTITY_ACCOUNTS_PASSWORD=test-accounts \
@@ -97,6 +96,7 @@ env \
   IDENTITY_BACKUP_PASSWORD=test-backup \
   IDENTITY_BETTER_AUTH_SECRET=01234567890123456789012345678901 \
   IDENTITY_PROVISIONING_SECRETS=01234567890123456789012345678901,abcdefghijklmnopqrstuvwxyz012345 \
+  IDENTITY_MAIL_ORIGINS=https://portal.next.aven.ceo,https://portal.aven.ceo \
   TRUSTED_WEB_ORIGINS=https://next.aven.ceo,https://portal.next.aven.ceo,https://aven.ceo,https://portal.aven.ceo \
   NEXT_PLATFORM_PUBLIC_IPV4=192.0.2.10 \
   NEXT_PLATFORM_PUBLIC_IPV6=2001:db8::10 \
@@ -120,6 +120,8 @@ env \
   ACTOR_RUNNER_IMAGE=actor:test \
   ARTIFACT_STORE_IMAGE=artifact:test \
   OPERATIONS_IMAGE=operations:test \
+  DATABASE_IMAGE=database:test \
+  PROXY_IMAGE=proxy:test \
   PLATFORM_POSTGRES_PASSWORD=test \
   PLATFORM_BACKUP_PASSWORD=test-backup \
   CHECKOUT_RUNTIME_PASSWORD=test \
@@ -181,18 +183,18 @@ docker run --rm \
   --env PRODUCTION_PLATFORM_PUBLIC_IPV6=2001:db8::20 \
   --env ACME_EMAIL=test@example.test \
   --volume "$root/deploy/identity/Caddyfile:/etc/caddy/Caddyfile:ro" \
-  caddy:2.10.2-alpine caddy validate --config /etc/caddy/Caddyfile
+  caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648 caddy validate --config /etc/caddy/Caddyfile
 
 docker run --rm \
   --env API_DOMAIN=api.next.aven.ceo \
   --env CHECKOUT_DOMAIN=portal.next.aven.ceo \
   --env ACME_EMAIL=test@example.test \
   --volume "$root/deploy/platform/Caddyfile:/etc/caddy/Caddyfile:ro" \
-  caddy:2.10.2-alpine caddy validate --config /etc/caddy/Caddyfile
+  caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648 caddy validate --config /etc/caddy/Caddyfile
 
 docker run --rm \
   --env API_DOMAIN=api.aven.ceo \
   --env CHECKOUT_DOMAIN=portal.aven.ceo \
   --env ACME_EMAIL=test@example.test \
   --volume "$root/deploy/platform/Caddyfile:/etc/caddy/Caddyfile:ro" \
-  caddy:2.10.2-alpine caddy validate --config /etc/caddy/Caddyfile
+  caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648 caddy validate --config /etc/caddy/Caddyfile

@@ -17,6 +17,12 @@ traffic only after smoke checks. Do not repair or copy an unknown failed host.
 The public site is rebuilt from Git. TLS state is disposable. Runtime logs are bounded
 diagnostic evidence, not durable business data.
 
+State and backup buckets both use versioning. Bootstrap installs a lifecycle that
+retains noncurrent object versions for 90 days and aborts incomplete multipart uploads
+after seven days; current objects are not expired by this policy. This adds storage
+cost and protects against accidental overwrite, not a credential able to delete all
+versions. The shared-provider and shared state/backup credential risks remain deferred.
+
 ## What is backed up
 
 The identity repository contains accounts, passkeys, sessions, device state, and
@@ -69,7 +75,17 @@ inspect it manually:
 Treat an upload without a validated manifest and successful repository check as a
 failed backup.
 
+The backup worker publishes a small atomic `public-status/health.json` containing only
+status, observation time and snapshot count. A failed attempt changes it to degraded
+immediately, even while an older successful snapshot remains fresh. The facade mounts
+only this summary read-only, not backup files or credentials, and rejects observations
+older than two hours. An upload/check result is not a successful restore-drill result.
+
 ## Fresh-host disaster recovery
+
+Run recovery from protected `prod`, including when restoring `next`. Its coordinator
+accepts an earlier verified release manifest that is an ancestor of the protected
+workflow commit. A dispatch from `next` itself still requires its exact current commit.
 
 You need access to the protected repository environment, Hetzner API, both DNS
 providers, and the four-value recovery escrow described in
@@ -79,9 +95,12 @@ providers, and the four-value recovery escrow described in
    `production` to create three fresh hosts and empty protected volumes.
 2. Reconcile the newly returned `aven.id` A/AAAA records through the saved United Domains
    API key. Pulumi has already recreated both platform environments' `aven.ceo` records.
-3. Run `platform-deploy` for `identity` with the last verified ref and
+3. Run `platform-deploy` from protected `prod` for `identity` with a retained verified
+   `release_run_id` and
    `recover_from_backup: true`.
-4. Run the same workflow and recovery option for `next`, then for `production`.
+4. Run the same workflow and recovery option for `next`, then for `production`, supplying
+   the matching successful `next_proof_run_id` for production. Use the manifest selection
+   rules in [Deployment](deployment.md#deploy-the-software), not an arbitrary source ref.
 5. Let each run start only PostgreSQL and role initialization, verify and restore its
    own newest snapshot, then perform normal migrations, reconciliation, startup, and
    public health checks.
@@ -123,7 +142,23 @@ backup is not accepted as recoverable merely because its scheduled upload succee
 
 ## Continuous proof
 
-Every platform pull request and deployment builds the production operations image and
+Every successful target deployment also restores its latest real encrypted snapshot
+into a disposable database on the CI worker before recording deployment proof. The
+database has an internal-only network; only the restore client reaches Object Storage.
+The repository is read without writing Restic locks. Concurrent pruning can make a
+drill fail, in which case retrying starts a new isolated database. Nothing connects the
+restore process to the live database.
+
+The drill uses memory-backed storage, capped at 2 GiB for restored PostgreSQL data and
+512 MiB for backup files, with separate process-memory allowances. It cannot consume
+unbounded worker disk space. A snapshot that exceeds those limits fails verification;
+increase `DRILL_DATA_LIMIT_MB` and `DRILL_ARCHIVE_LIMIT_MB` in the protected workflow
+together with worker memory when the installation grows. Each accepts 128–16384 MiB.
+The sanitized `restore-drill-<target>` artifact records snapshot ID, time, and restored
+database count, not customer rows or credentials. This per-deployment proof does not
+replace the quarterly end-to-end infrastructure and escrow exercise.
+
+Every platform pull request and release build builds the production operations image and
 runs `bun run test:recovery`. The drill backs up source identity and customer data,
 restores separate empty targets, compares exact rows and access controls, and proves
 wrong-password and populated-target rejection.

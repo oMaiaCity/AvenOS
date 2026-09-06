@@ -1,8 +1,10 @@
 import { importTenantGrantPrivateKey } from '@avenos/aven-customer-contracts'
 import { IdentityVerifier } from '@avenos/aven-identity'
+import { BoundarySignals } from '@avenos/http-boundary'
 import pg from 'pg'
 import pino from 'pino'
 import { ArtifactHandler } from './artifacts/handler.js'
+import { PlatformCapabilities } from './capabilities.js'
 import { loadFacadeConfig } from './config.js'
 import { CustomerHandler } from './customers/handler.js'
 import { CustomerStore } from './customers/store.js'
@@ -59,9 +61,35 @@ const handler = createFacadeHandler(
 	artifacts,
 	llmGateway
 )
+const capabilities = new PlatformCapabilities(config, entitlementDatabase)
+capabilities.start()
+const boundary = new BoundarySignals('platform-to-facade-control', (summary) =>
+	logger.warn(summary, 'Control boundary denials observed')
+)
 Bun.serve({
 	port: config.PORT,
-	fetch: handler,
+	async fetch(request, server) {
+		const path = new URL(request.url).pathname
+		if (path === '/api/health/capabilities' || path === '/health/capabilities') {
+			const result = capabilities.snapshot()
+			return Response.json(result, {
+				status: result.status === 'healthy' ? 200 : 503,
+				headers: { 'cache-control': 'no-store' }
+			})
+		}
+		if (path === '/api/health/live') return Response.json({ status: 'ok' })
+		if (path === '/api/health/ready' || path === '/health/ready') {
+			const ready = capabilities.snapshot().checks.database?.status === 'healthy'
+			return Response.json(
+				{ status: ready ? 'ready' : 'unavailable' },
+				{ status: ready ? 200 : 503, headers: { 'cache-control': 'no-store' } }
+			)
+		}
+		const response = await handler(request)
+		if (path.startsWith('/internal/'))
+			boundary.record(response.status, server.requestIP(request)?.address)
+		return response
+	},
 	error(error) {
 		logger.error({ err: error }, 'facade request failed')
 		return new Response('Service unavailable', { status: 500 })

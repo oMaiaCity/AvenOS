@@ -1,0 +1,148 @@
+name: platform-deploy-target
+
+on:
+  workflow_call:
+    inputs:
+      target:
+        required: true
+        type: string
+      manifest:
+        required: true
+        type: string
+      recover_from_backup:
+        required: true
+        type: boolean
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: ${{ format('{0}-{1}', vars.DEPLOYMENT_ENVIRONMENT_PREFIX, inputs.target) }}
+    concurrency:
+      group: aven-platform-deploy-${{ vars.DEPLOYMENT_ENVIRONMENT_PREFIX }}-${{ inputs.target }}
+      cancel-in-progress: false
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.PULUMI_STATE_S3_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.PULUMI_STATE_S3_SECRET_ACCESS_KEY }}
+      AWS_REGION: ${{ vars.PULUMI_STATE_S3_REGION }}
+      AWS_DEFAULT_REGION: ${{ vars.PULUMI_STATE_S3_REGION }}
+      AWS_EC2_METADATA_DISABLED: "true"
+      PULUMI_CONFIG_PASSPHRASE: ${{ secrets.PULUMI_CONFIG_PASSPHRASE }}
+      PULUMI_STACK: ${{ vars.PULUMI_STACK }}
+      NEXT_PULUMI_STACK: ${{ vars.NEXT_PULUMI_STACK }}
+      NEXT_PULUMI_BACKEND: ${{ vars.NEXT_PULUMI_BACKEND }}
+      NEXT_STATE_S3_ACCESS_KEY_ID: ${{ secrets.NEXT_STATE_S3_ACCESS_KEY_ID }}
+      NEXT_STATE_S3_SECRET_ACCESS_KEY: ${{ secrets.NEXT_STATE_S3_SECRET_ACCESS_KEY }}
+      NEXT_PULUMI_CONFIG_PASSPHRASE: ${{ secrets.NEXT_PULUMI_CONFIG_PASSPHRASE }}
+      PRODUCTION_PULUMI_STACK: ${{ vars.PRODUCTION_PULUMI_STACK }}
+      PRODUCTION_PULUMI_BACKEND: ${{ vars.PRODUCTION_PULUMI_BACKEND }}
+      PRODUCTION_STATE_S3_ACCESS_KEY_ID: ${{ secrets.PRODUCTION_STATE_S3_ACCESS_KEY_ID }}
+      PRODUCTION_STATE_S3_SECRET_ACCESS_KEY: ${{ secrets.PRODUCTION_STATE_S3_SECRET_ACCESS_KEY }}
+      PRODUCTION_PULUMI_CONFIG_PASSPHRASE: ${{ secrets.PRODUCTION_PULUMI_CONFIG_PASSPHRASE }}
+      PULUMI_BACKEND: s3://${{ vars.PULUMI_STATE_S3_BUCKET }}/avenos/platform?endpoint=${{ vars.PULUMI_STATE_S3_REGION }}.your-objectstorage.com&region=${{ vars.PULUMI_STATE_S3_REGION }}&s3ForcePathStyle=true&awssdk=v2
+      POLAR_API_KEY: ${{ secrets.POLAR_API_KEY }}
+      POLAR_WEBHOOK_SECRET: ${{ secrets.POLAR_WEBHOOK_SECRET }}
+      POLAR_SERVER: ${{ vars.POLAR_SERVER }}
+      POLAR_ORGANIZATION_ID: ${{ vars.POLAR_ORGANIZATION_ID }}
+      SMTP_URL: ${{ secrets.SMTP_URL }}
+      SMTP_FROM: ${{ vars.SMTP_FROM }}
+      SMTP_REPLY_TO: ${{ vars.SMTP_REPLY_TO }}
+      DOWNLOAD_URL: ${{ vars.DOWNLOAD_URL }}
+      ACME_EMAIL: ${{ vars.ACME_EMAIL }}
+      ANDROID_APP_CERT_SHA256_FINGERPRINTS: ${{ vars.ANDROID_APP_CERT_SHA256_FINGERPRINTS }}
+      IDENTITY_IMAGE: ${{ fromJSON(inputs.manifest).images.IDENTITY_IMAGE }}
+      API_IMAGE: ${{ fromJSON(inputs.manifest).images.API_IMAGE }}
+      CHECKOUT_IMAGE: ${{ fromJSON(inputs.manifest).images.CHECKOUT_IMAGE }}
+      STATIC_SITE_HOST_IMAGE: ${{ fromJSON(inputs.manifest).images.STATIC_SITE_HOST_IMAGE }}
+      PLATFORM_PROVISIONER_IMAGE: ${{ fromJSON(inputs.manifest).images.PLATFORM_PROVISIONER_IMAGE }}
+      INTENT_SERVICE_IMAGE: ${{ fromJSON(inputs.manifest).images.INTENT_SERVICE_IMAGE }}
+      ACTOR_RUNNER_IMAGE: ${{ fromJSON(inputs.manifest).images.ACTOR_RUNNER_IMAGE }}
+      ARTIFACT_STORE_IMAGE: ${{ fromJSON(inputs.manifest).images.ARTIFACT_STORE_IMAGE }}
+      OPERATIONS_IMAGE: ${{ fromJSON(inputs.manifest).images.OPERATIONS_IMAGE }}
+      DATABASE_IMAGE: ${{ fromJSON(inputs.manifest).images.DATABASE_IMAGE }}
+      PROXY_IMAGE: ${{ fromJSON(inputs.manifest).images.PROXY_IMAGE }}
+      LLM_GATEWAY_CREDENTIALS_JSON: ${{ secrets.LLM_GATEWAY_CREDENTIALS_JSON }}
+      LLM_GATEWAY_TIMEOUT_SECONDS: ${{ vars.LLM_GATEWAY_TIMEOUT_SECONDS }}
+      GHCR_USER: ${{ github.actor }}
+      GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      BACKUP_REPOSITORY_BASE: ${{ vars.BACKUP_REPOSITORY_BASE }}
+      BACKUP_S3_ACCESS_KEY_ID: ${{ secrets.BACKUP_S3_ACCESS_KEY_ID }}
+      BACKUP_S3_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_S3_SECRET_ACCESS_KEY }}
+      BACKUP_S3_REGION: ${{ vars.BACKUP_S3_REGION }}
+      BACKUP_RESTIC_PASSWORD: ${{ secrets.BACKUP_RESTIC_PASSWORD }}
+      DEPLOYMENT_TARGET: ${{ inputs.target }}
+      RECOVER_FROM_BACKUP: ${{ inputs.recover_from_backup }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+      - name: Install identity DNS lookup tool
+        if: inputs.target == 'identity'
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends dnsutils
+      - name: Record deployed commit
+        env:
+          RELEASE_SHA: ${{ fromJSON(inputs.manifest).sha }}
+        run: echo "DEPLOYED_REF_SHA=$RELEASE_SHA" >> "$GITHUB_ENV"
+      - name: Resolve current Phala model catalog
+        if: inputs.target != 'identity'
+        run: |
+          set -euo pipefail
+          catalog=$(bun run --silent models:redpill-phala)
+          test -n "$catalog"
+          echo "LLM_GATEWAY_MODELS_JSON=$catalog" >> "$GITHUB_ENV"
+      - name: Install Pulumi CLI
+        uses: pulumi/actions@8e5e406f4007fca908480587cb9893c07090f58d # v7
+      - name: Render and deploy selected target
+        shell: bash
+        run: bash deploy/release/deploy.sh
+
+      - name: Restore the latest real backup into a disposable isolated database
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          export DOCKER_CONFIG
+          DOCKER_CONFIG=$(mktemp -d)
+          trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USER" --password-stdin >/dev/null
+          docker pull "$OPERATIONS_IMAGE" >/dev/null
+          docker pull "$DATABASE_IMAGE" >/dev/null
+          export RESTIC_PASSWORD="$BACKUP_RESTIC_PASSWORD"
+          export AWS_ACCESS_KEY_ID="$BACKUP_S3_ACCESS_KEY_ID" AWS_SECRET_ACCESS_KEY="$BACKUP_S3_SECRET_ACCESS_KEY"
+          export AWS_REGION="$BACKUP_S3_REGION" AWS_DEFAULT_REGION="$BACKUP_S3_REGION"
+          export BACKUP_ENVIRONMENT="$DEPLOYMENT_TARGET"
+          if [[ "$DEPLOYMENT_TARGET" == identity ]]; then
+            export RESTIC_REPOSITORY="${BACKUP_REPOSITORY_BASE%/}/identity"
+          else
+            export RESTIC_REPOSITORY="${BACKUP_REPOSITORY_BASE%/}/$DEPLOYMENT_TARGET/platform"
+          fi
+          export DRILL_OUTPUT="$RUNNER_TEMP/restore-drill.json"
+          bash deploy/operations/drill-latest.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: restore-drill-${{ inputs.target }}
+          path: ${{ runner.temp }}/restore-drill.json
+          retention-days: 90
+          if-no-files-found: ignore
+
+      - name: Record next verification of these exact images
+        if: inputs.target == 'next'
+        env:
+          RELEASE_MANIFEST: ${{ inputs.manifest }}
+        run: printf '%s\n' "$RELEASE_MANIFEST" > next-proof.json
+      - uses: actions/upload-artifact@v4
+        if: inputs.target == 'next'
+        with:
+          name: aven-next-proof
+          path: next-proof.json
+          retention-days: 90
+          if-no-files-found: error

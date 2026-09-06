@@ -12,6 +12,7 @@
 		"test": "vitest run"
 	},
 	"dependencies": {
+		"@avenos/http-boundary": "workspace:*",
 		"@avenos/artifact-store": "workspace:*",
 		"@avenos/aven-customer-contracts": "workspace:*",
 		"@avenos/aven-hosting": "workspace:*",

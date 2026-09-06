@@ -17,9 +17,22 @@ case "$restic_timeout" in *[!0-9]*|'') echo 'invalid restic command timeout' >&2
 [ "$restic_timeout" -gt 0 ] || { echo 'restic command timeout must be positive' >&2; exit 64; }
 
 state_root=${BACKUP_STATE_ROOT:-/var/lib/aven-backups}
+public_status="$state_root/public-status"
+mkdir -p "$public_status"
+chmod 0755 "$public_status"
 run_id=$(date -u +%Y%m%dT%H%M%SZ)-$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')
 stage="$state_root/staging/$run_id"
-trap 'rm -rf "$stage"' EXIT HUP INT TERM
+finish() {
+  code=$?
+  if [ "$code" -ne 0 ]; then
+    printf '{"status":"degraded","checkedAt":%s,"snapshotCount":0}\n' "$(date -u +%s)" > "$public_status/health.next"
+    chmod 0644 "$public_status/health.next"
+    mv "$public_status/health.next" "$public_status/health.json"
+  fi
+  rm -rf "$stage"
+}
+trap finish EXIT
+trap 'exit 1' HUP INT TERM
 mkdir -p "$stage/databases"
 
 pg_version=$(psql --no-psqlrc --tuples-only --no-align --dbname postgres \
@@ -69,5 +82,10 @@ snapshot_id=$(timeout "$restic_timeout" restic backup "$stage" \
 timeout "$restic_timeout" restic forget --host "$BACKUP_HOST" --tag 'kind:postgres-logical' \
   --keep-within 14d --keep-weekly 8 --keep-monthly 12 --prune
 timeout "$restic_timeout" restic check
+snapshot_count=$(timeout "$repository_probe_timeout" restic snapshots --host "$BACKUP_HOST" --tag "environment:$BACKUP_ENVIRONMENT" --json | jq length)
+case "$snapshot_count" in ''|*[!0-9]*) echo 'invalid snapshot count' >&2; exit 1 ;; esac
+printf '{"status":"healthy","checkedAt":%s,"snapshotCount":%s}\n' "$(date -u +%s)" "$snapshot_count" > "$public_status/health.next"
+chmod 0644 "$public_status/health.next"
+mv "$public_status/health.next" "$public_status/health.json"
 printf '%s %s %s %s\n' "$(date -u +%s)" "$created_at" "$snapshot_id" "$run_id" > "$state_root/last-success"
 echo "backup complete: $BACKUP_HOST $run_id $snapshot_id"

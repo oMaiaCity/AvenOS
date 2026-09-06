@@ -40,8 +40,10 @@ named in the bootstrap guide, then enter them once. Pulumi creates
 and versions the buckets through S3 and installs explicit deny policies. A target's
 deployment credential writes only its state and backup buckets. A separate observer
 credential reads only its state. Reusing the deployment credential for state and backup
-does not enlarge the GitHub deployment boundary; keeping the observer separate preserves
-the unattended read-only boundary.
+means its compromise can destroy both recovery sources, including old versions. Versioning
+protects against some mistakes, not this credential or a provider-wide failure. Keeping the
+observer separate preserves the unattended read-only boundary. Independent immutable
+recovery storage is deferred.
 
 Each target's bootstrap administrator can repair policies only in that target project. It
 stays offline and never enters GitHub. Neither platform Environment receives identity-state or
@@ -67,7 +69,9 @@ addresses.
 
 The bootstrap creates a deployment and operations Environment for every checked target,
 using names such as `<deployment-prefix>-identity`, `-next`, and `-production` and
-restricting them to protected branches. By default they have no required
+using exact branch policies: `next` and its operations Environment accept `next` and
+`prod`; identity and production accept only `prod`. `main` receives none of these
+deployment or recovery secrets. By default they have no required
 reviewer, so one administrator can dispatch a run. When the optional `reviewer` input is
 set, these three Environments require that GitHub user and prevent self-review. Matching
 `-operations` Environments never require reviewers, so scheduled health checks remain
@@ -89,7 +93,20 @@ The repository also holds one secret, `PACKAGE_READ_TOKEN`. It is a classic GitH
 with `read:packages` only and can download the cross-repository `@myavenceo/aven-ceo` and
 `@myavenceo/aven-vibes` npm packages. The bootstrap verifies both reads before storing the
 token. It does not belong in a target Environment because CI and the shared image build
-run before a deployment Environment is selected.
+run before a deployment Environment is selected. The same read-only value is stored in
+Dependabot's separate secret store so dependency updates can resolve the private registry.
+
+Two shared rulesets separate release-update authority from required checks. Only repository
+administrators can update `next` and `prod`; even they must use a PR with resolved threads
+and the successful, up-to-date `Platform release gate` from GitHub Actions. No second
+reviewer is required. Bootstrap removes the former repository `DEPLOY_KEY` and its
+automatic promotion path. An untrusted development workflow must not hold a release
+branch bypass key. These shared rulesets and the package reader remain after a generation
+uninstall; they protect the repository rather than one installation.
+Bootstrap also enables GitHub secret scanning, push protection, vulnerability alerts
+and automated dependency security updates. A private repository must have a plan that
+exposes the required protection; setup reports the missing capability instead of
+silently substituting the local scanner. No credential is printed by these checks.
 
 The generation uninstaller retains `PACKAGE_READ_TOKEN`: it removes target Environments
 and the active deployment selection, but shared repository CI still needs this
@@ -276,6 +293,13 @@ issued, time-bounded, read-only database role; automatic diagnostic-role issuanc
 not implemented yet.
 
 ## Rotation
+
+Identity's automatically derived security-mail relay keys rotate with the corresponding
+platform provisioning secrets; they are not new manually collected credentials. Keep
+the identity mail-origin list aligned with those secrets. Before rotating
+`BETTER_AUTH_SECRET`, drain pending replacement-link messages: their temporary identity
+outbox payloads use a purpose-derived encryption key. Ordinary link-use/registration
+notices contain no bearer token. See [pending enrollment](../../services/identity/README.md#pending-enrollment).
 
 - Start `bun run bootstrap:deployment:guided`, choose **Review or rotate credentials**,
   and select the affected secret-bearing stations. The wizard verifies replacements before

@@ -630,7 +630,7 @@ export class LlmGatewayService {
 		return new Response(JSON.stringify(raw), { headers: responseHeaders })
 	}
 
-	async complete(input: LlmCompletionRequest): Promise<LlmGatewayResponse> {
+	async complete(input: unknown): Promise<LlmGatewayResponse> {
 		const request = llmCompletionRequestSchema.parse(input)
 		const model = this.#modelsById.get(request.modelId)
 		if (!model) throw new AppError(404, 'LLM_MODEL_NOT_FOUND', 'The selected model does not exist.')

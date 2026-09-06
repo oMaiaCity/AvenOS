@@ -2,7 +2,7 @@ name: aven-e2e
 
 services:
   identity-database:
-    image: postgres:17-alpine
+    image: ${E2E_DATABASE_IMAGE:-aven-e2e-database:local}
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: identity-admin-e2e
@@ -22,7 +22,7 @@ services:
     networks: [identity-private]
 
   identity-database-roles:
-    image: postgres:17-alpine
+    image: ${E2E_DATABASE_IMAGE:-aven-e2e-database:local}
     depends_on:
       identity-database:
         condition: service_healthy
@@ -59,6 +59,7 @@ services:
       MIGRATOR_DATABASE_URL: postgres://aven_identity_migrator:identity-migrator-e2e@identity-database/aven_identity
       BETTER_AUTH_SECRET: identity-better-auth-secret-for-e2e-only
       IDENTITY_PROVISIONING_SECRETS: identity-provisioning-secret-for-e2e-only,identity-production-provisioning-secret-for-e2e-only
+      IDENTITY_MAIL_ORIGINS: http://checkout:13200,http://checkout:13200
       POW_DIFFICULTY_BITS: "8"
       REQUIRE_PASSKEY_PRF: "false"
     networks: [identity-private, public-test]
@@ -81,7 +82,7 @@ services:
       public-test:
 
   platform-database:
-    image: postgres:17-alpine
+    image: ${E2E_DATABASE_IMAGE:-aven-e2e-database:local}
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: platform-admin-e2e
@@ -112,7 +113,7 @@ services:
     networks: [platform-private, public-test]
 
   platform-database-roles:
-    image: postgres:17-alpine
+    image: ${E2E_DATABASE_IMAGE:-aven-e2e-database:local}
     depends_on:
       platform-database:
         condition: service_healthy
@@ -181,6 +182,7 @@ services:
       IDENTITY_JWKS_URL: http://identity:13100/api/auth/jwks
       IDENTITY_AUDIENCE: aven-services
       API_PUBLIC_BASE_URL: http://localhost:${E2E_API_HOST_PORT:-13000}
+      CHECKOUT_CAPABILITIES_URL: http://checkout:13200/api/health/capabilities
       CUSTOMER_ENTITLEMENT_TOKEN: customer-entitlement-token-for-e2e
       TENANT_GRANT_PRIVATE_KEY: ${E2E_TENANT_PRIVATE_KEY}
       CORS_ORIGINS: http://localhost:${E2E_CHECKOUT_HOST_PORT:-13200},http://localhost:1420
@@ -482,7 +484,7 @@ services:
   static-site-host:
     profiles: [hosting]
     image: ${E2E_STATIC_SITE_HOST_IMAGE:-aven-e2e-static-site-host:local}
-    command: [sh, -c, "bun /e2e/dns-mock.ts & exec bun src/index.ts"]
+    command: [bun, /e2e/static-host.ts]
     depends_on:
       api:
         condition: service_healthy
@@ -504,6 +506,7 @@ services:
     volumes:
       - static-sites:/data
       - ./dns-mock.ts:/e2e/dns-mock.ts:ro
+      - ./static-host.ts:/e2e/static-host.ts:ro
     healthcheck:
       test: [CMD, bun, -e, "fetch('http://127.0.0.1:18093/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 3s

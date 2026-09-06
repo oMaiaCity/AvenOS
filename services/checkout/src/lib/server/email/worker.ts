@@ -105,6 +105,8 @@ export class EmailWorker {
 	private heartbeatTimer?: NodeJS.Timeout
 	private active = false
 	private started = new Date()
+	private smtpVerifiedAt = 0
+	private smtpTimer?: NodeJS.Timeout
 	constructor(
 		private pool: pg.Pool,
 		private config: EmailWorkerConfig,
@@ -135,6 +137,8 @@ export class EmailWorker {
 				this.logger.error({ err: sanitizeError(error) }, 'email lease recovery failed')
 			})
 		void this.verifyTransport(smtp)
+		this.smtpTimer = setInterval(() => void this.verifyTransport(smtp), 300_000)
+		this.smtpTimer.unref()
 		void this.heartbeat()
 		this.timer = setInterval(() => {
 			void this.tick()
@@ -149,6 +153,7 @@ export class EmailWorker {
 	}
 
 	stop() {
+		if (this.smtpTimer) clearInterval(this.smtpTimer)
 		if (this.timer) clearInterval(this.timer)
 		if (this.heartbeatTimer) clearInterval(this.heartbeatTimer)
 		this.transport.close()
@@ -159,8 +164,10 @@ export class EmailWorker {
 		const started = Date.now()
 		try {
 			await this.transport.verify()
+			this.smtpVerifiedAt = Date.now()
 			this.logger.info({ smtp, durationMs: Date.now() - started }, 'SMTP connection verified')
 		} catch (error) {
+			this.smtpVerifiedAt = 0
 			this.logger.warn(
 				{ smtp, err: sanitizeError(error), durationMs: Date.now() - started },
 				'SMTP connection verification failed'
@@ -178,7 +185,10 @@ export class EmailWorker {
 					this.config.APPLICATION_VERSION,
 					this.started,
 					new Date(),
-					JSON.stringify({ batchSize: this.config.EMAIL_WORKER_BATCH_SIZE })
+					JSON.stringify({
+						batchSize: this.config.EMAIL_WORKER_BATCH_SIZE,
+						smtpVerifiedAt: this.smtpVerifiedAt
+					})
 				]
 			)
 		} catch (error) {

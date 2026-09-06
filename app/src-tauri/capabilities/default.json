@@ -4,10 +4,15 @@
 	"description": "Default permissions for the main window",
 	"windows": ["main"],
 	"permissions": [
-		"core:default",
-		"core:window:default",
-		"core:webview:default",
-		"core:event:default",
-		"opener:default"
+		"core:event:allow-listen",
+		"core:event:allow-unlisten",
+		{
+			"identifier": "opener:allow-open-url",
+			"allow": [
+				{ "url": "https://*" },
+				{ "url": "http://localhost:*/*" },
+				{ "url": "http://127.0.0.1:*/*" }
+			]
+		}
 	]
 }

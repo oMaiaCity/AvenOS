@@ -7,6 +7,7 @@ network="$run_id"
 source_db="$run_id-source"
 target_db="$run_id-target"
 image="$run_id:local"
+database_image="$run_id-database:local"
 scratch=$(mktemp -d)
 cleanup() {
   docker rm --force "$source_db" "$target_db" >/dev/null 2>&1 || true
@@ -18,13 +19,15 @@ trap cleanup EXIT
 mkdir -p "$scratch/repository" "$scratch/source-state" "$scratch/target-state"
 chmod 0777 "$scratch/repository" "$scratch/source-state" "$scratch/target-state"
 docker build --file "$root/deploy/operations/Dockerfile" --tag "$image" "$root"
+docker build --file "$root/deploy/database/Dockerfile" --tag "$database_image" "$root"
+bash "$root/scripts/scan-container-os.sh" "$image"
 [[ "$(docker image inspect --format '{{.Config.User}}' "$image")" == '65532:65532' ]]
 docker network create "$network" >/dev/null
 
 start_database() {
   local name=$1
   docker run --detach --name "$name" --network "$network" \
-    --env POSTGRES_PASSWORD=recovery-test postgres:17-alpine >/dev/null
+    --env POSTGRES_PASSWORD=recovery-test "$database_image" >/dev/null
   for _ in {1..60}; do
     # The official image first starts an initialization server on its Unix socket,
     # stops it, and only then starts the durable server on TCP. A socket-only probe
@@ -73,6 +76,10 @@ docker run "${common[@]}" --env PGHOST="$source_db" --env PGUSER=aven_backup --e
   --volume "$scratch/source-state:/var/lib/aven-backups" "$image" backup
 docker run "${common[@]}" --env PGHOST="$source_db" --env PGUSER=aven_backup --env PGPASSWORD=backup-test \
   --volume "$scratch/source-state:/var/lib/aven-backups" "$image" health
+HEALTH_RECORD="$scratch/source-state/public-status/health.json" bun -e '
+const value=await Bun.file(process.env.HEALTH_RECORD).json();
+if(value.status!=="healthy"||value.snapshotCount<1||Date.now()/1000-value.checkedAt>60)throw new Error("Backup capability proof is missing");
+if(Object.keys(value).sort().join(",")!=="checkedAt,snapshotCount,status")throw new Error("Public backup health exposes extra fields");'
 
 started=$SECONDS
 if timeout 15 docker run "${common[@]}" \
@@ -87,6 +94,12 @@ if timeout 15 docker run "${common[@]}" \
   exit 1
 fi
 ((SECONDS - started < 15)) || { echo 'backup provider failure was not bounded' >&2; exit 1; }
+HEALTH_RECORD="$scratch/source-state/public-status/health.json" bun -e '
+if((await Bun.file(process.env.HEALTH_RECORD).json()).status!=="degraded")throw new Error("Backup failure was hidden by the last success");'
+if docker run "${common[@]}" --volume "$scratch/source-state:/var/lib/aven-backups" "$image" health; then
+  echo 'backup health hid the failed latest attempt behind an older success' >&2
+  exit 1
+fi
 
 start_database "$target_db"
 if docker run "${common[@]}" --env PGHOST="$target_db" --env PGUSER=postgres --env PGPASSWORD=recovery-test \
@@ -129,4 +142,8 @@ if docker run "${common[@]}" --env PGHOST="$target_db" --env PGUSER=postgres --e
   exit 1
 fi
 
+OPERATIONS_IMAGE="$image" DATABASE_IMAGE="$database_image" RESTIC_REPOSITORY=/repository RESTIC_PASSWORD=recovery-encryption-test \
+  BACKUP_ENVIRONMENT=ci DRILL_LOCAL_REPOSITORY_DIR="$scratch/repository" DRILL_OUTPUT="$scratch/drill.json" \
+  bash "$root/deploy/operations/drill-latest.sh"
+jq -e '.status == "healthy" and .databaseCount == 2 and (.snapshotId|length) == 64' "$scratch/drill.json" >/dev/null
 echo 'destructive backup/restore drill passed'

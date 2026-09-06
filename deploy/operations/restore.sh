@@ -18,7 +18,11 @@ snapshot=${RESTORE_SNAPSHOT:-latest}
 stage="$state_root/restore-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 trap 'rm -rf "$stage"' EXIT HUP INT TERM
 mkdir -p "$stage"
-restic restore "$snapshot" --tag "environment:$BACKUP_ENVIRONMENT" --target "$stage"
+case "${RESTORE_NO_LOCK:-false}" in
+  false) restic restore "$snapshot" --tag "environment:$BACKUP_ENVIRONMENT" --target "$stage" ;;
+  true) restic --no-lock restore "$snapshot" --tag "environment:$BACKUP_ENVIRONMENT" --target "$stage" ;;
+  *) echo 'RESTORE_NO_LOCK must be true or false' >&2; exit 64 ;;
+esac
 manifest=$(find "$stage" -type f -name manifest.json -print | head -1)
 [ -n "$manifest" ] || { echo 'backup has no manifest' >&2; exit 1; }
 manifest_dir=$(dirname "$manifest")

@@ -149,8 +149,50 @@ database health probes deliberately require the durable TCP listener so the test
 cannot pass through PostgreSQL's temporary initialization server.
 
 `bun run test:recovery` separately proves the restore insertion point, integrity
-checks, fresh-target refusal rules, and post-restore access controls. The deployment
-workflow runs both gates before publishing or installing a release.
+checks, fresh-target refusal rules, and post-restore access controls. The release
+workflow runs both gates before publishing a release. Deployment validates that
+release's immutable manifest before installing it.
+
+## Capability health
+
+Keep availability and degraded operation separate. `/api/health/live` answers whether
+the process responds; `/api/health/ready` covers its immediate readiness requirements.
+On identity, checkout and the facade, `/api/health/capabilities` returns 200 for healthy and 503
+for degraded operation. The facade also accepts `/health/capabilities`.
+
+Public capability requests read a cache. Workers refresh it every minute; observations
+older than three minutes fail closed. A public poll does not send an email, query a
+provider, enumerate customers, or run SQL. Responses expose only named checks, stable
+reason codes and observation times.
+
+Checkout observes database access, stale or dead email and platform-event queues,
+SMTP verification, recent SMTP acceptance, Postscale sender verification and available
+sending capacity, and the required enabled raw Polar webhook. SMTP acceptance is not
+inbox delivery. With no accepted mail in the preceding day, acceptance is unproven,
+not silently healthy. Other SMTP providers need a capacity-check adapter; they are not
+reported healthy merely because their credentials authenticate.
+
+The facade observes checkout capability health, identity and domain-service readiness,
+provisioner heartbeat, failed/stale operations and leases, and the latest backup result.
+These checks do not prove every customer's schema by enumerating all customers; actual
+request admission still verifies its customer route. Domain process readiness does not
+prove a full document or LLM operation.
+Identity separately observes database access, proof-replay cleanup lag, failed/stale
+security-mail delivery and backup health. Its mail relay is a post-start dependency
+on checkout, not a Compose startup dependency: pending notifications remain durable
+while checkout starts or recovers. Checkout still depends on identity for authentication.
+
+Capability observations run after startup, independently of Compose readiness. Do not
+make checkout wait for the facade's aggregate health while the facade waits for checkout;
+that would introduce a startup cycle. A deployment can be process-ready while degraded.
+The release deployment waits for capability 200 after public readiness and reports
+the safe reason-code response on failure; it must not record a successful promotion proof
+while the selected host is degraded.
+Controlled inbox delivery and the real-provider onboarding journey require separate proof.
+
+Configure distinct uptime alerts for **DOWN** (liveness/readiness failure) and
+**DEGRADED** (capability 503). External uptime-provider enrollment is not performed by
+the repository without an operator account or API authorization.
 
 ## When adding a service
 

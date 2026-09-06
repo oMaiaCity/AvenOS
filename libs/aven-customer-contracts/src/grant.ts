@@ -1,5 +1,6 @@
 import { importPKCS8, importSPKI, jwtVerify, SignJWT } from 'jose'
 import { z } from 'zod'
+import { membershipAllows } from './authorization.js'
 import { componentRefSchema } from './manifest.js'
 import { databaseNameSchema, environmentIdSchema } from './roles.js'
 
@@ -10,6 +11,7 @@ export const tenantGrantClaimsSchema = z
 		sub: z.uuid(),
 		sid: z.string().min(1).max(256),
 		role: z.enum(['user', 'admin']),
+		membershipRole: z.enum(['owner', 'admin', 'member']),
 		environmentId: environmentIdSchema,
 		databaseName: databaseNameSchema,
 		routingGeneration: z.number().int().positive(),
@@ -44,9 +46,12 @@ export async function signTenantGrant(
 		iat: nowSeconds,
 		exp: nowSeconds + ttlSeconds
 	})
+	if (!membershipAllows(validated.membershipRole, validated.componentRef, validated.actions))
+		throw new Error('customer membership does not authorize these actions')
 	return new SignJWT({
 		sid: validated.sid,
 		role: validated.role,
+		membershipRole: validated.membershipRole,
 		environmentId: validated.environmentId,
 		databaseName: validated.databaseName,
 		routingGeneration: validated.routingGeneration,
@@ -76,7 +81,8 @@ export async function verifyTenantGrant(
 	})
 	if (protectedHeader.typ !== 'JWT') throw new Error('invalid tenant grant type')
 	const claims = tenantGrantClaimsSchema.parse(payload)
-	if (claims.componentRef !== input.audience || !claims.actions.includes(input.action))
+	if (claims.componentRef !== input.audience || !claims.actions.includes(input.action) ||
+		!membershipAllows(claims.membershipRole, claims.componentRef, claims.actions))
 		throw new Error('tenant grant does not authorize this action')
 	return claims
 }

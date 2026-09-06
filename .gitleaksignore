@@ -1,0 +1,33 @@
+# Reviewed 2026-09-06: exact historical fingerprints only, no commit/path exemptions.
+# Historical registry installation JWTs, removed from current configuration. Embedded
+# expiry dates: 2026-08-25/26; decoding is not signature verification or revocation proof.
+# This baseline preserves the no-history-rewrite decision; any newly committed literal
+# remains a failure, including another copy of one of these values.
+2377170ae7024a5221c40753e3c2662ffa84217f:.npmrc:npm-registry-token:11
+dbe60518c3be2208c9ac4b5625fa65d09e0064de:.npmrc:npm-registry-token:12
+c03f442a71026c7e4cfe3a754aefae89854b6ade:.npmrc:npm-registry-token:13
+# Historical Compose matches span a public internal URL and a variable/fixture token.
+2370b4f6d583ebd557a985db3657ea1891c20f80:deploy/platform/docker-compose.yml:generic-api-key:379
+2370b4f6d583ebd557a985db3657ea1891c20f80:deploy/e2e/docker-compose.yml:generic-api-key:411
+298d519364aeea88344506f0fd326fb46ed7a51d:deploy/platform/docker-compose.yml:generic-api-key:379
+298d519364aeea88344506f0fd326fb46ed7a51d:deploy/e2e/docker-compose.yml:generic-api-key:411
+ef9cdfebf5d0260fe54a99dea3ec94dbc6f1fd2b:deploy/e2e/docker-compose.yml:generic-api-key:396
+ef9cdfebf5d0260fe54a99dea3ec94dbc6f1fd2b:deploy/platform/docker-compose.yml:generic-api-key:357
+# Public Android signing-certificate hash (not its private signing key).
+4764fc8672230dad5bdab94e3073c4406cc13673:services/aven-api/tests/tauri-passkey-contract.test.ts:generic-api-key:58
+1cfdac9e41251ca768610c51f7c2f3bea2986f67:services/aven-api/tests/tauri-passkey-contract.test.ts:generic-api-key:58
+# Public eRecht24 revocation-widget embed identifier, explicitly shipped to browsers.
+3ca7afa421bad5c84b1f82309c23112fb2cbc2fc:libs/aven-brand/src/revocation.ts:generic-api-key:9
+c2b255e6303a4a4bb6dd3c508e0f8295decda019:libs/aven-brand/src/revocation.ts:generic-api-key:9
+af026b3bb3ebb1bae4ac9faf274cd37ae439443a:libs/aven-brand/src/revocation.ts:generic-api-key:9
+df14a7df3f5bef7d3e6d95b4f7cec1f0ec224651:libs/aven-brand/src/revocation.ts:generic-api-key:9
+91b7cabaa4ca4b3abdc90783cca0e6e642388123:libs/aven-brand/src/revocation.ts:generic-api-key:9
+# Idempotency identifiers, a public DID, a smoke-only test secret, a directory path,
+# and storage object names used by historical invoice fixtures.
+9757aa6efccf1c77b712d31d61d5796545e0d4d3:sidecars/AkkaAgent2/Aven/tests/Aven.Tests.E2E/Phase27ApiProductPathTests.cs:generic-api-key:59
+9757aa6efccf1c77b712d31d61d5796545e0d4d3:sidecars/AkkaAgent2/Aven/tests/Aven.Tests.E2E/Phase27ApiProductPathTests.cs:generic-api-key:249
+f6f9f2f7754ef9747b7dd3801bb0067b8c708b64:libs/aven-ui/src/vibes/members/source.json:generic-api-key:30
+0a9b50f3b22f65985299d79b6baab13017357ddc:libs/aven-self/scripts/smoke-api.ts:generic-api-key:140
+9f976ca936b3aa325500d6d1e6527ddda049c1a1:projects/aven-p2p-signal/start-fly.ts:generic-api-key:55
+d52dee7142a35029b0e912b9a349a90a108a9ea8:projects/jaensen-bot/.flue/test.ts:generic-api-key:308
+d52dee7142a35029b0e912b9a349a90a108a9ea8:projects/jaensen-bot/.flue/test.ts:generic-api-key:335

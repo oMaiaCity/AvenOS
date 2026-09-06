@@ -38,6 +38,10 @@ Format and lint changed files before committing:
 
 ```sh
 bun run check:docs
+bun run check:secrets
+bun audit
+cargo install cargo-audit --version 0.22.2 --locked
+bun run check:rust-advisories
 bun run lint
 ```
 
@@ -64,8 +68,32 @@ Signed App Store, Android, and distribution-specific application builds have sep
 credentials and guides under `docs/deploy/`; they are not part of the server-platform
 deployment.
 
-The deployment workflow builds service containers itself and publishes immutable GHCR
-digests only after verification passes.
+`platform-release`, running from protected `next`, publishes immutable GHCR digests only
+after verification passes. Secret-bearing deployment jobs consume its verified manifest;
+they do not rebuild candidate application code. `Platform release gate` is the stable
+required promotion check emitted by `platform-ci`, including documentation-only changes.
+
+The Linux full-stack E2E and release publisher also run `bash scripts/scan-container-os.sh`
+against their exact built image references. This requires Docker, curl, jq and network
+access to the pinned scanner release and its advisory database. To scan an existing
+local image directly, pass its name or digest as the final argument. Fixed high/critical
+OS findings fail the gate; unresolved upstream findings are reported separately. This
+gate does not audit Go libraries embedded in the upstream Caddy binary. Updating the
+Alpine packages cannot patch those libraries; they require an updated binary.
+
+`check:secrets` scans working files and reachable Git history with fully redacted output.
+Its checksum-pinned scanner first proves that a synthetic registry credential is detected.
+The historical baseline contains exact reviewed commit/file/rule fingerprints, not broad
+path exclusions. New occurrences still fail. Never add an active credential to the baseline.
+
+The Rust audit checks every supported application, library and service lockfile, excluding
+archived code. Artifact Store's locked but unused SQLx MySQL/RSA dependency is exempt only
+when Cargo proves it absent from every enabled target/feature graph on that run. Other
+vulnerabilities fail. RustSec informational/unmaintained warnings remain visible: Tauri's
+Linux GTK3 stack still requires old bindings, including the `glib::VariantStrIter`
+unsoundness warning. No local fork or unsupported GTK ABI upgrade conceals that upstream
+constraint. The auditor is built from a pinned crates.io release; CI does not share an
+executable scanner cache between development and release branches.
 
 ## Infrastructure and recovery checks
 
@@ -75,6 +103,7 @@ These tests do not contact Hetzner:
 bun run test:infra
 bun run test:bootstrap
 bun run test:deploy
+bun run test:proxy-boundary
 bun run test:recovery
 ```
 
@@ -90,6 +119,10 @@ bun run test:recovery
   checkpoint state without contacting a provider.
 - `test:deploy` validates shell scripts, production Compose files, Caddy
   configuration, dependency order, non-root images, and secret-safe build contexts.
+- `test:proxy-boundary` runs the production checkout Caddy block against a loopback
+  fixture on Linux, proves distinct transport clients survive forwarding, rejects
+  caller-selected forwarding identity, and checks the production Svelte one-hop settings.
+  It does not simulate separate users behind the same NAT or a future CDN.
 - `test:recovery` creates source databases, takes encrypted backups, restores fresh
   targets, compares exact data and access control lists, and proves bounded provider
   failure, wrong-key, and populated-target rejection.
@@ -109,6 +142,8 @@ fresh databases on dynamic loopback ports, and proves the public journey:
 - first and second passkey enrollment and login;
 - native Tauri device authorization and short-lived service-token exchange;
 - customer database provisioning and per-schema isolation;
+- live membership downgrade/removal with an unchanged identity token, while another
+  environment remains independently accessible;
 - artifact upload and exact readback;
 - native document import on both Device and Server placement, exact source and
   extracted bytes, and canonical stored-graph equivalence for the deterministic text
@@ -127,6 +162,9 @@ fresh databases on dynamic loopback ports, and proves the public journey:
 
 The test uses disposable volumes and always tears down the `hosting` profile. Setting
 `E2E_SKIP_IMAGE_BUILD=true` is useful while iterating but is not release proof.
+The harness overlays production container limits, capability removal, read-only roots,
+temporary filesystems, and child-process reaping. Recovery uses a separate drill; the
+local payment, inbox and LLM fixtures do not prove availability of external providers.
 The voice path uses deterministic silent fixtures through the production semantic
 state machine. It proves ordering, interruption, attribution transport, and Intent
 persistence without microphone hardware; physical acoustic qualification remains the

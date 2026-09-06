@@ -368,7 +368,11 @@ type SignedS3RequestInput = {
 	accessKeyId: string
 	secretAccessKey: string
 	now?: Date
-} & ({ method: 'GET'; bucket?: string } | { method: 'DELETE' | 'PUT'; bucket: string })
+	lifecycleXml?: string
+} & (
+	| { method: 'GET'; bucket?: string; versions?: boolean }
+	| { method: 'DELETE' | 'PUT'; bucket: string }
+)
 
 function signedS3Request(input: SignedS3RequestInput): {
 	url: string
@@ -383,13 +387,19 @@ function signedS3Request(input: SignedS3RequestInput): {
 		throw new Error('Invalid Object Storage bucket name.')
 	const host = `${input.region}.your-objectstorage.com`
 	const path = input.bucket ? `/${input.bucket}` : '/'
-	const query = input.method === 'GET' && input.bucket ? 'list-type=2&max-keys=0' : ''
+	const query = input.lifecycleXml ? 'lifecycle=' :
+		input.method === 'GET' && input.bucket
+			? input.versions
+				? 'max-keys=1000&versions='
+				: 'list-type=2&max-keys=0'
+			: ''
 	const now = input.now ?? new Date()
 	const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '')
 	const date = amzDate.slice(0, 8)
-	const payloadHash = sha256('')
-	const signedHeaders = 'host;x-amz-content-sha256;x-amz-date'
-	const canonicalHeaders = `host:${host}\nx-amz-content-sha256:${payloadHash}\nx-amz-date:${amzDate}\n`
+	const payloadHash = sha256(input.lifecycleXml ?? '')
+	const contentMd5 = input.lifecycleXml ? createHash('md5').update(input.lifecycleXml).digest('base64') : undefined
+	const signedHeaders = `${contentMd5 ? 'content-md5;' : ''}host;x-amz-content-sha256;x-amz-date`
+	const canonicalHeaders = `${contentMd5 ? `content-md5:${contentMd5}\n` : ''}host:${host}\nx-amz-content-sha256:${payloadHash}\nx-amz-date:${amzDate}\n`
 	const canonicalRequest = [
 		input.method,
 		path,
@@ -408,11 +418,31 @@ function signedS3Request(input: SignedS3RequestInput): {
 	return {
 		url: `https://${host}${path}${query ? `?${query}` : ''}`,
 		headers: {
+			...(contentMd5 ? { 'content-md5': contentMd5, 'content-type': 'application/xml' } : {}),
 			Authorization: `AWS4-HMAC-SHA256 Credential=${input.accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
 			'x-amz-content-sha256': payloadHash,
 			'x-amz-date': amzDate
 		}
 	}
+}
+
+// Only noncurrent versions expire; live Restic snapshots retain their own retention policy.
+export const recoveryBucketLifecycleXml = '<LifecycleConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Rule><ID>aven-recovery-history</ID><Filter><Prefix></Prefix></Filter><Status>Enabled</Status><NoncurrentVersionExpiration><NoncurrentDays>90</NoncurrentDays></NoncurrentVersionExpiration><AbortIncompleteMultipartUpload><DaysAfterInitiation>7</DaysAfterInitiation></AbortIncompleteMultipartUpload></Rule></LifecycleConfiguration>'
+
+export function signedS3LifecycleRequest(input: {
+	region: string; accessKeyId: string; secretAccessKey: string; bucket: string; now?: Date
+}) {
+	return { ...signedS3Request({ ...input, method: 'PUT', lifecycleXml: recoveryBucketLifecycleXml }), body: recoveryBucketLifecycleXml }
+}
+
+export async function configureRecoveryBucketLifecycle(input: {
+	region: string; accessKeyId: string; secretAccessKey: string; bucket: string
+}) {
+	const request = signedS3LifecycleRequest(input)
+	const response = await fetch(request.url, { method: 'PUT', headers: request.headers,
+		body: request.body, signal: AbortSignal.timeout(30_000) })
+	await response.body?.cancel()
+	if (!response.ok) throw new Error(`Recovery bucket lifecycle configuration failed (HTTP ${response.status}).`)
 }
 
 export function signedS3ListBucketsRequest(input: {
@@ -455,6 +485,16 @@ export function signedS3ReadRequest(input: {
 	now?: Date
 }): { url: string; headers: Record<string, string> } {
 	return signedS3Request({ ...input, method: 'GET' })
+}
+
+export function signedS3VersionsRequest(input: {
+	region: string
+	accessKeyId: string
+	secretAccessKey: string
+	bucket: string
+	now?: Date
+}): { url: string; headers: Record<string, string> } {
+	return signedS3Request({ ...input, method: 'GET', versions: true })
 }
 
 export function signedS3CreateBucketRequest(input: {

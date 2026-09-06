@@ -117,7 +117,8 @@ For a customer request:
 2. the facade verifies the signed identity token and current customer entitlement;
 3. the facade maps the stable environment ID to the current verified routing
    generation;
-4. it creates a short-lived grant bound to environment, audience, and allowed action;
+4. it reads the current membership role and creates a short-lived grant bound to
+   environment, audience, role and allowed action; unknown combinations fail closed;
 5. the domain service verifies that grant and derives the exact customer login for its
    function; and
 6. the bounded pool provider opens or reuses only that customer's connection pool.

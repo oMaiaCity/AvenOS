@@ -26,7 +26,7 @@ const { email } = useConfig()
 				Create passkey
 			</Button>
 			<Text class="mb-0 mt-6 text-center text-[12px] leading-5 text-[#76808f]">
-				This link works until a passkey is created.
+				This link works for seven days, or until your first passkey is created.
 			</Text>
 		</template>
 	</AvenEmail>

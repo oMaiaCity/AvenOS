@@ -1,0 +1,243 @@
+name: platform-release
+
+# Builds read package dependencies, never deployment or recovery credentials.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: aven-platform-release-next
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.ref == 'refs/heads/next' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      checkout-postgres:
+        image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+        env:
+          POSTGRES_PASSWORD: aven-dev
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.PACKAGE_READ_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.93.1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            app/src-tauri -> ../../target/rust
+            services/artifact-store -> ../../target/rust
+          key: platform-linux
+      - uses: ./.github/actions/bun-install
+        with:
+          token: ${{ secrets.PACKAGE_READ_TOKEN }}
+      - uses: ./.github/actions/setup-platform-test-host
+      - uses: ./.github/actions/setup-security-audit
+      - name: Static, unit, infrastructure, and deployment-source checks
+        run: |
+          bun run check:secrets
+          bun audit
+          bun run check:rust-advisories
+          bun run check:docs
+          bun run check
+          bun run check:identity
+          bun run check:api
+          bun run check:checkout
+          bun run --cwd libs/aven-identity check
+          bun run --cwd libs/aven-hosting check
+          bun run --cwd services/static-site-host check
+          bun run --cwd libs/aven-customer-contracts check
+          bun run --cwd libs/aven-customer-runtime check
+          bun run --cwd libs/aven-actors check
+          bun run --cwd libs/aven-artifact-store check
+          bun run --cwd libs/aven-document-ingest check
+          bun run --cwd libs/aven-llm-client check
+          bun run --cwd services/platform-provisioner check
+          bun run --cwd services/intent-service check
+          bun run --cwd services/actor-runner check
+          bun run test:identity
+          bun run test:api
+          bun run test:checkout
+          bun run --cwd libs/aven-identity test
+          bun run --cwd libs/aven-hosting test
+          bun run --cwd services/static-site-host test
+          bun run --cwd libs/aven-customer-contracts test
+          bun run --cwd libs/aven-customer-runtime test
+          bun run --cwd libs/aven-actors test
+          bun run --cwd libs/aven-artifact-store test
+          cargo test --locked --workspace --manifest-path services/artifact-store/Cargo.toml
+          bun run --cwd services/platform-provisioner test
+          bun run --cwd services/intent-service test
+          bun run --cwd services/actor-runner test
+          bun run test:infra
+          bun run test:bootstrap
+          bun run test:deploy
+          bun run test:proxy-boundary
+          bun run test:recovery
+      - name: Test app integration
+        run: bun test
+        working-directory: app
+      - run: xvfb-run --auto-servernum bun run test:e2e:platform
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    outputs:
+      identity: ghcr.io/myavenceo/aven-identity@${{ steps.identity.outputs.digest }}
+      api: ghcr.io/myavenceo/aven-api@${{ steps.api.outputs.digest }}
+      checkout: ghcr.io/myavenceo/aven-checkout@${{ steps.checkout.outputs.digest }}
+      static_host: ghcr.io/myavenceo/aven-static-site-host@${{ steps.static_host.outputs.digest }}
+      provisioner: ghcr.io/myavenceo/aven-platform-provisioner@${{ steps.provisioner.outputs.digest }}
+      intent: ghcr.io/myavenceo/aven-intent-service@${{ steps.intent.outputs.digest }}
+      actor: ghcr.io/myavenceo/aven-actor-runner@${{ steps.actor.outputs.digest }}
+      artifact: ghcr.io/myavenceo/aven-artifact-store@${{ steps.artifact.outputs.digest }}
+      operations: ghcr.io/myavenceo/aven-operations@${{ steps.operations.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: database
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/database/Dockerfile
+          push: true
+          tags: ghcr.io/myavenceo/aven-database:run-${{ github.run_id }}-${{ github.run_attempt }}
+      - id: proxy
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/proxy/Dockerfile
+          push: true
+          tags: ghcr.io/myavenceo/aven-proxy:run-${{ github.run_id }}-${{ github.run_attempt }}
+      - id: identity
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/identity/Dockerfile
+          push: true
+          tags: ghcr.io/myavenceo/aven-identity:run-${{ github.run_id }}-${{ github.run_attempt }}
+          secrets: |
+            npm_token=${{ secrets.PACKAGE_READ_TOKEN }}
+      - id: api
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/aven-api/Dockerfile
+          push: true
+          tags: ghcr.io/myavenceo/aven-api:run-${{ github.run_id }}-${{ github.run_attempt }}
+          secrets: |
+            npm_token=${{ secrets.PACKAGE_READ_TOKEN }}
+      - id: checkout
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/checkout/Dockerfile
+          push: true
+          tags: ghcr.io/myavenceo/aven-checkout:run-${{ github.run_id }}-${{ github.run_attempt }}
+          secrets: |
+            npm_token=${{ secrets.PACKAGE_READ_TOKEN }}
+      - id: static_host
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/static-site-host/Dockerfile
+          push: true
+          tags: ghcr.io/myavenceo/aven-static-site-host:run-${{ github.run_id }}-${{ github.run_attempt }}
+      - id: provisioner
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/platform-provisioner/Dockerfile
+          push: true
+          tags: ghcr.io/myavenceo/aven-platform-provisioner:run-${{ github.run_id }}-${{ github.run_attempt }}
+          secrets: |
+            npm_token=${{ secrets.PACKAGE_READ_TOKEN }}
+      - id: intent
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/intent-service/Dockerfile
+          push: true
+          tags: ghcr.io/myavenceo/aven-intent-service:run-${{ github.run_id }}-${{ github.run_attempt }}
+          secrets: |
+            npm_token=${{ secrets.PACKAGE_READ_TOKEN }}
+      - id: actor
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/actor-runner/Dockerfile
+          push: true
+          tags: ghcr.io/myavenceo/aven-actor-runner:run-${{ github.run_id }}-${{ github.run_attempt }}
+          secrets: |
+            npm_token=${{ secrets.PACKAGE_READ_TOKEN }}
+      - id: artifact
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/artifact-store/Dockerfile
+          push: true
+          tags: ghcr.io/myavenceo/aven-artifact-store:run-${{ github.run_id }}-${{ github.run_attempt }}
+      - id: operations
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/operations/Dockerfile
+          push: true
+          tags: ghcr.io/myavenceo/aven-operations:run-${{ github.run_id }}-${{ github.run_attempt }}
+
+
+      - name: Record immutable release manifest
+        env:
+          IDENTITY_IMAGE: ghcr.io/myavenceo/aven-identity@${{ steps.identity.outputs.digest }}
+          DATABASE_IMAGE: ghcr.io/myavenceo/aven-database@${{ steps.database.outputs.digest }}
+          PROXY_IMAGE: ghcr.io/myavenceo/aven-proxy@${{ steps.proxy.outputs.digest }}
+          API_IMAGE: ghcr.io/myavenceo/aven-api@${{ steps.api.outputs.digest }}
+          CHECKOUT_IMAGE: ghcr.io/myavenceo/aven-checkout@${{ steps.checkout.outputs.digest }}
+          STATIC_SITE_HOST_IMAGE: ghcr.io/myavenceo/aven-static-site-host@${{ steps.static_host.outputs.digest }}
+          PLATFORM_PROVISIONER_IMAGE: ghcr.io/myavenceo/aven-platform-provisioner@${{ steps.provisioner.outputs.digest }}
+          INTENT_SERVICE_IMAGE: ghcr.io/myavenceo/aven-intent-service@${{ steps.intent.outputs.digest }}
+          ACTOR_RUNNER_IMAGE: ghcr.io/myavenceo/aven-actor-runner@${{ steps.actor.outputs.digest }}
+          ARTIFACT_STORE_IMAGE: ghcr.io/myavenceo/aven-artifact-store@${{ steps.artifact.outputs.digest }}
+          OPERATIONS_IMAGE: ghcr.io/myavenceo/aven-operations@${{ steps.operations.outputs.digest }}
+        run: |
+          jq -n --arg sha "$GITHUB_SHA" --arg run "$GITHUB_RUN_ID" \
+            '{version:1,sha:$sha,runId:($run|tonumber),images:env|with_entries(select(.key|endswith("_IMAGE")))}' > release.json
+      - name: Audit the exact published runtime images before releasing their manifest
+        run: |
+          mapfile -t images < <(jq -r '.images[]' release.json)
+          bash scripts/scan-container-os.sh "${images[@]}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aven-release
+          path: release.json
+          retention-days: 90
+          if-no-files-found: error

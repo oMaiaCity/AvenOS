@@ -244,6 +244,7 @@ test('skips a repeated provider update only for a complete settled local bootstr
 		resource('minio:index/s3Bucket:S3Bucket', 'production-state'),
 		resource('minio:index/s3Bucket:S3Bucket', 'production-backup'),
 		resource('minio:index/s3BucketVersioning:S3BucketVersioning', 'production-state-versioning'),
+		resource('minio:index/s3BucketVersioning:S3BucketVersioning', 'production-backup-versioning'),
 		resource('minio:index/s3BucketPolicy:S3BucketPolicy', 'production-state-policy'),
 		resource('minio:index/s3BucketPolicy:S3BucketPolicy', 'production-backup-policy')
 	]
@@ -929,13 +930,13 @@ test('uses solo operation by default and enables review when requested', () => {
 		wait_timer: 0,
 		prevent_self_review: false,
 		reviewers: [],
-		deployment_branch_policy: { protected_branches: true, custom_branch_policies: false }
+		deployment_branch_policy: { protected_branches: false, custom_branch_policies: true }
 	})
 	assert.deepEqual(githubEnvironmentProtection(true, 42), {
 		wait_timer: 0,
 		prevent_self_review: true,
 		reviewers: [{ type: 'User', id: 42 }],
-		deployment_branch_policy: { protected_branches: true, custom_branch_policies: false }
+		deployment_branch_policy: { protected_branches: false, custom_branch_policies: true }
 	})
 	assert.deepEqual(githubEnvironmentProtection(false, 42).reviewers, [])
 })

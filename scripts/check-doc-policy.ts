@@ -18,6 +18,7 @@ const authoritative = [
 	'docs/operations/incident-response.md',
 	'docs/operations/local-stack.md',
 	'docs/operations/maintenance.md',
+	'docs/operations/security-controls.md',
 	'docs/operations/startup-and-readiness.md',
 	'docs/operations/workstation-setup.md'
 ]
@@ -61,7 +62,10 @@ for (const file of commandDocs) {
 const platformWorkflows = [
 	'.github/workflows/platform-infrastructure.yml',
 	'.github/workflows/platform-deploy.yml',
-	'.github/workflows/platform-operations.yml'
+	'.github/workflows/platform-deploy-target.yml',
+	'.github/workflows/platform-release.yml',
+	'.github/workflows/platform-operations.yml',
+	'.github/workflows/platform-observe.yml'
 ]
 const workflowSource = platformWorkflows.map(read).join('\n')
 const accessGuide = read('docs/operations/access-and-secrets.md')
@@ -146,7 +150,7 @@ for (const required of [
 for (const workflow of [
 	'.github/workflows/docs-ci.yml',
 	'.github/workflows/platform-ci.yml',
-	'.github/workflows/platform-deploy.yml'
+	'.github/workflows/platform-release.yml'
 ]) {
 	if (!read(workflow).includes('bun run check:docs')) {
 		failures.push(`${workflow} must run the documentation gate`)

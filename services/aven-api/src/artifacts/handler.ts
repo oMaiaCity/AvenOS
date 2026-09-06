@@ -1,5 +1,6 @@
 import type { TenantGrantClaims } from '@avenos/aven-customer-contracts'
 import type { IdentityClaims } from '@avenos/aven-identity'
+import { readBoundedBytes } from '@avenos/http-boundary'
 import { z } from 'zod'
 import {
 	type ArtifactFileService,
@@ -104,7 +105,7 @@ export class ArtifactHandler {
 				)
 			}
 			if (segments[0] === 'client-runs' && segments.length === 2 && request.method === 'POST') {
-				const bytes = await request.arrayBuffer()
+				const bytes = await readBoundedBytes(request, MAX_CLIENT_RUN_BYTES)
 				if (bytes.byteLength > MAX_CLIENT_RUN_BYTES)
 					throw new AppError(413, 'CLIENT_RUN_TOO_LARGE', 'The client run is too large.')
 				const run = JSON.parse(new TextDecoder().decode(bytes)) as Omit<

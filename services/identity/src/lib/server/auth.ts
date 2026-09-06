@@ -1,11 +1,10 @@
 import { passkey } from '@better-auth/passkey'
 import { betterAuth } from 'better-auth'
-import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { bearer, deviceAuthorization, jwt } from 'better-auth/plugins'
 import type { IdentityConfig } from './config.js'
 import { trustedOrigins } from './config.js'
 import type { DatabaseContext } from './db.js'
-import { schema } from './schema.js'
+import { enrollmentAdapter, enrollmentContext, registrationPrfEnabled } from './enrollment.js'
 import { setupSignIn } from './setup-sign-in.js'
 
 export const AVENOS_DEVICE_CLIENT_ID = 'ceo.aven.os'
@@ -21,7 +20,7 @@ export function androidPasskeyOrigins(fingerprints: string[]): string[] {
 export function createAuth(
 	config: IdentityConfig,
 	database: DatabaseContext,
-	verifySetup: (token: string) => Promise<{ userId: string } | null>
+	verifySetup: (token: string) => Promise<{ userId: string; tokenHash: string } | null>
 ) {
 	const origins = [
 		...trustedOrigins(config),
@@ -33,7 +32,7 @@ export function createAuth(
 		basePath: '/api/auth',
 		secret: config.BETTER_AUTH_SECRET,
 		trustedOrigins: origins,
-		database: drizzleAdapter(database.db, { provider: 'pg', schema }),
+		database: enrollmentAdapter(database),
 		user: {
 			additionalFields: {
 				role: {
@@ -47,7 +46,10 @@ export function createAuth(
 		},
 		session: {
 			expiresIn: config.SESSION_MAX_AGE_SECONDS,
-			updateAge: config.SESSION_UPDATE_AGE_SECONDS
+			updateAge: config.SESSION_UPDATE_AGE_SECONDS,
+			additionalFields: {
+				setupTokenHash: { type: 'string', required: false, input: false, returned: false }
+			}
 		},
 		advanced: { useSecureCookies: config.NODE_ENV === 'production' },
 		rateLimit: {
@@ -78,6 +80,23 @@ export function createAuth(
 				rpName: 'Aven',
 				origin: origins,
 				authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
+				registration: {
+					afterVerification: ({ ctx, verification, clientData, user }) => {
+						const context = enrollmentContext.getStore()
+						const session = ctx.context.session
+						const prfEnabled = registrationPrfEnabled(clientData.clientExtensionResults)
+						if (
+							!context ||
+							!session ||
+							!verification.registrationInfo?.userVerified ||
+							(config.REQUIRE_PASSKEY_PRF && !prfEnabled)
+						)
+							throw new Error(
+								'Passkey registration requires a verified user and supported authenticator.'
+							)
+						context.registration = { sessionId: session.session.id, userId: user.id, prfEnabled }
+					}
+				},
 				authentication: {
 					afterVerification: ({ verification }) => {
 						if (!verification.authenticationInfo.userVerified)
@@ -99,10 +118,13 @@ export function createAuth(
 					definePayload: async ({ user, session }) => {
 						const hasPasskey = Boolean(
 							(
-								await database.pool.query('SELECT 1 FROM passkey WHERE user_id=$1 LIMIT 1', [
-									user.id
-								])
-							).rows[0]
+								await database.pool.query(
+									`SELECT 1 FROM session s JOIN passkey p ON p.user_id=s.user_id
+							 WHERE s.id=$1 AND s.user_id=$2 AND s.expires_at > now()
+							 AND s.setup_token_hash IS NULL LIMIT 1`,
+									[session.id, user.id]
+								)
+							).rows.length
 						)
 						return {
 							sub: user.id,

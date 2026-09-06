@@ -2,6 +2,17 @@ import { describe, expect, it } from 'vitest'
 import { renderEmail } from '../src/lib/server/email/templates.js'
 
 describe('email copy', () => {
+	it('renders branded security notices without adding a setup credential', () => {
+		const email = renderEmail('identity.security', {
+			message: 'Your first passkey was registered.',
+			accessUrl: 'https://aven.id/dashboard',
+			baseUrl: 'https://portal.aven.ceo'
+		})
+		expect(email.subject).toBe('Your aven.id account security')
+		expect(email.text).toContain('Your first passkey was registered.')
+		expect(email.html).not.toContain('AVENEMAILTOKEN')
+		expect(email.text).not.toContain('token=')
+	})
 	it('renders compiled checkout and setup templates', () => {
 		const checkout = renderEmail('name.purchase-link', {
 			name: 'alice',
@@ -28,7 +39,9 @@ describe('email copy', () => {
 		expect(login.subject).toBe('Login for alice')
 		expect(login.text).toContain('Create your passkey')
 		expect(login.text).toContain('https://id.example/setup')
-		expect(login.text).toContain('This link works until a passkey is created.')
+		expect(login.text).toContain(
+			'This link works for seven days, or until your first passkey is created.'
+		)
 		expect(login.html).toContain('Create passkey')
 	})
 

@@ -1,0 +1,8 @@
+{
+  "subject": "Your aven.id account security",
+  "fixture": {
+    "message": "Your first passkey was registered. All setup links and setup sessions are now invalid.",
+    "accessUrl": "https://aven.id/dashboard",
+    "baseUrl": "https://portal.aven.ceo"
+  }
+}

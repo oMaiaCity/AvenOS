@@ -1,0 +1,9 @@
+name: Build pinned Rust advisory checker
+description: Builds the checksum-verified crates.io source without sharing executable caches across trust boundaries
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        cargo install cargo-audit --version 0.22.2 --locked --root "$RUNNER_TEMP/aven-security-tools" --jobs 2
+        echo "$RUNNER_TEMP/aven-security-tools/bin" >> "$GITHUB_PATH"

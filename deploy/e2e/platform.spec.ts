@@ -527,7 +527,10 @@ interface MailSummary {
 	Subject: string
 }
 
-async function waitForMail(subject: RegExp): Promise<{ text: string; html: string }> {
+async function waitForMail(
+	subject: RegExp,
+	content?: RegExp
+): Promise<{ text: string; html: string }> {
 	const deadline = Date.now() + 30_000
 	while (Date.now() < deadline) {
 		const list = (await json(await fetch(`${mailpit}/api/v1/messages`))) as {
@@ -539,7 +542,8 @@ async function waitForMail(subject: RegExp): Promise<{ text: string; html: strin
 				Text?: string
 				HTML?: string
 			}
-			return { text: detail.Text ?? '', html: detail.HTML ?? '' }
+			if (!content || content.test(detail.Text ?? ''))
+				return { text: detail.Text ?? '', html: detail.HTML ?? '' }
 		}
 		await new Promise((resolve) => setTimeout(resolve, 250))
 	}
@@ -669,11 +673,49 @@ test('fresh split stack: checkout, identity, facade, and managed hosting', async
 	await expect(page).toHaveURL(/\/purchase\/success/)
 
 	const setupMail = await waitForMail(new RegExp(`Login for ${name}`))
-	const setupUrl = linkFrom(setupMail, new URL(identityBrowser).host)
+	let setupUrl = linkFrom(setupMail, new URL(identityBrowser).host)
 	await page.goto(setupUrl)
 	await expect(page.getByRole('heading', { name: 'Your account' })).toBeVisible()
+	await expect(page).toHaveURL(`${identityBrowser}/dashboard`)
+	// Pending onboarding remains cross-device, but neither browser receives normal service access.
+	const pendingContext = await browser.newContext()
+	const pendingPage = await pendingContext.newPage()
+	await pendingPage.goto(setupUrl)
+	await expect(pendingPage.getByRole('heading', { name: 'Your account' })).toBeVisible()
+	expect((await pendingContext.request.get(`${identityBrowser}/api/auth/token`)).status()).toBe(403)
+	expect((await context.request.get(`${identityBrowser}/api/auth/token`)).status()).toBe(403)
+	const useNotice = await waitForMail(/Your aven.id account security/, /setup link was opened/)
+	expect(useNotice.text).not.toContain('token=')
+	// Exercise the public replacement action and its real per-account cooldown. No
+	// test-only clock, privileged account edit, or direct database replacement is used.
+	await expect(async () => {
+		await page.getByRole('button', { name: 'Email a replacement setup link' }).click()
+		await expect(page.getByRole('status')).toContainText('A replacement link is queued', {
+			timeout: 1000
+		})
+	}).toPass({ timeout: 70_000, intervals: [10_000] })
+	expect((await pendingContext.request.get(setupUrl)).status()).toBe(401)
+	const replacement = await waitForMail(
+		/Your aven.id account security/,
+		/requested a replacement setup link/
+	)
+	setupUrl = linkFrom(replacement, new URL(identityBrowser).host)
+	await page.goto(setupUrl)
+	await pendingPage.goto(setupUrl)
+	await expect(page.getByRole('heading', { name: 'Your account' })).toBeVisible()
+	expect((await pendingContext.request.get(`${identityBrowser}/api/auth/token`)).status()).toBe(403)
 	await page.getByRole('button', { name: 'Add passkey' }).click()
 	await expect(page.getByRole('list', { name: 'Passkeys' }).getByRole('listitem')).toHaveCount(1)
+	expect(
+		await (await pendingContext.request.get(`${identityBrowser}/api/auth/get-session`)).json()
+	).toBeNull()
+	expect((await pendingContext.request.get(setupUrl)).status()).toBe(401)
+	await pendingContext.close()
+	const enrollmentNotice = await waitForMail(
+		/Your aven.id account security/,
+		/first passkey was registered/
+	)
+	expect(enrollmentNotice.text).not.toContain('token=')
 	const [firstCredential] = await context.credentials.get({ rpId: 'localhost' })
 	expect(firstCredential).toBeDefined()
 
@@ -684,9 +726,13 @@ test('fresh split stack: checkout, identity, facade, and managed hosting', async
 	await secondContext.credentials.install()
 	const secondPage = await secondContext.newPage()
 	await secondPage.goto(`${identityBrowser}/dashboard`)
-	await expect(secondPage.getByRole('list', { name: 'Passkeys' }).getByRole('listitem')).toHaveCount(1)
+	await expect(
+		secondPage.getByRole('list', { name: 'Passkeys' }).getByRole('listitem')
+	).toHaveCount(1)
 	await secondPage.getByRole('button', { name: 'Add another passkey' }).click()
-	await expect(secondPage.getByRole('list', { name: 'Passkeys' }).getByRole('listitem')).toHaveCount(2)
+	await expect(
+		secondPage.getByRole('list', { name: 'Passkeys' }).getByRole('listitem')
+	).toHaveCount(2)
 	const [secondCredential] = await secondContext.credentials.get({ rpId: 'localhost' })
 	expect(secondCredential).toBeDefined()
 	expect(secondCredential.id).not.toBe(firstCredential.id)
@@ -860,6 +906,50 @@ test('fresh split stack: checkout, identity, facade, and managed hosting', async
 		id: string
 	}[]
 	expect(firstList.map((intent) => intent.id)).not.toContain(secondIntentId)
+	// The same still-valid identity token must obey current database membership.
+	const membershipDatabase = new pg.Pool({
+		connectionString: databaseUrl.replace(/\/postgres$/, '/aven_api'),
+		max: 1
+	})
+	try {
+		await membershipDatabase.query(
+			'UPDATE customer_environment_memberships SET role=$1 WHERE environment_id=$2 AND subject_id=$3',
+			['member', environment.id, claims.sub]
+		)
+		expect((await fetch(intentBase, { headers: authorizedHeaders })).status).toBe(200)
+		expect(
+			(
+				await fetch(`${intentBase}/${targetIntentId}`, {
+					method: 'DELETE',
+					headers: authorizedHeaders
+				})
+			).status
+		).toBe(403)
+		expect(
+			(await fetch(`${intentBase}/${targetIntentId}`, { headers: authorizedHeaders })).status
+		).toBe(200)
+		await membershipDatabase.query(
+			'DELETE FROM customer_environment_memberships WHERE environment_id=$1 AND subject_id=$2',
+			[environment.id, claims.sub]
+		)
+		expect((await fetch(intentBase, { headers: authorizedHeaders })).status).toBe(404)
+		// Membership in the other environment is unaffected.
+		expect(
+			(
+				await fetch(`${api}/api/environments/${secondEnvironment.id}/intents`, {
+					headers: authorizedHeaders
+				})
+			).status
+		).toBe(200)
+	} finally {
+		await membershipDatabase.query(
+			`INSERT INTO customer_environment_memberships(environment_id,subject_id,role)
+			VALUES($1,$2,'owner') ON CONFLICT(environment_id,subject_id) DO UPDATE SET role='owner'`,
+			[environment.id, claims.sub]
+		)
+		await membershipDatabase.end()
+	}
+	expect((await fetch(intentBase, { headers: authorizedHeaders })).status).toBe(200)
 	const voiceFixture = silentVoiceFixture()
 	const anonymousSpeaker = {
 		session_id: voiceFixture.session_id,

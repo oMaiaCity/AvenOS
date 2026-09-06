@@ -11,6 +11,7 @@
 		"test": "vitest run"
 	},
 	"dependencies": {
+		"@avenos/http-boundary": "workspace:*",
 		"@avenos/aven-identity": "workspace:*",
 		"@avenos/aven-customer-contracts": "workspace:*",
 		"@avenos/aven-customer-runtime": "workspace:*",
