@@ -1,6 +1,6 @@
 # Automatic invoice-to-bank-transaction reconciliation
 
-Status: canonicalization and ranking foundation implemented; automated decision architecture proposed
+Status: shared-solver extraction, scoped matching and human-confirmed relationships implemented on device and server; automatic settlement architecture proposed
 
 Audience: contributors to document ingestion, Artifact Store schemas, Actor planning,
 customer-data services, finance views, and bank connectors
@@ -17,11 +17,13 @@ This paper specifies how to build that capability on the artifact-first document
 [PR #188](https://github.com/MyAvenCEO/avenOS/pull/188). It extends
 [Artifact-first semantic enrichment and affordance discovery](artifact-first-semantic-enrichment.md)
 with the canonical facts, matching algorithm, decision boundary, automation loop, and
-proof required for reconciliation. This branch implements the canonical statement,
-transaction, open-item, and match-candidate schemas; deterministic invoice and statement
-normalizers; bounded transaction fan-out; and an explainable ranking Actor. Customer-scoped
-search, global assignment, decisions, projections, and product review remain target architecture,
-so invoice reconciliation does not yet ship as a complete product flow.
+proof required for reconciliation. The implemented flow extracts and validates invoices
+and statements, publishes canonical facts, queries a customer-scoped snapshot, ranks
+bookings automatically and presents a comparison in the existing UI. A person's
+confirmation or rejection publishes an immutable, evidence-linked decision. Both
+placements use the general observation solver and the same domain contributions.
+Global assignment, allocation projections and automatic settlement remain target
+architecture; a confirmed `supports-booking` relationship is not a payment allocation.
 
 The central rule is:
 
@@ -44,20 +46,11 @@ PR #188 establishes a useful extraction boundary:
 - the document Actors attach field or row evidence and production provenance to those
   outputs.
 
-On PR #188 alone those are extraction proposals. This branch closes the first two domain gaps
-and exposes a ranking capability, while the following product gaps remain:
-
-1. There is no bounded query result saying which transactions were searched and whether
-   the searched corpus was complete.
-2. There is no policy decision, accepted allocation, or current reconciliation projection.
-3. The document runtime creates canonical facts, but it does not own a customer-wide query
-   port that automatically supplies transaction candidates to the ranking Actor.
-4. The current generic exploratory runner proves guaranteed capability outputs; it does
-   not yet dynamically discover transaction rows and execute this complete product flow.
-
-The first implementation should close those gaps without asking a model to read two raw
-documents again. Extraction creates reusable facts once. Reconciliation consumes those
-facts deterministically wherever possible.
+On PR #188 alone those are extraction proposals. The implemented skill now closes
+extraction-to-review orchestration without asking a model to compare the raw documents
+again. Remaining boundaries concern stronger accounting claims: the snapshot query is
+not evidence that every bank statement was imported, the 64-occurrence shortlist may
+truncate, and there is no global allocation ledger or automatic decision policy.
 
 Historical avenOS work validates several parts of this shape. The statement fan-out card
 made transaction rows queryable and idempotent; the first reconciliation card required an
@@ -122,7 +115,8 @@ The implementation uses or proposes the following concrete artifact vocabulary:
 | `banking.transaction@1` | One immutable posted transaction occurrence with signed amounts, dates, account identity, counterparty, remittance fields, and source position | Registered and produced |
 | `bookkeeping.open-item@1` | The settlement obligation derived from exact invoice artifacts, including direction, amount due, currency, dates, parties, bank identifiers, and payment references | Registered and produced |
 | `reconciliation.search-result@1` | A generation-pinned, bounded search observation with account and date scope, completeness, gaps, counts, and ordered transaction references | Proposed |
-| `reconciliation.match-candidate@1` | One proposed one-to-one match with feature outcomes, blockers, rank score, and exact input lineage | Registered and produced by the ranking Actor |
+| `reconciliation.match-candidate@2` | One proposal with feature outcomes, blockers, rank score, and required exact transaction input ordinal | Registered and produced by the ranking Actor using matcher `invoice-transaction-v2` |
+| `reconciliation.decision@1` | Immutable human acceptance or rejection of a `supports-booking` relationship, with exact candidate/open-item/transaction inputs | Registered and produced by explicit review |
 | `reconciliation.match-decision@1` | Accepted, rejected, or superseded disposition produced by either a policy Actor or a human-backed selection Actor | Proposed |
 | `reconciliation.report@1` | One run's totals, unresolved items, corpus coverage, matcher and policy versions, and decision references | Proposed |
 
@@ -562,6 +556,54 @@ real uploads and assert durable outputs. Its minimum case contains one invoice, 
 transaction, one same-amount distractor, and one unrelated row. The exact transaction should
 win for inspectable reference or party evidence, not because the fixture name is recognized.
 
+### Current executable flow and validation boundaries
+
+`DocumentProcessingRuntime` executes the catalog in `skill.ts` through
+`executeObservedProgram`. Only committed observations unlock more work. Exact sealed
+page and transaction-batch collections drive fan-out/gathers. Extraction revision
+bindings prevent candidate, details and validation from different runs being joined.
+Successful invocation publications replay before an Actor is invoked again.
+
+CSV files have an earlier, mandatory human checkpoint. Only exact reviewed export
+profiles with unambiguous account, currency, dates and valid complete rows may reach
+document-type review; a model's confidence score cannot substitute for these checks.
+The solver requires a committed human confirmation bound to the original file digest
+and detection revision before producing financial statement candidates or bookings.
+This decision is separate from accepting an invoice-to-booking relationship. Unknown
+formats and ambiguous rows stay blocked, with no manual override into reconciliation.
+The [CSV corpus](../fixtures/golden/bank-csv/README.md) records eight synthetic layouts
+and their sources; only one checked-in layout currently passes every admission check.
+That narrow coverage is not a measured near-100% recognition rate or proof of origin.
+
+Replayable inspection is `core.file-inspection@2`, with its decoded-page blob required.
+The new inspection and match schemas have new versions; the original version-one
+definitions remain byte-for-byte unchanged. Immutable registered contracts are not
+rewritten when a skill gains new behavior, and there is no legacy execution branch.
+
+`reconcileInvoices` uses that engine for typed snapshot retrieval, amount-first
+shortlisting, the production ranking Actor, and review preparation. It retains both
+booked and original-currency comparisons from the prototype. Provider-ID conflict
+groups stay together; fingerprint-only repeated rows stay distinct. Ranking compares
+the invoice gross amount, not the remaining balance of an already-paid invoice.
+Unicode letters and digits survive identity normalization. Reused customer references
+cannot establish invoice-specific eligibility, and contradictory FX signs block it.
+
+Importing either document first works. A subsequent import reruns retrieval over the
+new snapshot. The native app uses its existing comparison layout and buttons; the
+model can request review but cannot invoke confirmation. `decideReconciliation`
+admits an explicit effect and stores exactly three evidence inputs. Publication
+identity is fixed to the invoice/transaction pair, so duplicate acknowledgement and
+contradictory retries cannot create a second decision for that pair. Rejection can
+show the next candidate. Reversing a saved decision is not yet supported.
+
+The snapshot freezes published occurrences, not real-world bank coverage. Queries
+currently use the publication sequence without a restore epoch token; do not span
+an environment restore with an active review/query session. Start a fresh session
+after restore. Successful publication replay is durable, but failed local attempts,
+per-step claims and host cancellation propagation are not a complete execution
+journal. These are limits of the current implementation, not claims of automatic
+financial settlement.
+
 ### Current validation corpus and constraints
 
 The suite committed with the first implementation slice is primarily an engineering
@@ -571,9 +613,9 @@ not be used as evidence for enabling automatic decisions.
 
 At this revision the reconciliation-specific coverage consists of:
 
-- 12 hand-authored deterministic cases in
+- hand-authored deterministic cases in
   [`reconciliation.test.ts`](../libs/aven-document-ingest/tests/reconciliation.test.ts),
-  covering normalization, provider-ID and fallback deduplication, booked versus original FX
+  covering normalization, provider-ID grouping and distinct fingerprint rows, booked versus original FX
   amounts, the 128-row extraction ceiling, the 64-artifact publication boundary, reference
   boundaries, duplicate observations, IBAN-only abstention, unknown direction, unverified
   coverage, ranking output, and input lineage;
@@ -584,7 +626,20 @@ At this revision the reconciliation-specific coverage consists of:
   [`artifacts.test.ts`](../services/aven-api/tests/artifacts.test.ts);
 - schema-registration and representative-payload validation inside the Artifact Store core;
   and
-- one historical Actor Runner happy-path ranking case plus negative-route and omitted-output
+- a shared-flow suite with both import orders, pagination, truncation, conflicting
+  provider observations, lost acknowledgements, replay and rejected alternatives in
+  [`reconciliation-flow.test.ts`](../libs/aven-document-ingest/tests/reconciliation-flow.test.ts);
+- a real Rust Artifact Store/PostgreSQL financial flow with production decoders and
+  Actors, restart replay, local/server equality, decisions and scope denial in
+  [`reconciliation.persistence.e2e.test.ts`](../services/actor-runner/tests/reconciliation.persistence.e2e.test.ts);
+- native Tauri PDF imports, CSV document confirmation and separate invoice-match
+  confirmation on Device and Server in [`platform.spec.ts`](../deploy/e2e/platform.spec.ts);
+- 13 [synthetic market PDFs](../fixtures/golden/reconciliation-market/README.md),
+  exact decoder/text assertions, seven independent matching policy scenarios,
+  and opt-in real-model extraction against authored field expectations;
+- seven checksum-pinned [public issuer specimens](../fixtures/golden/public-documents/README.md),
+  covering 17 decoded pages and two opt-in blank-form safety cases; and
+- the historical Actor Runner happy-path ranking case plus negative-route and omitted-output
   cases in
   [`artifact-first-enrichment.e2e.test.ts`](../services/actor-runner/tests/artifact-first-enrichment.e2e.test.ts).
 
@@ -593,22 +648,51 @@ Those tests have important boundaries:
 | Constraint | Consequence |
 | --- | --- |
 | Matcher fixtures are small, synthetic, and authored from the implementation rules | They detect regressions but cannot estimate recall, precision, calibration, or performance on unseen documents |
-| The document-runtime tests use a fixed decoder, hard-coded model responses, and an in-memory recording publication gateway | They exercise the complete coordinator and provenance shape, but not real OCR/model variance, HTTP transport, database persistence, or Artifact Store service recovery |
+| Fast document-runtime tests use a fixed decoder, hard-coded model responses, and an in-memory publication gateway | They isolate scheduling and provenance; the separate real-store and native rails prove transport and persistence |
 | The 65-row statement is a batching boundary test with mechanically generated rows | It proves 64+1 publication and replay behavior, not realistic statement diversity or row-extraction quality |
 | The API tests use a mocked Artifact Store backend | They prove server-side client-procedure allowlists and envelopes, but not a real API-to-Artifact-Store transaction or tenant database migration |
-| Artifact Store tests validate four representative payloads against registered schemas | They do not fuzz schema boundaries or publish the full actor output graph through the running service |
-| The two provider-backed goldens cover one invoice and one receipt, require external credentials, and are skipped by the ordinary suite when unavailable | There is no provider-backed statement extraction or provider-backed invoice-to-transaction pair in the merge-blocking rail |
-| Existing PDF goldens are synthetic receipt documents used mainly for decoding and rendering | They are not labeled reconciliation examples and contain no corresponding bank statements |
-| The historical Actor Runner E2E uses test-only predicates and actors | It proves planning and affordance separation, not that the production normalizers and ranker run through the generic planner |
+| Core schema tests use representative payloads; the real-store flow publishes the financial graph | Neither constitutes exhaustive schema fuzzing |
+| The provider-backed tests are explicit opt-ins: two reviewed OCR goldens, 13 synthetic market documents and two public blank-form negatives | They prove those inputs on the selected model, not statistical accuracy; ordinary offline tests skip them |
+| Native PDF/CSV reconciliation runs use deterministic model output by default and an optional real provider on both execution placements | Both modes prove the tested product path; neither establishes diverse bank/supplier recognition, and the real-store image rail substitutes model responses |
+| Public specimens are official examples, not labeled customer invoices paired with actual bookings; five have only checksum/decoding assertions | Their presence is not evidence of successful financial extraction; synthetic official-notice coverage remains exploratory |
+| The historical Actor Runner E2E uses test-only predicates and actors | Production normalizers and the ranker are additionally exercised through the observation solver in the new real-store and native rails |
 | Document-derived statement coverage deliberately remains `unverified` | Current document uploads can produce ranked review candidates, but cannot exercise a legitimate automatic-decision success case |
-| Customer-scoped search, global assignment, decisions, projections, and review UI are not implemented | Corpus completeness, mutual uniqueness, concurrency, stale review, supersession, and double-allocation invariants cannot yet be tested end to end |
-| Name normalization is intentionally small and mostly ASCII-oriented | The current suite does not establish multilingual party matching, legal-suffix handling, transliteration, or locale-specific reference behavior |
+| Customer-scoped retrieval and human decisions exist; global assignment, supersession and allocation projections do not | No mutual-uniqueness or double-allocation guarantee follows from accepting a supporting-document relationship |
+| Name normalization preserves Unicode but remains heuristic | The suite does not establish multilingual matching quality, legal-suffix handling or transliteration accuracy |
 
 There are also no production-labeled invoice/transaction pairs, held-out evaluation split,
 property-based allocation tests, bank-connector captures, or measured false-positive
-confidence interval. The current green suite therefore supports merging the canonicalization
-and review-ranking foundation. It does not support claims about automatic-match precision or
+confidence interval. The suite therefore qualifies deterministic orchestration and
+human-backed reconciliation. It does not support claims about automatic-match precision or
 launch readiness.
+
+Verification checkpoint, 2026-09-06: the continuation passed 89 document-ingest
+tests, 178 app tests, 27 Actor Runner tests, and the native harness's ten real-store/
+runner checks plus 64 checkout checks. The ordinary document suite intentionally
+skips 24 optional provider/public-cache cases. Separately, the configured
+`qwen3.8-flash-next` endpoint with the `qwen-tools` adapter passed both original OCR
+goldens, all 13 market documents and both public blank-form negatives. All seven
+public specimens also passed pinned-byte and page-count checks. These are individual
+observations, not an accuracy estimate or a guarantee about future model revisions.
+
+The native rail passes with deterministic output and with the actual provider on
+both placements, including separate CSV classification and relationship decisions.
+The final fresh-build runs took 28.1 seconds with deterministic output and 2.2 minutes
+with the real provider; both retained the 180-second journey limit.
+A live run also hit the 60-second remote-statement wait without a terminal result;
+the original run had no intermediate server progress, so its cause was not established.
+Subsequent proof includes live stage/attempt progress and a regression preventing
+monitoring errors from leaving a permanently active desktop status. The overall
+journey remains limited to 180 seconds; busy or unavailable providers can still
+make an opt-in run fail. No expected finance values were loosened to pass a model.
+
+The full repository lint command is not green: 1,295 pre-existing errors remain,
+including existing formatting in `GatePreview.svelte`. No new lint errors remain
+in changed files; its only markup change adds a test selector, without a layout
+or style change. Documentation, type checks, scoped Rust tests and the infrastructure,
+bootstrap, deployment-validation and disposable backup/restore gates passed.
+The owning [test procedures](operations/build-and-test.md) define how to repeat these
+checks; optional model runs must be explicitly configured.
 
 Required deterministic cases include:
 
@@ -660,18 +744,21 @@ An uncalibrated rank score must not be renamed “confidence” to meet a launch
 ### Slice 1: canonical finance facts and manual reconciliation
 
 1. **Implemented:** register statement, transaction, open-item, and match-candidate schemas.
-   Search-result, decision, report, and navigational reference rules remain.
+   Human relationship decisions are also registered. Accounting search-result/report
+   artifacts and allocation/supersession rules remain proposed.
 2. **Implemented:** add replay-safe statement fan-out in bounded publications. Document-derived
    coverage stays `unverified`, and hitting 128 rows becomes `row-limit-reached`.
 3. **Implemented:** add invoice-to-open-item normalization using both PR #188 invoice outputs.
-4. Build customer-scoped transaction and open-item projections.
-5. **Partly implemented:** the deterministic, versioned feature comparator and ranking Actor
-   exist; customer-scoped bounded retrieval remains.
-6. Present ranked candidates and publish human-backed decisions only.
+4. **Implemented:** retrieve immutable customer-scoped transactions and open items at
+   one publication watermark. Dedicated accounting projections remain proposed.
+5. **Implemented:** compose retrieval and the deterministic comparator/ranking Actor
+   through the general observation solver on both hosts.
+6. **Implemented:** present ranked candidates and publish human-backed relationship
+   decisions through the existing comparison control.
 
-The implemented foundation can explain why one supplied transaction ranks above another. It
-does not yet claim “this invoice is exactly this booking,” because the bounded search record
-and separate human or policy decision are intentionally still absent.
+The implemented flow records “this invoice supports this booking” after a person's
+confirmation. The remaining slices below strengthen that claim to automatic settlement
+and more complex accounting relationships; they are not implemented by a rank score.
 
 ### Slice 2: safe automatic exact matches
 

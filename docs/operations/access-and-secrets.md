@@ -9,6 +9,16 @@ internal encryption roots.
 
 ## Human access
 
+The native app exchanges its revocable identity session for a short-lived,
+audience-bound service token. Concurrent data requests share one refresh, and the
+token stays only in native memory, keyed to that exact session. Reuse ends at most
+60 seconds after exchange or 15 seconds before token expiry, whichever comes first;
+both monotonic time and wall-clock expiry are checked. Starting sign-in or signing
+out clears the cache. A failed refresh never falls back to stale credentials.
+Product services still verify each request and identity rate limits remain enabled.
+This avoids repeated document/polling requests exhausting the token-minting limit;
+it does not make revocation of an already-issued JWT instantaneous.
+
 A single repository administrator can bootstrap, deploy, maintain, and recover the system.
 That operator must be able to recover:
 

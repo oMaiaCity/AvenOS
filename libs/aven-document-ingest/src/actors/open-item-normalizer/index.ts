@@ -14,7 +14,7 @@ function compact(value: string): string {
 	return value
 		.normalize('NFKC')
 		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, '')
+		.replace(/[^\p{L}\p{N}]+/gu, '')
 }
 
 function validationStatus(value: unknown): ValidationStatus {
@@ -33,8 +33,11 @@ export function normalizeInvoiceOpenItem(
 ): OpenItem {
 	const supplier = details.supplier === null ? {} : object(details.supplier, 'invoice supplier')
 	const payment = details.payment == null ? null : object(details.payment, 'invoice payment')
-	const supplierName = text(supplier.name) ?? String(candidate.supplier)
-	const invoiceNumber = String(candidate.invoiceNumber)
+	const supplierName = text(supplier.name) ?? text(candidate.supplier)
+	const invoiceNumber = text(candidate.invoiceNumber)
+	const currency = text(candidate.currency)
+	if (!supplierName || !invoiceNumber || !currency || !/^[A-Z]{3}$/.test(currency))
+		throw new Error('Invoice identity and currency must be known before reconciliation.')
 	const grossMinor = money(candidate.grossMinor)
 	if (grossMinor === null) throw new Error('invoice gross amount is invalid')
 	const outstandingMinor = money(payment?.totalOutstandingMinor)
@@ -59,13 +62,12 @@ export function normalizeInvoiceOpenItem(
 		(value, index, values): value is string => Boolean(value) && values.indexOf(value) === index
 	)
 	const businessIdentity = `${compact(supplierName)}:${compact(invoiceNumber)}`
+	if (!compact(supplierName) || !compact(invoiceNumber))
+		throw new Error('Invoice supplier and number must contain identifying letters or digits.')
 
 	return {
-		businessKey:
-			businessIdentity === ':'
-				? `document:${compact(String(candidate.summary))}`
-				: `invoice:${businessIdentity}`,
-		businessKeyBasis: businessIdentity === ':' ? 'document-fallback' : 'supplier-invoice-number',
+		businessKey: `invoice:${businessIdentity}`,
+		businessKeyBasis: 'supplier-invoice-number',
 		documentKind: text(details.documentKind) ?? 'invoice',
 		direction: 'unknown',
 		supplierName,
@@ -74,7 +76,7 @@ export function normalizeInvoiceOpenItem(
 		orderNumber: text(details.orderNumber),
 		issueDate: text(details.issueDate),
 		dueDate: text(candidate.dueDate),
-		currency: String(candidate.currency).toUpperCase(),
+		currency,
 		grossMinor,
 		amountDueMinor,
 		amountPaidMinor,

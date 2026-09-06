@@ -425,9 +425,10 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/v1/scopes/{scope_id}/publications/{publication_id}",
-            put(publish),
+            put(publish).get(read_publication),
         )
         .route("/v1/scopes/{scope_id}/publications", get(read_feed))
+        .route("/v1/scopes/{scope_id}/artifacts", get(query_artifacts))
         .route(
             "/v1/scopes/{scope_id}/artifacts/{artifact_id}",
             get(get_artifact),
@@ -749,6 +750,50 @@ struct FeedQuery {
 
 const fn default_feed_limit() -> u32 {
     100
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ArtifactQuery {
+    type_key: String,
+    snapshot_sequence: Option<i64>,
+    after: Option<Uuid>,
+    #[serde(default = "default_feed_limit")]
+    limit: u32,
+}
+
+async fn query_artifacts(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(scope_id): Path<Uuid>,
+    Query(query): Query<ArtifactQuery>,
+) -> Result<Response, ApiError> {
+    state.auth.authorize(&headers, scope_id)?;
+    let store = scoped_store(&state, &headers, scope_id).await?;
+    let page = store
+        .query_artifacts(
+            scope_id,
+            &query.type_key,
+            query.snapshot_sequence,
+            query.after,
+            query.limit,
+        )
+        .await?;
+    Ok(Json(page).into_response())
+}
+
+async fn read_publication(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((scope_id, publication_id)): Path<(Uuid, Uuid)>,
+) -> Result<Response, ApiError> {
+    state.auth.authorize(&headers, scope_id)?;
+    let store = scoped_store(&state, &headers, scope_id).await?;
+    let publication = store
+        .read_publication(scope_id, publication_id)
+        .await?
+        .ok_or_else(ApiError::unavailable)?;
+    Ok(Json(publication).into_response())
 }
 
 async fn read_feed(

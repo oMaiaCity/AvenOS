@@ -169,10 +169,12 @@ proves exact encrypted fresh-target restore.
   ad hoc backup workflow.
 - Actor runs are durable; the richer generic observation/effect journal remains future
   runtime work.
-- Document import supports device and remote execution. The remote Actor Runner uses
-  the selected customer's run ledger and Artifact Store scope. Its document
-  application executor is intentionally separate from the still-narrow generic
-  planner; server OCR and model-backed understanding remain future capabilities.
+- Document ingestion and invoice reconciliation share the observation-driven general
+  solver on device and remote execution. The remote Actor Runner uses the selected
+  customer's run ledger and Artifact Store scope, including model-backed document
+  understanding. Deterministic fixtures prove transport and semantic parity, not live
+  provider extraction accuracy. Successful publications replay after restart; local
+  in-flight progress and failed attempts are not a durable per-step journal.
 
 These gaps must stay explicit. They are not permission to add shared databases,
 cluster-wide runtime credentials, handwritten customer setup, caller-selected routing,

@@ -842,6 +842,58 @@ pub fn llm_openai_stream_cancel(
 }
 
 #[tauri::command]
+pub async fn artifact_query(
+    type_key: String,
+    snapshot_sequence: Option<u64>,
+    after: Option<String>,
+    state: tauri::State<'_, AuthState>,
+) -> Result<serde_json::Value, String> {
+    if type_key.is_empty()
+        || type_key.len() > 128
+        || !type_key
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_')
+    {
+        return Err("The artifact type is invalid.".into());
+    }
+    if after.as_ref().is_some_and(|id| !valid_artifact_id(id)) {
+        return Err("The artifact cursor is invalid.".into());
+    }
+    let mut path = format!("/api/artifacts/query?typeKey={type_key}");
+    if let Some(snapshot) = snapshot_sequence {
+        path.push_str(&format!("&snapshotSequence={snapshot}"));
+    }
+    if let Some(cursor) = after {
+        path.push_str(&format!("&after={cursor}"));
+    }
+    let token = session_token(&state)?;
+    tauri::async_runtime::spawn_blocking(move || artifact_json(token, "GET", path, None))
+        .await
+        .map_err(|error| format!("Artifact query task failed: {error}"))?
+}
+
+#[tauri::command]
+pub async fn artifact_client_run_get(
+    publication_id: String,
+    state: tauri::State<'_, AuthState>,
+) -> Result<serde_json::Value, String> {
+    if !valid_artifact_id(&publication_id) {
+        return Err("The publication ID is invalid.".to_string());
+    }
+    let token = session_token(&state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        artifact_json(
+            token,
+            "GET",
+            format!("/api/artifacts/client-runs/{publication_id}"),
+            None,
+        )
+    })
+    .await
+    .map_err(|error| format!("Client actor lookup task failed: {error}"))?
+}
+
+#[tauri::command]
 pub async fn artifact_client_run_publish(
     publication_id: String,
     run: serde_json::Value,

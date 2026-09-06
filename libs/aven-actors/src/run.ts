@@ -133,6 +133,8 @@ export interface PlanRunRecord extends PlanRunHandle {
 	goalSpec?: PlanRunGoalSpec
 	parameters: Record<string, unknown>
 	checkpoints: PlanRunCheckpoint[]
+	/** Latest application progress; informational, never a completion or replay checkpoint. */
+	progress?: Record<string, unknown>
 	continuations: PlanRunContinuation[]
 	failure?: { code: string; message: string; retryable: boolean }
 }
@@ -151,6 +153,8 @@ export interface PlanRunExecutionResult {
 }
 
 export interface PlanRunExecutionContext {
+	/** Persist only non-secret presentation data. This does not authorize an effect or commit a step. */
+	reportProgress?: (progress: Record<string, unknown>) => Promise<void>
 	/** Present only for this invocation. The runner never adds it to the run record. */
 	submission?: Extract<PlanRunContinuationSubmission, { action: 'submit' }>
 	/**

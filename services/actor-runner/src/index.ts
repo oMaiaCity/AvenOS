@@ -5,7 +5,11 @@ import { TenantPoolProvider } from '@avenos/aven-customer-runtime'
 import { IdentityVerifier } from '@avenos/aven-identity'
 import { DOCUMENT_INGEST_SKILL } from '@avenos/document-ingest/execution'
 import { LlmDocumentModelGateway } from '@avenos/document-ingest/llm-gateway'
-import { createDocumentSkillExecutor } from '@avenos/document-ingest/server'
+import { RECONCILIATION_SKILL } from '@avenos/document-ingest/reconciliation-flow'
+import {
+	createDocumentSkillExecutor,
+	createReconciliationSkillExecutor
+} from '@avenos/document-ingest/server'
 import { BoundarySignals } from '@avenos/http-boundary'
 import { HttpLlmGatewayClient } from '@avenos/llm-client/http'
 import { createApplicationExecutor } from './application-executor.js'
@@ -69,7 +73,19 @@ const handler = createActorRunnerHandler(
 				})
 			})
 			const execute = createApplicationExecutor(
-				[{ skillRef: DOCUMENT_INGEST_SKILL, execute: documents }],
+				[
+					{ skillRef: DOCUMENT_INGEST_SKILL, execute: documents },
+					{
+						skillRef: RECONCILIATION_SKILL,
+						execute: createReconciliationSkillExecutor({
+							artifactsFor: (request) => ({
+								client: artifactClient,
+								scopeId: grant.environmentId,
+								userId: request.security.principal.subjectId
+							})
+						})
+					}
+				],
 				createActorPlanExecutor(createServerActorExecutionHost())
 			)
 			const runner = new SqlPlanRunner(api, worker, execute)

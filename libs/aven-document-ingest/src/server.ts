@@ -1,20 +1,32 @@
 /// <reference path="./pdfjs-worker.d.ts" />
 
+// Initialization barrier: PDF.js evaluates DOMMatrix during module loading.
+import './server-pdf-canvas'
+
 import type { PlanRunExecutor, PlanRunStartRequest } from '@avenos/actors'
 import { ACTOR_RUN_PROTOCOL, portableRunClone } from '@avenos/actors'
 import type {
 	ArtifactJson,
 	ArtifactProcessingPresentation,
 	ArtifactStoreClient,
-	ClientArtifactGateway,
 	ClientRunPublication,
 	PublishedClientRun
 } from '@avenos/artifact-store'
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { WorkerMessageHandler } from 'pdfjs-dist/legacy/build/pdf.worker.mjs'
 import { createDocumentActors } from './actors/registry'
+import { decodeCsvText, isCsvSource } from './csv'
 import { DOCUMENT_INGEST_SKILL, type DocumentSourceDescriptor } from './execution'
 import type { DocumentModelGateway } from './model'
+import { readPdfTextContent } from './pdf-text'
+import {
+	RECONCILIATION_GOAL,
+	RECONCILIATION_SKILL,
+	type ReconciliationArtifact,
+	type ReconciliationArtifactPage,
+	type ReconciliationGateway,
+	reconcileInvoices
+} from './reconciliation-flow'
 import { DocumentProcessingRuntime } from './runtime'
 import { createCanvas, ServerPdfCanvasFactory } from './server-pdf-canvas'
 import {
@@ -62,7 +74,7 @@ export interface DocumentSkillExecutorDependencies {
 export function createDocumentSkillExecutor(
 	dependencies: DocumentSkillExecutorDependencies
 ): PlanRunExecutor {
-	return async (request) => {
+	return async (request, context) => {
 		assertDocumentCommand(request)
 		const route = await dependencies.artifactsFor(request)
 		if (route.scopeId !== request.security.access.tenantId) {
@@ -114,7 +126,27 @@ export function createDocumentSkillExecutor(
 				procedureVersion: 'server-v1'
 			}
 		)
-		const presentation = await runtime.start(source)
+		// Serialize status writes without turning progress into a solver fact or a
+		// successful publication. Flush before returning the authoritative result.
+		let progressWrites = Promise.resolve()
+		let progressError: unknown
+		if (context?.reportProgress)
+			runtime.onChange = (_id, presentation) => {
+				const snapshot = portableRunClone(presentation)
+				progressWrites = progressWrites.then(async () => {
+					if (progressError) return
+					try {
+						await context.reportProgress!({ presentation: snapshot })
+					} catch (error) {
+						progressError = error
+					}
+				})
+			}
+		const presentation = await runtime.start(source).finally(async () => {
+			await progressWrites
+			for (const actor of actors.all) actor.dispose()
+		})
+		if (progressError) throw progressError
 		if (presentation.state === 'failed') {
 			throw new Error(presentation.summary ?? 'document processing failed')
 		}
@@ -153,9 +185,7 @@ function assertDocumentCommand(request: PlanRunStartRequest): void {
 		request.goals.length === 0 &&
 		request.goalSpec?.mode === 'explore' &&
 		request.goalSpec.subject.artifactId === request.ingredients[0]?.artifactId
-	const legacyExact =
-		request.goals.length === 1 && request.goals[0] === 'ceo.aven.docs.processed(source)'
-	if (!exploration && !legacyExact) {
+	if (!exploration) {
 		throw new Error('document command has an invalid goal')
 	}
 }
@@ -204,8 +234,30 @@ function sourceDescriptor(value: unknown): DocumentSourceDescriptor {
 }
 
 /** Publishes trusted server actor outputs with the same Artifact Store semantics as the local lane. */
-export class ArtifactStoreDocumentGateway implements ClientArtifactGateway {
+export class ArtifactStoreDocumentGateway implements ReconciliationGateway {
 	constructor(private readonly route: DocumentArtifactStoreRoute) {}
+
+	lookup(publicationId: string) {
+		return this.route.client.committedClientRun(this.route.scopeId, publicationId)
+	}
+
+	async query(query: {
+		typeKey: string
+		snapshotSequence?: number
+		after?: string
+	}): Promise<ReconciliationArtifactPage> {
+		return (await this.route.client.queryArtifacts(
+			this.route.scopeId,
+			query
+		)) as unknown as ReconciliationArtifactPage
+	}
+
+	async artifact(artifactId: string): Promise<ReconciliationArtifact> {
+		return (await this.route.client.artifact(
+			this.route.scopeId,
+			artifactId
+		)) as unknown as ReconciliationArtifact
+	}
 
 	async publish(run: ClientRunPublication): Promise<PublishedClientRun> {
 		if (run.procedureVersion !== 'server-v1') throw new Error('server publication version required')
@@ -284,6 +336,46 @@ export class ArtifactStoreDocumentGateway implements ClientArtifactGateway {
 	}
 }
 
+/** Scope-bound remote entry point; selection and matching are the shared portable skill. */
+export function createReconciliationSkillExecutor(
+	dependencies: Pick<DocumentSkillExecutorDependencies, 'artifactsFor'>
+): PlanRunExecutor {
+	return async (request) => {
+		if (
+			request.protocol !== ACTOR_RUN_PROTOCOL ||
+			request.skillRef !== RECONCILIATION_SKILL ||
+			request.executionEnvironment !== 'server' ||
+			request.ingredients.length !== 0 ||
+			request.goals.length !== 1 ||
+			request.goals[0] !== RECONCILIATION_GOAL
+		)
+			throw new Error('invalid reconciliation command')
+		if (Object.keys(request.parameters).some((key) => key !== 'openItemArtifactId'))
+			throw new Error('unexpected reconciliation parameters')
+		const openItemArtifactId = request.parameters.openItemArtifactId
+		if (
+			openItemArtifactId !== undefined &&
+			(typeof openItemArtifactId !== 'string' || !/^[0-9a-f-]{36}$/i.test(openItemArtifactId))
+		)
+			throw new Error('invalid reconciliation open item')
+		const route = await dependencies.artifactsFor(request)
+		if (!route.scopeId || route.scopeId !== request.security.access.tenantId)
+			throw new Error('reconciliation route differs from admitted tenant')
+		const result = await reconcileInvoices(new ArtifactStoreDocumentGateway(route), {
+			procedureVersion: 'server-v1',
+			...(typeof openItemArtifactId === 'string' && { openItemArtifactId })
+		})
+		return {
+			artifactIds: result.reviews.map((review) => review.candidateArtifactId),
+			completedStepIds: ['reconciliation.review-ready'],
+			remainingGoals: [],
+			registryRevision: 0,
+			policyDecisionIds: ['reconciliation:tenant-bound-read-and-propose'],
+			output: { kind: 'reconciliation-review', result: portableRunClone(result) }
+		}
+	}
+}
+
 /** Headless deterministic decoder used by the server lane. */
 export class ServerDocumentDecoder implements DocumentDecoder {
 	async decode(
@@ -322,10 +414,12 @@ function decodePlainText(source: DocumentSource, bytes: Uint8Array): DecodedDocu
 	const textLike =
 		source.declaredMediaType.toLowerCase().split(';', 1)[0]?.startsWith('text/') ||
 		/\.(?:txt|md|csv)$/i.test(source.originalName)
-	if (!textLike) return null
+	if (!textLike && !isCsvSource(source)) return null
 	let text: string
 	try {
-		text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+		text = isCsvSource(source)
+			? decodeCsvText(bytes)
+			: new TextDecoder('utf-8', { fatal: true }).decode(bytes)
 	} catch {
 		return malformed('text/plain')
 	}
@@ -356,7 +450,7 @@ async function decodePdf(bytes: Uint8Array, modelPageLimit: number): Promise<Dec
 		for (let number = 1; number <= pdf.numPages; number += 1) {
 			const page = await pdf.getPage(number)
 			const viewport = page.getViewport({ scale: 1 })
-			const content = await page.getTextContent()
+			const content = await readPdfTextContent(page)
 			const runs = content.items.flatMap((item) => {
 				const run = normalizedRun(item, viewport.width, viewport.height)
 				return run ? [run] : []

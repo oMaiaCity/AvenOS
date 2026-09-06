@@ -1,0 +1,57 @@
+{
+	"version": 1,
+	"purpose": "Issuer-published specimens, not private customer records. Downloaded separately; no redistribution licence is assumed. Checksums pin the reviewed revision, not authenticity of other files.",
+	"documents": [
+		{
+			"id": "de-justice-blank",
+			"url": "https://www.berlin.de/gerichte/amtsgericht-spandau/das-gericht/kosteneinziehungsstelle-der-justiz/kostenrechnung-muster-0808.pdf",
+			"sha256": "507b3398db714c19f909dfe7f053894f9a6ac49a9de2aa244667f4e2dfbadca3",
+			"pages": 2,
+			"scope": "Blank official cost notice. Conditional late fees are not a filled-in principal amount.",
+			"liveNegative": true
+		},
+		{
+			"id": "de-telekom-mobile",
+			"url": "https://www.telekom.de/hilfe/downloads/musterrechnung-mobilfunk",
+			"sha256": "0222a9501fd548ad88696f70ea837c0d22ec4d5cf9a354442470e2c1b81842c4",
+			"pages": 3,
+			"scope": "Annotated specimen with repeated page miniatures. Printed gross 70.28 EUR; printed tax 13.14 EUR must not be silently recomputed."
+		},
+		{
+			"id": "de-telekom-business",
+			"url": "https://geschaeftskunden.telekom.de/tgkp-resource/blob/57086/35df0cef295a4032ef68c1be8ad7da69/festnetz-musterrechnung-telekom-de-data.pdf",
+			"sha256": "d73c980626d51024c2232bc0abb227bd15d2c0b91ab3ea4de92d6bffbf27bf0c",
+			"pages": 5,
+			"scope": "Placeholder monetary amounts: XX is unknown, never zero."
+		},
+		{
+			"id": "de-toll-collect-trips",
+			"url": "https://www.toll-collect.de/static/media/tc/informationen_tc/nutzer/zusatzleistungen_tc/musterformular_mzl_2020.pdf",
+			"sha256": "61d95e0536a70f4d19a4f45638d85cd4f0f78ddceb0ad9da8a195ee2cf58fd9e",
+			"pages": 3,
+			"scope": "Trip-level toll detail is not a bank account statement."
+		},
+		{
+			"id": "at-wko-consulting",
+			"url": "https://www.wko.at/vlbg/gruendung/ju-beratungsfoerderung-musterrechnung.pdf",
+			"sha256": "0e1d3076bbe10bf6695139175527107852602a32606d303431fad196b100d636",
+			"pages": 1,
+			"scope": "Grant-adjusted payment amount is not the full invoice gross."
+		},
+		{
+			"id": "cn-vat-blank",
+			"url": "https://shanghai.chinatax.gov.cn/zcfw/zcfgk/zzs/202012/P020201221310808868739.pdf",
+			"sha256": "122543cc1bad3376dbc9e80e5f2ac1ef4566fdd8e731e6c3e6deb35e3f097212",
+			"pages": 1,
+			"scope": "Blank official VAT template. Empty taxpayer and monetary fields remain unknown.",
+			"liveNegative": true
+		},
+		{
+			"id": "cn-electronic-blank",
+			"url": "https://shanghai.chinatax.gov.cn/zcfw/zcfgk/swzsgl/202111/P020211130769989224984.pdf",
+			"sha256": "0ee166e73a690c19330225d9bd1d270260395fa1e38fd38ea96af629a34ce745",
+			"pages": 2,
+			"scope": "Ordinary and special electronic-invoice blank specimens, not two real liabilities."
+		}
+	]
+}

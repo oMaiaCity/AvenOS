@@ -223,6 +223,7 @@
         "@avenos/aven-hosting": "workspace:*",
         "@avenos/aven-identity": "workspace:*",
         "@avenos/http-boundary": "workspace:*",
+        "@avenos/document-ingest": "workspace:*",
         "jose": "6.2.9",
         "pg": "8.16.3",
         "pino": "10.3.1",

@@ -28,6 +28,13 @@ contracts. The HTTP-resource suite starts a loopback origin and proves authentic
 redirect handling, exact response bytes, and ETag revalidation; it does not replace
 the full-stack customer-database isolation proof.
 
+The native credential regression suite verifies one refresh for 80 concurrent callers,
+session separation, expiry, invalid responses and failed-refresh behavior:
+
+```sh
+cargo test --locked --release --manifest-path app/src-tauri/Cargo.toml --lib service_token::tests
+```
+
 Run the application unit tests separately:
 
 ```sh
@@ -148,6 +155,10 @@ fresh databases on dynamic loopback ports, and proves the public journey:
 - native document import on both Device and Server placement, exact source and
   extracted bytes, and canonical stored-graph equivalence for the deterministic text
   fixture;
+- synthetic invoice and statement PDF imports in opposite orders on Device and Server,
+  automatic match proposals, and a physical confirmation through the existing native
+  comparison control, with the accepted decision and its three evidence inputs read
+  back from the customer database;
 - authenticated LLM chat with durable Intent history, including session-local
   anonymous speaker attribution and a duplex interruption followed by another
   speaker;
@@ -172,8 +183,100 @@ separate procedure in
 [Voice dependency qualification](../voice-dependency-qualification.md).
 The [Actor runtime proof strategy](../actor-runtime-proof-strategy.md) states the exact
 claims this rail establishes. The focused document conformance suite additionally
-compares browser and headless-runner results for deterministic text, CSV, and
-native-text PDF goldens; server OCR and live-model parity remain explicit gaps.
+compares browser and headless-runner results for deterministic text, CSV, native-text
+PDF and model-backed image goldens. The real-store reconciliation suite also proves
+restart without repeated model calls, identical local/remote financial payloads,
+candidate lineage, decision replay and scope denial. The native journey has a
+180-second budget. Financial document waits fail immediately on terminal failure or
+unexpected review-required processing; otherwise they allow 20 seconds per document
+and 10 seconds for saving a decision. Failed decodes retain diagnostic context.
+Text-document graph waits are bounded to 20 seconds. Financial waits print stage
+transitions and retry errors; remote progress comes from the runner's shared status
+protocol. There is no longer a per-test override extending the journey to five minutes.
+
+CSV intake has a separate native checkpoint: the test imports a recognized synthetic
+CSV on Device and Server, verifies that no transactions or matching candidates exist
+from it before a physical click, exercises rejection and acceptance, then verifies the
+accepted transaction amounts and dates without accepting any invoice relationship.
+These expected document-type review states use their own 10-second bounded waits.
+The native test then imports a matching synthetic invoice on each placement and
+requires a second physical decision before accepting the exact invoice/booking
+relationship. It checks the original CSV row and all three decision evidence inputs.
+The same two-gate composition also has a fast in-memory integration test.
+Restart tests replay accepted and rejected document decisions without
+presenting another gate or treating restoration as a new human click.
+The shared detector/runtime tests run with `bun run --cwd libs/aven-document-ingest test`;
+the physical-gate unit tests run with `bun test app/tests/csv-document-review.test.ts`.
+The [CSV corpus](../../fixtures/golden/bank-csv/README.md) records supported and blocked
+formats, source provenance and the distinction between decoding and financial import.
+
+### Use a real document model in the local proof
+
+The document provider is opt-in. Set both `TEST_DOCUMENT_PROVIDER_BASE_URL` (the
+OpenAI-compatible `/v1` base, not `/models`) and `TEST_DOCUMENT_PROVIDER_MODEL` to the
+exact installed model. `TEST_DOCUMENT_PROVIDER_PROFILE=qwen-tools` selects the
+production Qwen tool-call adapter and disables thinking; the default is
+`openai-json-schema`. Do not select a profile merely to hide invalid provider output.
+
+With these variables set, `bun deploy/e2e/document-provider.ts` runs the two reviewed
+OCR goldens through the production facade translation. It accepts an optional
+`TEST_DOCUMENT_PROVIDER_TOKEN`, binds its temporary gateway to loopback with a random
+token, limits each provider request to 45 seconds and each test to 120 seconds, stops
+at the first failed test, and kills the child process group if the suite exceeds
+270 seconds. No external endpoint
+is contacted by this test unless configured explicitly.
+
+Two expanded corpora use the same wrapper and provider variables:
+
+```bash
+TEST_DOCUMENT_CORPUS=market bun deploy/e2e/document-provider.ts
+TEST_DOCUMENT_CORPUS=market TEST_DOCUMENT_CASE=cn-private-receipt bun deploy/e2e/document-provider.ts
+bun fixtures/golden/public-documents/fetch.ts
+AVEN_PUBLIC_DOCUMENT_DIR="$PWD/fixtures/golden/public-documents/files" TEST_DOCUMENT_CORPUS=public bun deploy/e2e/document-provider.ts
+```
+
+The [market corpus](../../fixtures/golden/reconciliation-market/README.md) has 13
+single-document tests; its full-suite watchdog is 1,590 seconds (13 bounded tests
+plus teardown), not a longer per-document wait. A selected case retains the
+270-second suite watchdog. The [public corpus](../../fixtures/golden/public-documents/README.md)
+has seven checksum/page-count checks and two live blank-form safety checks. Its
+download step contacts only the listed issuer URLs, refuses changed hashes, and
+does not submit files to a model. The subsequent opt-in provider command does.
+For public decoding without any model calls, set only `AVEN_PUBLIC_DOCUMENT_DIR`
+when running the document-ingest suite.
+
+To regenerate the synthetic PDFs, use Python with ReportLab plus installed
+DejaVuSans, DejaVuSans-Bold and DroidSansFallbackFull fonts at the paths in the
+generator, then run `python3 fixtures/golden/reconciliation-market/build.py`.
+Render and inspect every page after regeneration and rerun the decoder tests;
+font substitutions can lose Chinese or Latin glyphs without failing PDF generation.
+
+The same base/model/profile variables also make `bun run test:e2e:platform` use that
+provider for native PDF invoice/statement processing on both Device and Server.
+Chat remains the deterministic fixture provider. This full-stack override currently
+uses an unauthenticated endpoint reachable from its containers; the focused wrapper's
+token option does not configure native-stack credentials. Live document waits allow
+60 seconds, within the native journey's 180-second total budget. CSV detection is
+deterministic and never calls the LLM, even in this mode.
+
+Live-provider success proves the tested inputs and adapter, not general OCR accuracy,
+provider determinism or recognition of unsupported documents. Keep corpus expected
+values independent of the provider response.
+
+These are synthetic correctness fixtures, not a representative validation corpus.
+The native invoice and statement PDFs use a deterministic structured-output model in the
+isolated E2E catalog; all decoders, Actors, solver, transports, publication validation,
+database and review controls are production implementations. This proves wiring and
+invariants, not OCR accuracy, supplier coverage or quarter-level precision/recall.
+The optional live native run verifies provider-backed local/remote parity for those
+same inputs; expanded provider corpus tests use an in-memory publication gateway.
+No automated
+settlement or global assignment is claimed. See the
+[reconciliation validation boundaries](../invoice-statement-reconciliation.md#current-executable-flow-and-validation-boundaries).
+
+On filesystems that reject native file watches with `EINVAL`, use
+`CHOKIDAR_USEPOLLING=true bun run test:e2e:platform`. This changes file watching only;
+it does not skip any gate or alter the application under test.
 
 ## Polar Sandbox checkout E2E
 

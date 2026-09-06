@@ -2,6 +2,8 @@ import type { Actor } from '@avenos/actors'
 import type { DocumentModelGateway } from '../model'
 import type { DocumentDecoder } from '../shared'
 import { createContentAggregatorActor } from './content-aggregator'
+import { createCsvStatementAdmitterActor } from './csv-statement-admitter'
+import { createCsvStatementDetectorActor } from './csv-statement-detector'
 import { createDocumentAssemblerActor } from './document-assembler'
 import { createDocumentDecomposerActor } from './document-decomposer'
 import { createDocumentInspectorActor } from './document-inspector'
@@ -44,6 +46,8 @@ export function createDocumentActors(
 	model?: DocumentModelGateway
 ): DocumentActors {
 	const inspect = createDocumentInspectorActor(decoder)
+	const csvDetector = createCsvStatementDetectorActor()
+	const csvAdmitter = createCsvStatementAdmitterActor()
 	const decompose = createDocumentDecomposerActor()
 	const extractText = createNativeTextExtractorActor()
 	const classifyPage = createPageSignalClassifierActor()
@@ -83,6 +87,8 @@ export function createDocumentActors(
 		fanoutStatementTransactions,
 		rankReconciliation,
 		all: [
+			csvDetector,
+			csvAdmitter,
 			inspect,
 			decompose,
 			extractText,

@@ -30,7 +30,7 @@ async function request<T>(
 	origin: string,
 	path: string,
 	init?: RequestInit,
-	timeoutMs = 30_000
+	timeoutMs = 10_000
 ): Promise<T> {
 	const response = await fetch(`${origin}${path}`, {
 		...init,
@@ -138,15 +138,8 @@ export class TauriSession {
 					}
 				})
 			})
-			const sessionId =
-				created?.sessionId ??
-				((created as unknown as { capabilities?: unknown })?.capabilities ? undefined : undefined)
-			// WebKit follows the W3C shape where the session id is beside `value`.
-			// The small request helper unwraps `value`, so recover older responses
-			// with a direct request only when necessary.
+			const sessionId = created?.sessionId
 			if (!sessionId) {
-				const response = await fetch(`${origin}/status`)
-				if (!response.ok) throw new Error(`tauri-driver became unavailable: ${output}`)
 				throw new Error(
 					`tauri-driver returned no session id: ${JSON.stringify(created)}\n${output}`
 				)
@@ -178,7 +171,7 @@ export class TauriSession {
 		return id
 	}
 
-	async findEventually(selector: string, timeoutMs = 30_000): Promise<string> {
+	async findEventually(selector: string, timeoutMs = 15_000): Promise<string> {
 		const deadline = Date.now() + timeoutMs
 		let last: unknown
 		while (Date.now() < deadline) {
@@ -234,7 +227,7 @@ export class TauriSession {
 		return await this.text(await this.find('body'))
 	}
 
-	async waitForBodyText(expected: string, timeoutMs = 60_000): Promise<void> {
+	async waitForBodyText(expected: string, timeoutMs = 20_000): Promise<void> {
 		const deadline = Date.now() + timeoutMs
 		let lastBody = ''
 		let lastError: unknown

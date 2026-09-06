@@ -427,9 +427,10 @@ describe('artifact file coordinator', () => {
 				{
 					localKey: 'match-001',
 					typeKey: 'reconciliation.match-candidate',
-					typeVersion: 1,
+					typeVersion: 2,
 					payload: {
-						matcherVersion: 'invoice-transaction-v1',
+						matcherVersion: 'invoice-transaction-v2',
+						transactionInputOrdinal: 0,
 						rank: 1,
 						pairEligible: false
 					},

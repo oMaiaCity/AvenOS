@@ -57,6 +57,8 @@ export function unify(a: string, b: string, bindings: Bindings = {}): Bindings |
 		const leftArgument = ta.args[i]
 		const rightArgument = tb.args[i]
 		if (leftArgument === undefined || rightArgument === undefined) return null
+		// Each anonymous occurrence is a fresh wildcard, not one shared variable.
+		if (leftArgument === '_' || rightArgument === '_') continue
 		const left = resolve(leftArgument, next)
 		const right = resolve(rightArgument, next)
 		if (left === right) continue

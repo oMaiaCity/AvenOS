@@ -23,12 +23,25 @@ export interface DocumentSchemaBinding {
 }
 
 export const DOCUMENT_SCHEMA_BINDINGS: Readonly<Record<string, DocumentSchemaBinding>> = {
+	'ceo.aven.banking.csv_detection': binding(
+		'banking',
+		'csv-detection',
+		'banking.csv-statement-detection',
+		'detection'
+	),
+	'ceo.aven.banking.csv_confirmation': binding(
+		'banking',
+		'csv-confirmation',
+		'banking.csv-statement-confirmation',
+		'confirmation'
+	),
 	'ceo.aven.docs.file': binding('docs', 'file', 'core.file', 'source'),
 	'ceo.aven.docs.file_inspection': binding(
 		'docs',
 		'file-inspection',
 		'core.file-inspection',
-		'inspection'
+		'inspection',
+		2
 	),
 	'ceo.aven.docs.page': binding('docs', 'page', 'docs.page', 'page'),
 	'ceo.aven.docs.extracted_text': binding('docs', 'extracted-text', 'docs.extracted-text', 'text'),
@@ -57,7 +70,8 @@ export const DOCUMENT_SCHEMA_BINDINGS: Readonly<Record<string, DocumentSchemaBin
 		'bookkeeping',
 		'invoice-candidate',
 		'bookkeeping.invoice-candidate',
-		'candidate'
+		'candidate',
+		2
 	),
 	'ceo.aven.bookkeeping.invoice_details': binding(
 		'bookkeeping',
@@ -102,7 +116,8 @@ export const DOCUMENT_SCHEMA_BINDINGS: Readonly<Record<string, DocumentSchemaBin
 		'reconciliation',
 		'match-candidate',
 		'reconciliation.match-candidate',
-		'match-candidate'
+		'match-candidate',
+		2
 	)
 }
 

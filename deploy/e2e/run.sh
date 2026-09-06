@@ -36,6 +36,11 @@ export E2E_IDENTITY_HOST_PORT E2E_CHECKOUT_HOST_PORT E2E_API_HOST_PORT
 export E2E_DATABASE_HOST_PORT E2E_STATIC_HOST_PORT E2E_MAILPIT_HOST_PORT
 export E2E_ARTIFACT_STORE_HOST_PORT
 
+# Only explicit provider configuration may send repository OCR fixtures outside
+# this disposable stack. Chat/voice remains deterministic in either lane.
+E2E_LLM_MODELS_JSON=$(bun "$root/deploy/e2e/llm-catalog.ts")
+export E2E_LLM_MODELS_JSON
+
 teardown() {
   docker compose --project-name "$project" --file "$compose" --file "$hardening" --profile hosting down --volumes --remove-orphans >/dev/null 2>&1 || true
 }

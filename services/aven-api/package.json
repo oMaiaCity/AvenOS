@@ -14,6 +14,7 @@
 	"dependencies": {
 		"@avenos/http-boundary": "workspace:*",
 		"@avenos/artifact-store": "workspace:*",
+		"@avenos/document-ingest": "workspace:*",
 		"@avenos/aven-customer-contracts": "workspace:*",
 		"@avenos/aven-hosting": "workspace:*",
 		"@avenos/aven-identity": "workspace:*",

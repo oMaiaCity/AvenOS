@@ -218,7 +218,20 @@ export class SqlPlanRunner implements PlanRunner {
 			if (!row) return false
 			const record = row.record
 			try {
-				const result = await this.executor(this.#request(record), context)
+				const result = await this.executor(this.#request(record), {
+					...context,
+					reportProgress: async (progress) => {
+						record.progress = portableRunClone(progress)
+						record.revision += 1
+						record.updatedAt = new Date().toISOString()
+						const saved = await connection.query(
+							`UPDATE runs SET revision=$2,record=$3,updated_at=clock_timestamp()
+							 WHERE id=$1 AND state='accepted'`,
+							[runId, record.revision, record]
+						)
+						if (!saved.rowCount) throw new PlanRunConflict('the actor run is no longer active')
+					}
+				})
 				this.#applyResult(record, result)
 			} catch (error) {
 				record.state = 'failed'
