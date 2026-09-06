@@ -11,7 +11,7 @@ import { AppError } from '../lib/server/errors.js'
 const uuid = z.uuid()
 const observedAt = z.iso.datetime()
 const executionEnvironment = z.enum(['local', 'server'])
-const MAX_CLIENT_RUN_BYTES = 8 * 1024 * 1024
+const MAX_CLIENT_RUN_BYTES = 36 * 1024 * 1024
 
 const json = (status: number, body: unknown) =>
 	Response.json(body, { status, headers: { 'cache-control': 'no-store' } })
@@ -61,6 +61,26 @@ export class ArtifactHandler {
 	): Promise<Response> {
 		try {
 			const segments = suffix.replace(/^\//, '').replace(/\/$/, '').split('/').filter(Boolean)
+			if (segments[0] === 'query' && segments.length === 1 && request.method === 'GET') {
+				const query = z
+					.object({
+						typeKey: z.string().min(1).max(128),
+						snapshotSequence: z.coerce.number().int().nonnegative().optional(),
+						after: uuid.optional(),
+						limit: z.coerce.number().int().min(1).max(128).optional()
+					})
+					.strict()
+					.parse(Object.fromEntries(new URL(request.url).searchParams))
+				return json(
+					200,
+					await this.service.queryArtifacts(
+						tenant.databaseName,
+						tenant.environmentId,
+						query,
+						tenant.routingGeneration
+					)
+				)
+			}
 			if (segments.length === 0 && request.method === 'GET') {
 				return json(
 					200,
@@ -101,6 +121,17 @@ export class ArtifactHandler {
 							required(request, 'x-aven-execution-environment')
 						)
 					})
+				)
+			}
+			if (segments[0] === 'client-runs' && segments.length === 2 && request.method === 'GET') {
+				return json(
+					200,
+					await this.service.clientRun(
+						tenant.databaseName,
+						tenant.environmentId,
+						uuid.parse(segments[1]),
+						tenant.routingGeneration
+					)
 				)
 			}
 			if (segments[0] === 'client-runs' && segments.length === 2 && request.method === 'POST') {

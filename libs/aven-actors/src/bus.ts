@@ -275,9 +275,15 @@ export class MessageBus {
 		// the message exists, but only a physical button press releases it.
 		// Confirming is NOT a tool; voice cannot do it.
 		const spec = owner.manifest.methods.find((m) => m.name === method)
+		if (spec?.hitl && !this.onHold) {
+			return Promise.resolve({
+				record: JSON.stringify({ ok: false, error: 'human review is unavailable' }),
+				wire: 'human review is unavailable'
+			})
+		}
 		if (spec?.hitl && this.onHold) {
 			const id = `held_${nextEnvelope++}`
-			this.#held.set(id, () => this.send(envelope))
+			this.#held.set(id, { confirm: () => this.send(envelope) })
 			this.onHold({
 				id,
 				actor: owner.instanceName,
@@ -296,23 +302,54 @@ export class MessageBus {
 	}
 
 	/** Held messages: the queue behind the one HITL bar. */
-	#held = new Map<string, () => Promise<HandlerResult>>()
+	#held = new Map<string, { confirm: () => Promise<HandlerResult>; reject?: () => Promise<void> }>()
+	#resolving = new Set<string>()
 	onHold?: (held: HeldMessage) => void
 	onHeldResolved?: (id: string) => void
 
+	/** Bind an application review to the existing human gate, without exposing a confirm tool. */
+	holdAction(
+		held: HeldMessage,
+		action: { confirm: () => Promise<HandlerResult>; reject?: () => Promise<void> }
+	): void {
+		if (!this.onHold) throw new Error('human review is unavailable')
+		if (this.#held.has(held.id)) return
+		this.#held.set(held.id, action)
+		this.onHold(held)
+	}
+
 	async confirmHeld(id: string): Promise<HandlerResult> {
+		if (this.#resolving.has(id))
+			return {
+				record: JSON.stringify({ ok: false, error: 'review is being saved' }),
+				wire: 'review is being saved'
+			}
 		const run = this.#held.get(id)
-		this.#held.delete(id)
-		this.onHeldResolved?.(id)
 		if (!run) {
 			return { record: JSON.stringify({ ok: false, error: 'nothing held' }), wire: 'nothing held' }
 		}
-		return await run()
+		this.#resolving.add(id)
+		try {
+			const result = await run.confirm()
+			if (JSON.parse(result.record)?.ok === false) return result
+			this.#held.delete(id)
+			this.onHeldResolved?.(id)
+			return result
+		} finally {
+			this.#resolving.delete(id)
+		}
 	}
 
-	rejectHeld(id: string): void {
-		this.#held.delete(id)
-		this.onHeldResolved?.(id)
+	async rejectHeld(id: string): Promise<void> {
+		if (this.#resolving.has(id)) return
+		this.#resolving.add(id)
+		try {
+			await this.#held.get(id)?.reject?.()
+			this.#held.delete(id)
+			this.onHeldResolved?.(id)
+		} finally {
+			this.#resolving.delete(id)
+		}
 	}
 
 	/**

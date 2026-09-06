@@ -1,0 +1,6 @@
+"Umsatzanzeige (SYNTHETISCH)"
+"Zeitraum";"01.09.2026 - 06.09.2026"
+
+"Buchung";"Valuta";"Auftraggeber/Empfänger";"Buchungstext";"Verwendungszweck";"Betrag";"Währung";"Saldo";"Währung"
+"02.09.2026";"03.09.2026";"Musterwerk Bürobedarf GmbH";"Überweisung";"RE-DE-1001; SYNTHETISCH";"-119,00";"EUR";"1.881,00";"EUR"
+"04.09.2026";"04.09.2026";"Musterwerk Bürobedarf GmbH";"Gutschrift";"GS-DE-1001 SYNTHETISCH";"23,80";"EUR";"1.904,80";"EUR"

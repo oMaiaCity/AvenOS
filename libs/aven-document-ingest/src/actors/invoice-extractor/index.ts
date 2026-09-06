@@ -47,7 +47,8 @@ export function createInvoiceExtractorActor(model: DocumentModelGateway): Actor 
 							`invoice extraction kind ${String(details.documentKind)} conflicts with ${expectedKind}`
 						)
 					}
-					const supplier = object(details.supplier, 'invoice supplier').name
+					const supplier =
+						details.supplier === null ? null : object(details.supplier, 'invoice supplier').name
 					if (typeof supplier === 'string' && supplier.trim()) candidate.supplier = supplier
 					const evidenceTargets = {
 						candidate: { outputLocalKey: 'invoice', value: candidate },

@@ -7,6 +7,7 @@ import {
 	MAX_DOCUMENT_PAGES,
 	pdfDecodeFailureKind
 } from '@avenos/document-ingest/actors'
+import { readPdfTextContent } from '@avenos/document-ingest/pdf-text'
 import { base64ToBytes, loadOwnedPdf } from './pdf'
 import { decodePlainText } from './plain-text-document'
 
@@ -134,7 +135,7 @@ async function decodePdfOnce(bytes: Uint8Array, modelPageLimit: number): Promise
 		for (let number = 1; number <= pdf.numPages; number++) {
 			const page = await pdf.getPage(number)
 			const viewport = page.getViewport({ scale: 1 })
-			const content = await page.getTextContent()
+			const content = await readPdfTextContent(page)
 			const runs = content.items.flatMap((item) => {
 				const run = normalizedRun(
 					item as Parameters<typeof normalizedRun>[0],
@@ -210,7 +211,7 @@ async function decodePdf(bytes: Uint8Array, modelPageLimit: number): Promise<Dec
 			// A webview refresh can terminate a pdf.js worker between loading and
 			// getTextContent. One fresh, bounded task is safe and fixes that race.
 			if (kind === 'worker-lifecycle' && attempt === 0) continue
-			console.warn(`PDF decoding failed because of a ${kind} decoder failure.`)
+			console.warn(`PDF decoding failed because of a ${kind} decoder failure.`, error)
 			throw new Error('PDF processing failed before its content could be inspected.', {
 				cause: error
 			})

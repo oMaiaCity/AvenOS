@@ -14,6 +14,7 @@ export interface ArtifactProcessingStage {
 	dependsOn?: string[]
 	procedureKey?: string
 	attemptCount?: number
+	lastError?: string
 	terminalCode?: string | null
 }
 

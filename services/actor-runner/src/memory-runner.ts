@@ -170,7 +170,17 @@ export class MemoryPlanRunner implements PlanRunner {
 			if (record.state !== 'accepted') return
 			this.#transition(record, 'planning')
 			this.#transition(record, 'running')
-			const result = await this.execute(portableRunClone(request), context)
+			const result = await this.execute(portableRunClone(request), {
+				...context,
+				reportProgress: async (progress) => {
+					const current = this.#required(runId)
+					if (current.state !== 'running')
+						throw new PlanRunConflict('the actor run is no longer active')
+					current.progress = portableRunClone(progress)
+					current.revision += 1
+					current.updatedAt = new Date().toISOString()
+				}
+			})
 			const current = this.#required(runId)
 			if (current.state === 'cancelled') return
 			this.#applyResult(current, result)

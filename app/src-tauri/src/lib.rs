@@ -12,6 +12,7 @@ mod artifacts;
 mod asr;
 mod assets;
 mod auth;
+mod service_token;
 mod tts;
 mod voice;
 
@@ -177,6 +178,8 @@ pub fn run() {
 			artifacts::artifact_upload,
 			artifacts::artifact_processing_status,
 			artifacts::artifact_client_run_publish,
+			artifacts::artifact_client_run_get,
+			artifacts::artifact_query,
 			artifacts::llm_model_list,
 			artifacts::llm_complete,
 			artifacts::llm_openai_complete,

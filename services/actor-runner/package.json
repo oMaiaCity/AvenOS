@@ -9,7 +9,7 @@
 		"build": "bun build src/index.ts --target=bun --outdir=build",
 		"check": "tsc --noEmit",
 		"test": "vitest run",
-		"test:e2e:persistence": "vitest run tests/sql-runner.persistence.e2e.test.ts tests/split-architecture.e2e.test.ts tests/artifact-store-port.persistence.e2e.test.ts"
+		"test:e2e:persistence": "vitest run tests/sql-runner.persistence.e2e.test.ts tests/split-architecture.e2e.test.ts tests/artifact-store-port.persistence.e2e.test.ts tests/reconciliation.persistence.e2e.test.ts"
 	},
 	"dependencies": {
 		"@avenos/actors": "workspace:*",

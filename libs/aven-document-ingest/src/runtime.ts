@@ -1,4 +1,9 @@
-import { type ExecutionEnvironment, MessageBus } from '@avenos/actors'
+import {
+	type ExecutionEnvironment,
+	executeObservedProgram,
+	MessageBus,
+	solverIdentity
+} from '@avenos/actors'
 import type {
 	ArtifactProcessingPresentation,
 	ArtifactProcessingStage,
@@ -8,17 +13,13 @@ import type {
 	DerivedArtifact,
 	PublishedClientArtifact
 } from '@avenos/artifact-store'
-import type {
-	DocumentActorResult,
-	DocumentActors,
-	DocumentSource,
-	ExtractedPage,
-	PageClassification
-} from './actors'
-import { extractedPageFrom, pageClassificationFrom, parseDocumentActorResult } from './actors'
+import type { DocumentActorResult, DocumentActors, DocumentSource } from './actors'
+import { parseDocumentActorResult } from './actors'
+import { CSV_DETECTOR_VERSION, csvSourceDigest, isCsvSource } from './csv'
+import { readCsvConfirmation } from './csv-confirmation'
 import type { DocumentModelStatus } from './model'
 import { MAX_MODEL_PAGES } from './model'
-import { documentArtifactInputRole } from './shared'
+import { createDocumentSkillOperations, type DocumentStepOutcome, documentAtom } from './skill'
 
 export type {
 	ClientArtifactGateway,
@@ -33,34 +34,6 @@ interface MaterializedArtifact extends PublishedClientArtifact {
 	typeVersion: number
 	payload: Record<string, unknown>
 	blob?: ClientArtifactDraft['blob']
-}
-
-const input = (artifactId: string, role: string, ordinal = 0): ClientRunInput => ({
-	artifactId,
-	role,
-	ordinal
-})
-
-function artifactInputs(artifacts: MaterializedArtifact[]): ClientRunInput[] {
-	const ordinals = new Map<string, number>()
-	return artifacts.map((artifact) => {
-		const role = documentArtifactInputRole(artifact.typeKey, artifact.payload)
-		const ordinal = ordinals.get(role) ?? 0
-		ordinals.set(role, ordinal + 1)
-		return input(artifact.artifactId, role, ordinal)
-	})
-}
-
-async function stableUuid(seed: string): Promise<string> {
-	const digest = new Uint8Array(
-		await crypto.subtle.digest('SHA-256', new TextEncoder().encode(seed))
-	)
-	const bytes = digest.slice(0, 16)
-	// UUIDv8 is the standards-defined space for application-specific UUID derivation.
-	bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x80
-	bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80
-	const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('')
-	return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
 
 function materialize(
@@ -80,18 +53,6 @@ function materialize(
 	})
 }
 
-function pageNumber(artifact: MaterializedArtifact): number {
-	const value = artifact.payload.sourcePage
-	if (typeof value !== 'number') throw new Error('page artifact has no sourcePage')
-	return value
-}
-
-const RETRYABLE_MODEL_METHODS = new Set([
-	'document_analyze_page',
-	'document_classify_kind',
-	'document_extract_invoice',
-	'document_extract_statement'
-])
 const MODEL_RETRY_DELAYS_MS = [500, 1000] as const
 
 const wait = (milliseconds: number): Promise<void> =>
@@ -105,12 +66,12 @@ export interface DocumentProcessingRuntimeOptions {
 }
 
 /**
- * Client-owned coordinator. Actors perform every transformation; this class
- * only advances the durable DAG and binds published artifact IDs to the next
- * envelope. Re-running uses the same derived publication UUIDs, so a crash is
- * a replay rather than a duplicate derivation.
+ * Document skill host: adapts Actor delivery, publication and the existing
+ * processing presentation to the general observation solver. The skill catalog
+ * owns bindings and projections; this adapter never schedules a document stage.
  */
 export class DocumentProcessingRuntime {
+	readonly #actors: DocumentActors
 	readonly #bus: MessageBus
 	readonly #gateway: ClientArtifactGateway
 	readonly #modelEnabled: boolean
@@ -126,6 +87,7 @@ export class DocumentProcessingRuntime {
 		modelStatus?: () => Promise<DocumentModelStatus>,
 		options: DocumentProcessingRuntimeOptions = {}
 	) {
+		this.#actors = actors
 		this.#bus = new MessageBus()
 		for (const actor of actors.all) this.#bus.register(actor)
 		this.#gateway = gateway
@@ -146,7 +108,11 @@ export class DocumentProcessingRuntime {
 		const active = this.#running.get(source.artifactId)
 		if (active) return active
 		const existing = this.#presentations.get(source.artifactId)
-		if (existing && (existing.state === 'succeeded' || existing.state === 'needs_review')) {
+		if (
+			!isCsvSource(source) &&
+			existing &&
+			(existing.state === 'succeeded' || existing.state === 'needs_review')
+		) {
 			return Promise.resolve(existing)
 		}
 		const running = this.#run(source).finally(() => this.#running.delete(source.artifactId))
@@ -156,7 +122,7 @@ export class DocumentProcessingRuntime {
 
 	async #run(source: DocumentSource): Promise<ArtifactProcessingPresentation> {
 		const presentation: ArtifactProcessingPresentation = {
-			caseId: await stableUuid(`${source.artifactId}:client-document-case-v1`),
+			caseId: await solverIdentity(source.artifactId + ':document-skill-v2'),
 			state: 'active',
 			projectionVersion: 'actor-document-v1',
 			preferredType: 'file',
@@ -164,6 +130,7 @@ export class DocumentProcessingRuntime {
 			summary: null,
 			metadata: {
 				execution: 'actors',
+				planner: 'general-observation-solver',
 				executionEnvironment: this.#options.executionEnvironment,
 				runtimeHost: this.#options.runtimeHost
 			},
@@ -173,442 +140,265 @@ export class DocumentProcessingRuntime {
 		}
 		this.#presentations.set(source.artifactId, presentation)
 		this.#changed(source.artifactId, presentation)
-		let currentStage = 'inspect'
 		try {
-			const modelStatus: DocumentModelStatus = this.#modelStatus
-				? await this.#modelStatus().catch(() => ({ available: false, maxPages: MAX_MODEL_PAGES }))
-				: { available: false, maxPages: MAX_MODEL_PAGES }
+			const csv = isCsvSource(source)
+			const csvDigest = csv ? await csvSourceDigest(source) : null
+			const csvConfirmation = csv
+				? await readCsvConfirmation(this.#gateway, source.artifactId, csvDigest!)
+				: null
+			const model: DocumentModelStatus =
+				this.#modelStatus && !csv
+					? await this.#modelStatus().catch(() => ({ available: false, maxPages: MAX_MODEL_PAGES }))
+					: { available: false, maxPages: MAX_MODEL_PAGES }
 			const modelPageLimit =
-				modelStatus.available && Number.isInteger(modelStatus.maxPages) && modelStatus.maxPages >= 1
-					? Math.min(MAX_MODEL_PAGES, modelStatus.maxPages)
+				model.available && Number.isInteger(model.maxPages) && model.maxPages >= 1
+					? Math.min(MAX_MODEL_PAGES, model.maxPages)
 					: 0
-			if (modelStatus.modelId) presentation.metadata.modelId = modelStatus.modelId
-			if (modelStatus.modelLabel) presentation.metadata.modelLabel = modelStatus.modelLabel
-			if (modelStatus.alternatives) {
-				presentation.metadata.modelAlternatives = modelStatus.alternatives
-			}
-			const inspected = await this.#step(source, presentation, {
-				key: 'inspect',
-				method: 'document_inspect',
-				payload: {
-					source,
-					modelPageLimit
-				},
-				inputs: [input(source.artifactId, 'source')],
-				dependsOn: []
+			if (model.modelId) presentation.metadata.modelId = model.modelId
+			if (model.modelLabel) presentation.metadata.modelLabel = model.modelLabel
+			if (model.alternatives) presentation.metadata.modelAlternatives = model.alternatives
+			const operations = createDocumentSkillOperations({
+				source,
+				actors: this.#actors,
+				modelPageLimit
 			})
-			const document = inspected.result.document
-			if (!document) throw new Error('inspector omitted the decoded document')
-			if (document.outcome !== 'ok') {
+			const results = new Map<string, DocumentStepOutcome>()
+			const run = await executeObservedProgram({
+				runId:
+					presentation.caseId +
+					':' +
+					this.#options.procedureVersion +
+					':model-pages-' +
+					modelPageLimit,
+				operations,
+				ingredients: [
+					{
+						id: source.artifactId,
+						predicate: 'ceo.aven.docs.file(' + documentAtom(source.artifactId) + ')',
+						value: { artifactId: source.artifactId }
+					},
+					...(csvConfirmation?.payload.decision === 'accepted'
+						? [
+								{
+									id: csvConfirmation.artifactId,
+									predicate: `ceo.aven.banking.csv_confirmed(${documentAtom(source.artifactId)}, ${documentAtom(csvConfirmation.payload.detectionArtifactId)}, ${documentAtom(csvConfirmation.artifactId)})`,
+									value: csvConfirmation
+								}
+							]
+						: [])
+				],
+				port: {
+					lookup: async () => null,
+					invoke: async (invocation) => {
+						const operation = operations.find((item) => item.id === invocation.operation)!
+						const definition = operation.prepare(invocation)
+						const dependsOn = [
+							...new Set(
+								[...invocation.inputs, ...Object.values(invocation.gathers).flat()].flatMap(
+									(fact) => {
+										const stage = (fact.value as Partial<DocumentStepOutcome>)?.stageKey
+										return stage ? [stage] : []
+									}
+								)
+							)
+						]
+						let result: DocumentStepOutcome
+						try {
+							const executed = await this.#step(source, presentation, {
+								...definition,
+								actor: operation.actor,
+								dependsOn,
+								publicationId: invocation.id
+							})
+							result = { ...executed, stageKey: definition.key }
+						} catch (error) {
+							// An uncertain publication is not a negative observation about a document.
+							const stage = presentation.stages.find((item) => item.key === definition.key)
+							if (stage?.state === 'publishing') throw error
+							if (stage) {
+								stage.state = 'failed'
+								stage.terminalCode = 'actor-invocation-failed'
+							}
+							const message = error instanceof Error ? error.message : String(error)
+							presentation.warnings.push({
+								code: definition.key + '-failed',
+								message,
+								retryable: true
+							})
+							return {
+								invocationId: invocation.id,
+								operation: operation.id,
+								state: 'failed',
+								error: message,
+								facts: operation.projectFailure?.(invocation) ?? []
+							}
+						}
+						results.set(definition.key, result)
+						return {
+							invocationId: invocation.id,
+							operation: operation.id,
+							state: 'succeeded',
+							facts: operation.project(result, invocation)
+						}
+					}
+				}
+			})
+			const artifacts = [...results.values()].flatMap((result) => result.artifacts)
+			const csvDetection = artifacts.find((a) => a.typeKey === 'banking.csv-statement-detection')
+			if (
+				csvDetection &&
+				(csvDetection.payload.sourceArtifactId !== source.artifactId ||
+					csvDetection.payload.sourceSha256 !== csvDigest ||
+					csvDetection.payload.detectorVersion !== CSV_DETECTOR_VERSION)
+			)
+				throw new Error(
+					'Committed CSV detection differs from the current source or detector revision.'
+				)
+			const inspection = artifacts.find(
+				(artifact) => artifact.typeKey === 'core.file-inspection'
+			)?.payload
+			const pageCount = Number(inspection?.pageCount ?? 0)
+			presentation.metadata.pageCount = pageCount
+			const useModel =
+				this.#modelEnabled &&
+				modelPageLimit >= pageCount &&
+				modelPageLimit > 0 &&
+				pageCount > 0 &&
+				Boolean(results.get('inspect')?.result.document?.pages.every((page) => page.image))
+			presentation.metadata.vision = useModel ? 'model' : 'deterministic-fallback'
+			const kind = artifacts.find(
+				(artifact) => artifact.typeKey === 'core.document-classification'
+			)?.payload
+			const content = artifacts.find(
+				(artifact) =>
+					artifact.typeKey === 'core.content-classification' &&
+					artifact.payload.subjectLevel === 'file'
+			)?.payload
+			const validation = artifacts.find((artifact) =>
+				['bookkeeping.invoice-validation', 'banking.statement-validation'].includes(
+					artifact.typeKey
+				)
+			)?.payload
+			const candidate = artifacts.find((artifact) =>
+				['bookkeeping.invoice-candidate', 'banking.account-statement-candidate'].includes(
+					artifact.typeKey
+				)
+			)?.payload
+			if (!inspection) {
+				presentation.state = 'failed'
+				presentation.summary =
+					'Document inspection failed; no conclusion about its contents was made.'
+				presentation.metadata.failedActorCount = presentation.stages.filter(
+					(stage) => stage.state === 'failed'
+				).length
+			} else if (inspection.outcome !== 'ok') {
 				presentation.state = 'needs_review'
-				presentation.preferredType = document.detectedMediaType
-				presentation.summary = `The file is ${document.outcome}; client processing stopped safely.`
+				presentation.preferredType = String(inspection.detectedMediaType)
+				presentation.summary = 'The file is ' + inspection.outcome + '; processing stopped safely.'
 				presentation.warnings.push({
-					code: `file-${document.outcome}`,
+					code: 'file-' + inspection.outcome,
 					message: presentation.summary,
 					retryable: false
 				})
-				this.#changed(source.artifactId, presentation)
-				return presentation
-			}
-
-			currentStage = 'decompose-pages'
-			const decomposed = await this.#step(source, presentation, {
-				key: currentStage,
-				method: 'document_decompose',
-				payload: { document },
-				inputs: [
-					input(source.artifactId, 'source'),
-					input(inspected.artifacts[0]?.artifactId ?? '', 'inspection')
-				],
-				dependsOn: ['inspect']
-			})
-			const pageArtifacts = decomposed.artifacts
-				.filter((artifact) => artifact.typeKey === 'docs.page')
-				.sort((left, right) => pageNumber(left) - pageNumber(right))
-			const nativePages: ExtractedPage[] = []
-			let extractedPages: ExtractedPage[] = []
-			const pageClassifications: PageClassification[] = []
-			const nativeArtifacts: MaterializedArtifact[] = []
-			let representationArtifacts: MaterializedArtifact[] = []
-			const classificationArtifacts: MaterializedArtifact[] = []
-			const nativeByPage = new Map<number, MaterializedArtifact[]>()
-			const representationStageKeys: string[] = []
-			const classificationStageKeys: string[] = []
-			const useModel =
-				this.#modelEnabled && modelStatus.available && pageArtifacts.length <= modelPageLimit
-			presentation.metadata.vision = useModel ? 'model' : 'deterministic-fallback'
-			if (this.#modelEnabled && modelStatus.available && !useModel) {
-				presentation.warnings.push({
-					code: 'client-vision-page-limit',
-					message: `Vision processing admits at most ${modelPageLimit} pages; deterministic extraction continues.`,
-					retryable: false
-				})
-			}
-
-			for (const [index, pageArtifact] of pageArtifacts.entries()) {
-				const page = document.pages.find((candidate) => candidate.page === pageNumber(pageArtifact))
-				if (!page) throw new Error(`decoded page ${pageNumber(pageArtifact)} is missing`)
-				const suffix = String(page.page).padStart(3, '0')
-				currentStage = `extract-native-page-${suffix}`
-				const extracted = await this.#step(source, presentation, {
-					key: currentStage,
-					method: 'document_extract_native_text',
-					payload: { page },
-					inputs: [input(source.artifactId, 'source'), input(pageArtifact.artifactId, 'page')],
-					dependsOn: ['decompose-pages'],
-					parameters: { page: page.page }
-				})
-				nativeArtifacts.push(...extracted.artifacts)
-				nativeByPage.set(page.page, extracted.artifacts)
-				const extractedPage = extractedPageFrom(extracted.result, page.page)
-				nativePages.push(extractedPage)
-
-				const textArtifact = extracted.artifacts.find(
-					(artifact) => artifact.typeKey === 'docs.extracted-text'
-				)
-				if (!textArtifact) throw new Error('native extraction omitted text artifact')
-				if (!useModel) {
-					currentStage = `classify-page-${suffix}`
-					const classified = await this.#step(source, presentation, {
-						key: currentStage,
-						method: 'document_classify_page',
-						payload: {
-							page,
-							extracted: extractedPage,
-							mediaType: document.detectedMediaType
-						},
-						inputs: [
-							input(source.artifactId, 'source'),
-							input(pageArtifact.artifactId, 'page'),
-							input(textArtifact.artifactId, 'text')
-						],
-						dependsOn: [`extract-native-page-${suffix}`],
-						parameters: { page: page.page }
-					})
-					classificationArtifacts.push(...classified.artifacts)
-					pageClassifications.push(pageClassificationFrom(classified.result, page.page))
-					representationStageKeys.push(`extract-native-page-${suffix}`)
-					classificationStageKeys.push(currentStage)
-				}
-				if (index === pageArtifacts.length - 1)
-					presentation.metadata.pageCount = pageArtifacts.length
-			}
-
-			let documentClassification: MaterializedArtifact | undefined
-			if (useModel) {
-				currentStage = 'classify-document'
-				try {
-					const classified = await this.#step(source, presentation, {
-						key: currentStage,
-						method: 'document_classify_kind',
-						payload: { document, pages: nativePages },
-						inputs: [input(source.artifactId, 'source'), ...artifactInputs(nativeArtifacts)],
-						dependsOn: nativePages.map(
-							(page) => `extract-native-page-${String(page.page).padStart(3, '0')}`
-						)
-					})
-					documentClassification = classified.artifacts.find(
-						(artifact) => artifact.typeKey === 'core.document-classification'
-					)
-					if (!documentClassification) throw new Error('document classifier omitted its output')
-				} catch (error) {
-					const message = error instanceof Error ? error.message : String(error)
-					const stage = presentation.stages.find((candidate) => candidate.key === currentStage)
-					if (stage) {
-						stage.state = 'failed'
-						stage.terminalCode = 'model-document-classification-failed'
-					}
-					presentation.warnings.push({
-						code: 'model-document-classification-failed',
-						message: `Document classification failed; independent page-analysis actors continued and finance extraction was pruned because its classification dependency was unavailable. ${message}`,
-						retryable: true
-					})
-				}
-
-				for (const pageArtifact of pageArtifacts) {
-					const number = pageNumber(pageArtifact)
-					const page = document.pages.find((candidate) => candidate.page === number)
-					const native = nativePages.find((candidate) => candidate.page === number)
-					if (!page || !native) throw new Error(`page ${number} representation is missing`)
-					const suffix = String(number).padStart(3, '0')
-					const analyzeStage = `analyze-page-${suffix}`
-					currentStage = analyzeStage
-					try {
-						const analyzed = await this.#step(source, presentation, {
-							key: currentStage,
-							method: 'document_analyze_page',
-							payload: { page, extracted: native },
-							inputs: [
-								input(source.artifactId, 'source'),
-								input(pageArtifact.artifactId, 'page'),
-								...artifactInputs(nativeByPage.get(number) ?? [])
-							],
-							dependsOn: [`extract-native-page-${suffix}`],
-							parameters: { page: number }
-						})
-						representationArtifacts.push(
-							...analyzed.artifacts.filter((artifact) =>
-								['docs.extracted-text', 'docs.text-layout'].includes(artifact.typeKey)
-							)
-						)
-						classificationArtifacts.push(
-							...analyzed.artifacts.filter(
-								(artifact) => artifact.typeKey === 'core.content-classification'
-							)
-						)
-						extractedPages.push(extractedPageFrom(analyzed.result, number))
-						pageClassifications.push(pageClassificationFrom(analyzed.result, number))
-						representationStageKeys.push(analyzeStage)
-						classificationStageKeys.push(analyzeStage)
-					} catch (error) {
-						const message = error instanceof Error ? error.message : String(error)
-						const stage = presentation.stages.find((candidate) => candidate.key === analyzeStage)
-						if (stage) {
-							stage.state = 'failed'
-							stage.terminalCode = 'model-page-analysis-failed'
-						}
-						presentation.warnings.push({
-							code: 'model-page-analysis-failed',
-							message: `Page ${number} model analysis failed; independent native-text and deterministic-classification actors continued. ${message}`,
-							retryable: true
-						})
-						representationArtifacts.push(...(nativeByPage.get(number) ?? []))
-						extractedPages.push(native)
-						representationStageKeys.push(`extract-native-page-${suffix}`)
-
-						currentStage = `classify-page-independent-${suffix}`
-						const fallback = await this.#step(source, presentation, {
-							key: currentStage,
-							method: 'document_classify_page',
-							payload: { page, extracted: native, mediaType: document.detectedMediaType },
-							inputs: [
-								input(source.artifactId, 'source'),
-								input(pageArtifact.artifactId, 'page'),
-								...artifactInputs(nativeByPage.get(number) ?? [])
-							],
-							dependsOn: [`extract-native-page-${suffix}`],
-							parameters: { page: number, continuedAfterFailure: analyzeStage }
-						})
-						classificationArtifacts.push(...fallback.artifacts)
-						pageClassifications.push(pageClassificationFrom(fallback.result, number))
-						classificationStageKeys.push(currentStage)
-					}
-				}
 			} else {
-				extractedPages = nativePages
-				representationArtifacts = nativeArtifacts
-			}
-
-			currentStage = 'assemble-document'
-			const assembled = await this.#step(source, presentation, {
-				key: currentStage,
-				method: 'document_assemble',
-				payload: { pages: extractedPages },
-				inputs: [input(source.artifactId, 'source'), ...artifactInputs(representationArtifacts)],
-				dependsOn: representationStageKeys
-			})
-
-			currentStage = 'aggregate-content'
-			const aggregated = await this.#step(source, presentation, {
-				key: currentStage,
-				method: 'document_aggregate_content',
-				payload: { pages: pageClassifications },
-				inputs: [
-					input(source.artifactId, 'source'),
-					...classificationArtifacts.map((artifact, index) =>
-						input(artifact.artifactId, 'page-classification', index)
-					),
-					...artifactInputs(assembled.artifacts)
-				],
-				dependsOn: [...classificationStageKeys, 'assemble-document']
-			})
-			const classification = aggregated.artifacts.find(
-				(artifact) => artifact.typeKey === 'core.content-classification'
-			)
-			const contentComplete = Boolean(classification?.payload.complete)
-			if (useModel && documentClassification) {
-				const kind = String(documentClassification.payload.resolvedKind ?? 'unknown')
-				presentation.preferredType = kind
-				presentation.metadata.documentKind = kind
-				if (kind === 'unknown') {
-					presentation.state = 'needs_review'
+				presentation.preferredType = String(kind?.resolvedKind ?? content?.primaryKind ?? 'file')
+				if (kind) presentation.metadata.documentKind = String(kind.resolvedKind)
+				if (validation) {
+					presentation.metadata.validationStatus = String(validation.status)
 					presentation.summary = String(
-						documentClassification.payload.reason ?? 'Unknown document kind.'
+						candidate?.summary ?? 'Finance document extracted and validated.'
 					)
-					presentation.warnings.push({
-						code: 'document-kind-unknown',
-						message: presentation.summary,
-						retryable: false
-					})
-				} else {
-					const invoiceKinds = [
-						'invoice',
-						'credit-note',
-						'receipt',
-						'self-issued-receipt',
-						'mandate',
-						'order-confirmation',
-						'offer',
-						'reminder'
-					]
-					const invoice = invoiceKinds.includes(kind)
-					currentStage = invoice ? 'extract-invoice' : 'extract-statement'
-					const extraction = await this.#step(source, presentation, {
-						key: currentStage,
-						method: invoice ? 'document_extract_invoice' : 'document_extract_statement',
-						payload: { document, pages: nativePages, expectedKind: kind },
-						inputs: [
-							input(source.artifactId, 'source'),
-							input(documentClassification.artifactId, 'document-classification'),
-							...artifactInputs(nativeArtifacts)
-						],
-						dependsOn: ['classify-document']
-					})
-					const candidate = extraction.artifacts.find((artifact) =>
-						invoice
-							? artifact.typeKey === 'bookkeeping.invoice-candidate'
-							: artifact.typeKey === 'banking.account-statement-candidate'
-					)
-					if (!candidate) throw new Error('finance extractor omitted its candidate')
-					const details = invoice
-						? extraction.artifacts.find(
-								(artifact) => artifact.typeKey === 'bookkeeping.invoice-details'
-							)
-						: undefined
-					if (invoice && !details) throw new Error('invoice extractor omitted its details')
-					currentStage = invoice ? 'validate-invoice' : 'validate-statement'
-					const validation = await this.#step(source, presentation, {
-						key: currentStage,
-						method: invoice ? 'document_validate_invoice' : 'document_validate_statement',
-						payload: { candidate: candidate.payload },
-						inputs: [input(source.artifactId, 'source'), input(candidate.artifactId, 'candidate')],
-						dependsOn: [invoice ? 'extract-invoice' : 'extract-statement']
-					})
-					const validationArtifact = validation.artifacts[0]
-					if (!validationArtifact) throw new Error('finance validator omitted its result')
-					const status = String(validationArtifact?.payload.status ?? 'incomplete')
-					if (invoice) {
-						if (!details) throw new Error('invoice extractor omitted its details')
-						currentStage = 'normalize-invoice-open-item'
-						await this.#step(source, presentation, {
-							key: currentStage,
-							method: 'document_normalize_open_item',
-							payload: {
-								candidate: candidate.payload,
-								details: details.payload,
-								validation: validationArtifact.payload
-							},
-							inputs: [
-								input(candidate.artifactId, 'candidate'),
-								input(details.artifactId, 'details'),
-								input(validationArtifact.artifactId, 'validation')
-							],
-							dependsOn: ['validate-invoice']
-						})
-					} else {
-						currentStage = 'normalize-statement'
-						const normalized = await this.#step(source, presentation, {
-							key: currentStage,
-							method: 'document_normalize_statement',
-							payload: {
-								candidate: candidate.payload,
-								validation: validationArtifact.payload
-							},
-							inputs: [
-								input(candidate.artifactId, 'candidate'),
-								input(validationArtifact.artifactId, 'validation')
-							],
-							dependsOn: ['validate-statement']
-						})
-						const normalizedStatement = normalized.artifacts[0]
-						if (!normalizedStatement) throw new Error('statement normalizer omitted its result')
-						const transactions = candidate.payload.transactions
-						if (!Array.isArray(transactions)) throw new Error('statement transactions are invalid')
-						for (let offset = 0; offset < transactions.length; offset += 64) {
-							const batch = Math.floor(offset / 64) + 1
-							currentStage = `fanout-statement-transactions-${String(batch).padStart(3, '0')}`
-							await this.#step(source, presentation, {
-								key: currentStage,
-								method: 'document_fanout_statement_transactions',
-								payload: {
-									candidate: candidate.payload,
-									validation: validationArtifact.payload,
-									offset
-								},
-								inputs: [
-									input(candidate.artifactId, 'candidate'),
-									input(validationArtifact.artifactId, 'validation'),
-									input(normalizedStatement.artifactId, 'statement')
-								],
-								parameters: { offset },
-								dependsOn: ['normalize-statement']
-							})
-						}
-					}
-					presentation.state = status === 'inconsistent' ? 'needs_review' : 'succeeded'
-					presentation.summary = String(
-						candidate.payload.summary ?? `${kind} extracted and validated.`
-					)
-					presentation.metadata.validationStatus = status
-					if (status !== 'consistent') {
+					if (validation.status !== 'consistent')
 						presentation.warnings.push({
-							code: `${invoice ? 'invoice' : 'statement'}-${status}`,
-							message: `Finance validation reported ${status}.`,
+							code: 'finance-' + validation.status,
+							message: 'Finance validation reported ' + validation.status + '.',
 							retryable: false
 						})
-					}
+				} else
+					presentation.summary =
+						kind?.resolvedKind === 'unknown'
+							? String(kind.reason)
+							: content?.complete
+								? pageCount + ' page(s) processed with native text extraction.'
+								: pageCount + ' page(s) preserved; OCR or visual understanding is required.'
+				const failures = presentation.stages.filter((stage) => stage.state === 'failed')
+				if (failures.length) presentation.metadata.failedActorCount = failures.length
+				presentation.state =
+					run.state === 'complete' &&
+					content?.complete &&
+					kind?.resolvedKind !== 'unknown' &&
+					(!validation || validation.status === 'consistent')
+						? 'succeeded'
+						: 'needs_review'
+				if (!inspection || (!content && failures.length && !useModel)) presentation.state = 'failed'
+				if (!useModel && !content?.complete)
+					presentation.warnings.push({
+						code: 'client-ocr-unavailable',
+						message: 'No trustworthy native text was found and the vision lane was unavailable.',
+						retryable: false
+					})
+				if (kind?.resolvedKind === 'unknown')
+					presentation.warnings.push({
+						code: 'document-kind-unknown',
+						message: presentation.summary ?? 'Unknown document kind.',
+						retryable: false
+					})
+				if (modelPageLimit > 0 && pageCount > modelPageLimit)
+					presentation.warnings.push({
+						code: 'client-vision-page-limit',
+						message:
+							'Vision processing admits at most ' +
+							modelPageLimit +
+							' pages; deterministic extraction continues.',
+						retryable: false
+					})
+			}
+			if (csv) {
+				presentation.metadata.csvDetectionArtifactId = csvDetection?.artifactId ?? null
+				presentation.metadata.csvDetection = csvDetection?.payload ?? null
+				presentation.metadata.csvDocumentConfirmation =
+					csvConfirmation?.payload.decision ?? 'required'
+				presentation.metadata.documentKind =
+					csvConfirmation?.payload.decision === 'accepted' ? 'bank-statement' : 'unconfirmed-csv'
+				if (
+					!csvDetection ||
+					csvDetection.payload.eligible !== true ||
+					csvConfirmation?.payload.decision !== 'accepted'
+				) {
+					presentation.state = 'needs_review'
+					presentation.summary =
+						csvConfirmation?.payload.decision === 'rejected'
+							? 'CSV document type was rejected. No bookings admitted.'
+							: String(
+									csvDetection?.payload.reason ?? 'CSV detection failed. No bookings admitted.'
+								)
 				}
-			} else {
-				presentation.state = contentComplete ? 'succeeded' : 'needs_review'
-				presentation.preferredType = String(classification?.payload.primaryKind ?? 'file')
-				presentation.summary = contentComplete
-					? `${pageArtifacts.length} page(s) processed with native text extraction.`
-					: `${pageArtifacts.length} page(s) preserved; OCR or visual understanding is required.`
 			}
-			if (!useModel && !contentComplete) {
-				presentation.warnings.push({
-					code: 'client-ocr-unavailable',
-					message: 'No trustworthy native text was found and the vision lane was unavailable.',
-					retryable: false
-				})
-			}
-			const failedActors = presentation.stages.filter((stage) => stage.state === 'failed')
-			if (failedActors.length > 0) {
-				presentation.metadata.failedActorCount = failedActors.length
-				if (presentation.state === 'succeeded') presentation.state = 'needs_review'
-			}
-			this.#changed(source.artifactId, presentation)
-			return presentation
 		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error)
-			const stage = presentation.stages.find((candidate) => candidate.key === currentStage)
-			if (stage) {
-				stage.state = 'failed'
-				stage.terminalCode = 'client-processing-failed'
-			}
 			presentation.state = 'failed'
-			presentation.summary = message
+			presentation.summary = error instanceof Error ? error.message : String(error)
 			presentation.warnings.push({
 				code: 'client-processing-failed',
-				message,
+				message: presentation.summary,
 				retryable: true
 			})
-			this.#changed(source.artifactId, presentation)
-			return presentation
 		}
+		this.#changed(source.artifactId, presentation)
+		return presentation
 	}
-
 	async #step(
 		source: DocumentSource,
 		presentation: ArtifactProcessingPresentation,
 		definition: {
 			key: string
+			actor: string
 			method: string
 			payload: Record<string, unknown>
 			inputs: ClientRunInput[]
 			dependsOn: string[]
 			parameters?: Record<string, unknown>
+			publicationId: string
+			maximumAttempts?: number
 		}
 	): Promise<{
 		result: DocumentActorResult
@@ -622,9 +412,58 @@ export class DocumentProcessingRuntime {
 		}
 		presentation.stages.push(stage)
 		this.#changed(source.artifactId, presentation)
-		const maximumAttempts = RETRYABLE_MODEL_METHODS.has(definition.method)
-			? MODEL_RETRY_DELAYS_MS.length + 1
-			: 1
+		if (definition.publicationId && this.#gateway.lookup) {
+			// Read through the authoritative customer store before re-running any Actor.
+			// Lookup failures are not absence and must not trigger a fresh model call.
+			stage.state = 'publishing'
+			const committed = await this.#gateway.lookup(definition.publicationId)
+			if (committed) {
+				if (committed.procedureVersion !== this.#options.procedureVersion)
+					throw new Error('committed procedure version differs from the admitted run')
+				const result: DocumentActorResult = {
+					ok: true,
+					procedureKey: committed.procedureKey,
+					artifacts: committed.artifacts,
+					evidence: []
+				}
+				const inspection = committed.artifacts.find(
+					(artifact) => artifact.typeKey === 'core.file-inspection'
+				)
+				if (inspection) {
+					if (!inspection.blob)
+						throw new Error('committed inspection has no durable decoded representation')
+					const bytes = Uint8Array.from(atob(inspection.blob.base64), (character) =>
+						character.charCodeAt(0)
+					)
+					const document = JSON.parse(
+						new TextDecoder().decode(bytes)
+					) as DocumentActorResult['document']
+					if (
+						!document ||
+						document.outcome !== inspection.payload.outcome ||
+						document.pages.length !== inspection.payload.pageCount
+					)
+						throw new Error('committed decoded representation contradicts its inspection')
+					result.document = document
+				}
+				const artifacts = materialize(result.artifacts, committed.receipt.artifacts)
+				stage.state = 'succeeded'
+				stage.attemptCount = 0
+				stage.procedureKey = result.procedureKey
+				presentation.derivedArtifacts.push(
+					...artifacts.map((artifact) => ({
+						artifactId: artifact.artifactId,
+						typeKey: artifact.typeKey,
+						typeVersion: artifact.typeVersion,
+						stageKey: definition.key
+					}))
+				)
+				this.#changed(source.artifactId, presentation)
+				return { result, artifacts }
+			}
+			stage.state = 'running'
+		}
+		const maximumAttempts = definition.maximumAttempts ?? 1
 		let lastError: unknown
 		let result: DocumentActorResult | undefined
 		for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
@@ -632,15 +471,18 @@ export class DocumentProcessingRuntime {
 			stage.state = 'running'
 			this.#changed(source.artifactId, presentation)
 			try {
-				const response = await this.#bus.dispatch(
-					'document-runtime',
-					definition.method,
-					definition.payload
-				)
+				const response = await this.#bus.send({
+					id: definition.publicationId,
+					from: 'document-runtime',
+					to: definition.actor,
+					method: definition.method,
+					payload: definition.payload
+				})
 				result = parseDocumentActorResult(response.record)
 				break
 			} catch (error) {
 				lastError = error
+				stage.lastError = error instanceof Error ? error.message : String(error)
 				if (attempt === maximumAttempts) break
 				stage.state = 'retry_wait'
 				this.#changed(source.artifactId, presentation)
@@ -648,16 +490,13 @@ export class DocumentProcessingRuntime {
 			}
 		}
 		if (!result) throw lastError
+		delete stage.lastError
 
 		stage.procedureKey = result.procedureKey
 		stage.state = 'publishing'
 		this.#changed(source.artifactId, presentation)
 		const receipt = await this.#gateway.publish({
-			publicationId: await stableUuid(
-				`${source.artifactId}:${definition.key}:${result.procedureKey}:${definition.inputs
-					.map((item) => `${item.role}:${item.ordinal}:${item.artifactId}`)
-					.join('|')}:${this.#options.procedureVersion}`
-			),
+			publicationId: definition.publicationId,
 			procedureKey: result.procedureKey,
 			procedureVersion: this.#options.procedureVersion,
 			inputs: definition.inputs,

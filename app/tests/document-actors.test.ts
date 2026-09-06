@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import type { CommittedClientRun } from '@avenos/artifact-store'
 import {
 	createDocumentActors,
 	type DecodedDocument,
@@ -63,6 +64,37 @@ class RecordingGateway implements ClientArtifactGateway {
 				artifactId: `${run.publicationId}:${artifact.localKey}`
 			}))
 		}
+	}
+}
+
+class RecoverableGateway extends RecordingGateway {
+	interruptProcedure?: string
+	async lookup(publicationId: string): Promise<CommittedClientRun | null> {
+		const run = this.runs.find((run) => run.publicationId === publicationId)
+		if (!run) return null
+		return structuredClone({
+			receipt: {
+				publicationId,
+				runId: `run-${this.runs.indexOf(run) + 1}`,
+				replayed: true,
+				artifacts: run.artifacts.map((artifact) => ({
+					localKey: artifact.localKey,
+					artifactId: `${publicationId}:${artifact.localKey}`
+				}))
+			},
+			artifacts: run.artifacts,
+			procedureKey: run.procedureKey,
+			procedureVersion: run.procedureVersion,
+			parameters: run.parameters
+		})
+	}
+	async publish(run: ClientRunPublication) {
+		const receipt = await super.publish(run)
+		if (run.procedureKey === this.interruptProcedure) {
+			this.interruptProcedure = undefined
+			throw new Error('lost acknowledgement after committed publication')
+		}
+		return receipt
 	}
 }
 
@@ -286,7 +318,7 @@ describe('client document actors', () => {
 			],
 			outputSlots: [
 				expect.objectContaining({
-					schema: 'ceo.aven:schema:docs:file-inspection@1',
+					schema: 'ceo.aven:schema:docs:file-inspection@2',
 					role: 'inspection',
 					cardinality: 'one'
 				})
@@ -353,9 +385,9 @@ describe('client document actors', () => {
 		const runtime = new DocumentProcessingRuntime(createDocumentActors(new FixedDecoder()), gateway)
 		const presentation = await runtime.start(SOURCE)
 
-		expect(presentation.state).toBe('succeeded')
+		expect(presentation.state, presentation.summary ?? 'document state').toBe('succeeded')
 		expect(presentation.preferredType).toBe('document')
-		expect(presentation.stages.map((stage) => stage.key)).toEqual([
+		expectStageGraph(presentation, [
 			'inspect',
 			'decompose-pages',
 			'extract-native-page-001',
@@ -368,7 +400,11 @@ describe('client document actors', () => {
 		expect(presentation.stages.every((stage) => stage.state === 'succeeded')).toBe(true)
 		expect(gateway.runs).toHaveLength(8)
 		expect(gateway.runs[1]?.inputs.map((value) => value.role)).toEqual(['source', 'inspection'])
-		expect(gateway.runs[3]?.inputs.map((value) => value.role)).toEqual(['source', 'page', 'text'])
+		expect(
+			gateway.runs
+				.find((run) => run.procedureKey === 'client.classify-page-signals')
+				?.inputs.map((value) => value.role)
+		).toEqual(['source', 'page', 'text'])
 		expect(gateway.runs.at(-1)?.procedureKey).toBe('client.aggregate-content-classification')
 		expect(presentation.derivedArtifacts).toHaveLength(12)
 	})
@@ -388,6 +424,52 @@ describe('client document actors', () => {
 		)
 	})
 
+	test('reloads the committed prefix after a lost acknowledgement without repeating decoding or model calls', async () => {
+		const gateway = new RecoverableGateway()
+		gateway.interruptProcedure = 'client.classify-document-model'
+		const model = new InvoiceModelGateway()
+		const document: DecodedDocument = {
+			...structuredClone(DOCUMENT),
+			pages: DOCUMENT.pages.map((page) => ({
+				...structuredClone(page),
+				image: { mediaType: 'image/png', base64: 'eA==' }
+			}))
+		}
+		const first = await new DocumentProcessingRuntime(
+			createDocumentActors(new FixedDecoder(document), model),
+			gateway,
+			() => model.status()
+		).start(SOURCE)
+		expect(first.state).toBe('failed')
+		const decoder: DocumentDecoder = {
+			decode: async () => {
+				throw new Error('committed inspection must be reloaded')
+			}
+		}
+		const second = await new DocumentProcessingRuntime(
+			createDocumentActors(decoder, model),
+			gateway,
+			() => model.status()
+		).start(SOURCE)
+		expect(second.state, second.summary ?? 'recovery').toBe('succeeded')
+		expect(
+			model.requests.filter((request) => request.procedure === 'classify-document')
+		).toHaveLength(1)
+		expect(model.requests.filter((request) => request.procedure === 'analyze-page')).toHaveLength(2)
+		expect(
+			model.requests.filter((request) => request.procedure === 'extract-invoice')
+		).toHaveLength(1)
+		expect(new Set(gateway.runs.map((run) => run.publicationId)).size).toBe(gateway.runs.length)
+		const third = await new DocumentProcessingRuntime(
+			createDocumentActors(decoder, model),
+			gateway,
+			() => model.status()
+		).start(SOURCE)
+		expect(third.state, third.summary ?? 'complete replay').toBe('succeeded')
+		expect(third.stages.every((stage) => stage.attemptCount === 0)).toBe(true)
+		expect(model.requests).toHaveLength(4)
+	})
+
 	test('preserves a scanned PDF but stops at needs-review while OCR is absent', async () => {
 		const gateway = new RecordingGateway()
 		const image: DecodedDocument = {
@@ -401,8 +483,57 @@ describe('client document actors', () => {
 			gateway
 		).start(SOURCE)
 
-		expect(presentation.state).toBe('needs_review')
+		expect(presentation.state, presentation.summary ?? 'document state').toBe('needs_review')
 		expect(presentation.preferredType).toBe('unknown')
+	})
+
+	test('preserves a blank supplier without extraction retries or inventing an open item', async () => {
+		const base = new InvoiceModelGateway()
+		const model: DocumentModelGateway = {
+			status: () => base.status(),
+			async complete(request) {
+				const result = await base.complete(request)
+				if (request.procedure !== 'extract-invoice') return result
+				return {
+					...result,
+					structured: {
+						candidate: {
+							supplier: null,
+							invoiceNumber: null,
+							currency: null,
+							netMinor: null,
+							taxMinor: null,
+							grossMinor: null,
+							dueDate: null,
+							summary: 'Blank specimen.'
+						},
+						details: { documentKind: 'invoice', supplier: null },
+						evidence: []
+					}
+				}
+			}
+		}
+		const document = structuredClone(DOCUMENT)
+		for (const page of document.pages) page.image = { mediaType: 'image/png', base64: 'eA==' }
+		const actors = createDocumentActors(new FixedDecoder(document), model)
+		const gateway = new RecordingGateway()
+		try {
+			const result = await new DocumentProcessingRuntime(actors, gateway, () =>
+				model.status()
+			).start(SOURCE)
+			expect(result.state).toBe('needs_review')
+			expect(base.requests.filter((r) => r.procedure === 'extract-invoice')).toHaveLength(1)
+			const drafts = gateway.runs.flatMap((r) => r.artifacts)
+			expect(
+				drafts.find((a) => a.typeKey === 'bookkeeping.invoice-details')?.payload.supplier
+			).toBeNull()
+			expect(
+				drafts.find((a) => a.typeKey === 'bookkeeping.invoice-candidate')?.payload.grossMinor
+			).toBeNull()
+			expect(drafts.some((a) => a.typeKey === 'bookkeeping.open-item')).toBe(false)
+		} finally {
+			for (const actor of actors.all) actor.dispose()
+		}
 	})
 
 	test('runs the vision, finance extraction, and validation lane client-side', async () => {
@@ -420,21 +551,18 @@ describe('client document actors', () => {
 			model.status()
 		).start(SOURCE)
 
-		expect(presentation.state).toBe('succeeded')
+		expect(presentation.state, presentation.summary ?? 'document state').toBe('succeeded')
 		expect(presentation.preferredType).toBe('invoice')
 		expect(presentation.metadata).toMatchObject({
 			vision: 'model',
 			documentKind: 'invoice',
 			validationStatus: 'consistent'
 		})
-		expect(model.requests.map((request) => request.procedure)).toEqual([
-			'classify-document',
-			'analyze-page',
-			'analyze-page',
-			'extract-invoice'
-		])
+		expect(model.requests.map((request) => request.procedure).sort()).toEqual(
+			['classify-document', 'analyze-page', 'analyze-page', 'extract-invoice'].sort()
+		)
 		expect(JSON.stringify(model.requests.at(-1)?.schema)).not.toContain('$ref')
-		expect(presentation.stages.map((stage) => stage.key)).toEqual([
+		expectStageGraph(presentation, [
 			'inspect',
 			'decompose-pages',
 			'extract-native-page-001',
@@ -478,10 +606,10 @@ describe('client document actors', () => {
 			() => model.status()
 		).start({ ...SOURCE, originalName: 'statement.pdf' })
 
-		expect(presentation.state).toBe('succeeded')
+		expect(presentation.state, presentation.summary ?? 'document state').toBe('succeeded')
 		expect(presentation.preferredType).toBe('bank-statement')
 		expect(presentation.metadata.validationStatus).toBe('consistent')
-		expect(presentation.stages.map((stage) => stage.key)).toEqual([
+		expectStageGraph(presentation, [
 			'inspect',
 			'decompose-pages',
 			'extract-native-page-001',
@@ -545,13 +673,29 @@ describe('client document actors', () => {
 			() => model.status()
 		).start(SOURCE)
 
-		expect(presentation.state).toBe('succeeded')
+		expect(presentation.state, presentation.summary ?? 'document state').toBe('succeeded')
 		expect(
 			presentation.stages.find((stage) => stage.key === 'classify-document')?.attemptCount
 		).toBe(2)
 		expect(
 			model.requests.filter((request) => request.procedure === 'classify-document')
 		).toHaveLength(2)
+	})
+
+	test('does not turn a failed decoder into an assertion that OCR or content is missing', async () => {
+		const decoder: DocumentDecoder = {
+			decode: async () => {
+				throw new Error('decoder unavailable')
+			}
+		}
+		const presentation = await new DocumentProcessingRuntime(
+			createDocumentActors(decoder),
+			new RecordingGateway()
+		).start(SOURCE)
+		expect(presentation.state).toBe('failed')
+		expect(presentation.summary).toContain('no conclusion about its contents')
+		expect(presentation.warnings.map((warning) => warning.code)).toEqual(['inspect-failed'])
+		expect(presentation.derivedArtifacts).toHaveLength(0)
 	})
 
 	test('tracks a failed page actor while independent actors continue', async () => {
@@ -570,10 +714,12 @@ describe('client document actors', () => {
 			() => model.status()
 		).start(SOURCE)
 
-		expect(presentation.state).toBe('needs_review')
+		expect(presentation.state, presentation.summary ?? 'document state').toBe('needs_review')
 		expect(presentation.metadata).toMatchObject({ documentKind: 'invoice' })
 		expect(
-			presentation.warnings.filter((warning) => warning.code === 'model-page-analysis-failed')
+			presentation.warnings.filter(
+				(warning) => warning.code.startsWith('analyze-page-') && warning.code.endsWith('-failed')
+			)
 		).toHaveLength(2)
 		expect(
 			presentation.stages.filter((stage) => stage.state === 'failed').map((stage) => stage.key)
@@ -588,7 +734,7 @@ describe('client document actors', () => {
 		).toBe(true)
 	})
 
-	test('isolates a failed classification publication and prunes only its finance dependents', async () => {
+	test('stops on an uncertain classification publication without treating it as a negative observation', async () => {
 		const model = new InvoiceModelGateway()
 		const visualDocument: DecodedDocument = {
 			...structuredClone(DOCUMENT),
@@ -603,13 +749,12 @@ describe('client document actors', () => {
 			() => model.status()
 		).start(SOURCE)
 
-		expect(presentation.state).toBe('needs_review')
+		expect(presentation.state, presentation.summary ?? 'document state').toBe('failed')
 		expect(
 			presentation.stages.find((stage) => stage.key === 'classify-document')?.attemptCount
 		).toBe(1)
 		expect(presentation.stages.find((stage) => stage.key === 'classify-document')).toMatchObject({
-			state: 'failed',
-			terminalCode: 'model-document-classification-failed'
+			state: 'publishing'
 		})
 		expect(
 			model.requests.filter((request) => request.procedure === 'classify-document')
@@ -621,7 +766,9 @@ describe('client document actors', () => {
 		).toBe(true)
 		expect(presentation.stages.some((stage) => stage.key === 'extract-invoice')).toBe(false)
 		expect(presentation.stages.some((stage) => stage.key === 'validate-invoice')).toBe(false)
-		expect(presentation.metadata.failedActorCount).toBe(1)
+		expect(
+			presentation.warnings.some((warning) => warning.code === 'client-processing-failed')
+		).toBe(true)
 	})
 
 	test('allows a failed presentation to be started again', async () => {
@@ -711,7 +858,7 @@ describe('client document actors', () => {
 		expect(router.status(descriptor.artifactId)).toBeUndefined()
 		const presentation = await router.start(documentRunStartRequest(descriptor, 'server'))
 
-		expect(presentation.state).toBe('succeeded')
+		expect(presentation.state, presentation.summary ?? 'document state').toBe('succeeded')
 		expect(router.status(descriptor.artifactId)?.state).toBe('succeeded')
 		expect(presentation.metadata).toMatchObject({
 			executionEnvironment: 'server',
@@ -723,3 +870,17 @@ describe('client document actors', () => {
 		)
 	})
 })
+
+/** Independent actors may reorder; exact membership and dependency order may not. */
+function expectStageGraph(
+	presentation: { stages: Array<{ key: string; dependsOn?: string[] }> },
+	expected: string[]
+): void {
+	expect(presentation.stages.map((stage) => stage.key).sort()).toEqual([...expected].sort())
+	const positions = new Map(presentation.stages.map((stage, index) => [stage.key, index]))
+	for (const stage of presentation.stages)
+		for (const dependency of stage.dependsOn ?? []) {
+			expect(positions.has(dependency)).toBe(true)
+			expect(positions.get(dependency)!).toBeLessThan(positions.get(stage.key)!)
+		}
+}

@@ -53,6 +53,27 @@ export interface PublishedClientRun {
 
 export interface ClientArtifactGateway {
 	publish(run: ClientRunPublication): Promise<PublishedClientRun>
+	/** Read committed outputs before invoking an Actor after restart. */
+	lookup?(publicationId: string): Promise<CommittedClientRun | null>
+}
+
+/** Portable UUIDv8 identity for a publication's canonical application key. */
+export async function clientRunIdentity(seed: string): Promise<string> {
+	const bytes = new Uint8Array(
+		await crypto.subtle.digest('SHA-256', new TextEncoder().encode(seed))
+	).slice(0, 16)
+	bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x80
+	bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80
+	const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+	return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+export interface CommittedClientRun {
+	receipt: PublishedClientRun
+	artifacts: ClientArtifactDraft[]
+	procedureKey: string
+	procedureVersion: string
+	parameters: Record<string, unknown>
 }
 
 export interface ClientPublicationRetryPolicy {
@@ -83,6 +104,10 @@ export class QueuedClientArtifactGateway implements ClientArtifactGateway {
 			() => undefined
 		)
 		return publication
+	}
+
+	lookup(publicationId: string): Promise<CommittedClientRun | null> {
+		return this.delegate.lookup?.(publicationId) ?? Promise.resolve(null)
 	}
 
 	private async publishWithRetry(run: ClientRunPublication): Promise<PublishedClientRun> {

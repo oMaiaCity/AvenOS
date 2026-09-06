@@ -14,6 +14,10 @@
 		"./execution": "./src/execution.ts",
 		"./llm-gateway": "./src/llm-gateway.ts",
 		"./model": "./src/model.ts",
+		"./csv": "./src/csv.ts",
+		"./csv-confirmation": "./src/csv-confirmation.ts",
+		"./pdf-text": "./src/pdf-text.ts",
+		"./reconciliation-flow": "./src/reconciliation-flow.ts",
 		"./runtime": "./src/runtime.ts",
 		"./server": "./src/server.ts"
 	},

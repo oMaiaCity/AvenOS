@@ -43,6 +43,49 @@ describeWithPostgres('SQL runner persistence', () => {
 		await admin.end()
 	})
 
+	test('publishes progress before completion without adding a replay checkpoint', async () => {
+		const pool = new pg.Pool({
+			connectionString: databaseUrl,
+			max: 2,
+			options: `-c search_path=${schema},pg_catalog`
+		})
+		let release = () => {}
+		const pending = new Promise<void>((resolve) => {
+			release = resolve
+		})
+		let observed = () => {}
+		const reported = new Promise<void>((resolve) => {
+			observed = resolve
+		})
+		const runner = new SqlPlanRunner(pool, pool, async (_request, context) => {
+			await context!.reportProgress!({ phase: 'waiting-for-model', attempt: 1 })
+			observed()
+			await pending
+			return { remainingGoals: [] }
+		})
+		try {
+			const handle = await runner.start(
+				deterministicRunRequest('server', randomUUID(), randomUUID())
+			)
+			await reported
+			const progress = await runner.status(handle.runId)
+			expect(progress).toMatchObject({
+				state: 'accepted',
+				revision: 2,
+				checkpoints: [],
+				progress: { phase: 'waiting-for-model', attempt: 1 }
+			})
+			release()
+			expect(await terminalRecord(runner, handle.runId)).toMatchObject({
+				state: 'succeeded',
+				revision: 3
+			})
+		} finally {
+			release()
+			await pool.end()
+		}
+	}, 5_000)
+
 	test('a fresh runner reclaims a committed accepted run', async () => {
 		const firstProcess = new pg.Pool({
 			connectionString: databaseUrl,

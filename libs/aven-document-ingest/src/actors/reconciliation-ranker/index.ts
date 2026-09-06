@@ -46,16 +46,7 @@ export function createReconciliationRankerActor(): Actor {
 							procedureKey: 'client.rank-invoice-transactions',
 							artifacts,
 							evidence: ranked.flatMap((candidate, ordinal) => {
-								const inputOrdinal = transactions
-									.map((transaction, index) => ({ transaction, index }))
-									.filter(
-										({ transaction }) => transaction.dedupKey === candidate.transactionDedupKey
-									)
-									.sort(
-										(left, right) =>
-											left.transaction.sourceOrdinal - right.transaction.sourceOrdinal ||
-											left.index - right.index
-									)[0]?.index
+								const inputOrdinal = candidate.transactionInputOrdinal
 								if (inputOrdinal === undefined) {
 									throw new Error('ranked transaction is not present in the actor inputs')
 								}

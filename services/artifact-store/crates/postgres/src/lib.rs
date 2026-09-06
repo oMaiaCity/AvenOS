@@ -3,8 +3,9 @@
 use std::collections::BTreeMap;
 
 use aven_artifact_store_contract::{
-    ArtifactEnvelope, ArtifactEvidence, ArtifactResult, BlobAuthority, DeclaredBlob, FeedArtifact,
-    OutputBinding, ProducerInputs, PublicationBody, PublicationFeedItem, PublicationFeedPage,
+    ArtifactEnvelope, ArtifactEvidence, ArtifactQueryPage, ArtifactResult, BlobAuthority,
+    CommittedRunMetadata, DeclaredBlob, FeedArtifact, OutputBinding, ProducerInputs,
+    PublicationBody, PublicationDetails, PublicationFeedItem, PublicationFeedPage,
     PublicationResult, RegisteredTypeDefinition, RunInput, StablePublisher, StoreContext,
     SupportingEvidence, TypeKey, UploadClaimResult, UploadDeclaration, COMMAND_VERSION,
     JSON_PROFILE_ID, SCHEMA_PROFILE_ID,
@@ -607,6 +608,96 @@ impl PostgresStore {
             artifact_id,
             evidence,
         }))
+    }
+
+    /// Read one type at a frozen publication watermark with deterministic UUID pagination.
+    ///
+    /// # Errors
+    /// Returns an error for an invalid snapshot or a database failure.
+    pub async fn query_artifacts(
+        &self,
+        scope_id: Uuid,
+        type_key: &str,
+        snapshot: Option<i64>,
+        after: Option<Uuid>,
+        limit: u32,
+    ) -> Result<ArtifactQueryPage, StoreError> {
+        let latest: i64 = sqlx::query_scalar("SELECT COALESCE(MAX(scope_sequence),0) FROM artifact_store.publications WHERE scope_id=$1")
+            .bind(scope_id).fetch_one(&self.pool).await?;
+        let snapshot_sequence = snapshot.unwrap_or(latest);
+        if snapshot_sequence < 0 || snapshot_sequence > latest {
+            return Err(StoreError::Integrity(
+                "artifact query snapshot is unavailable".into(),
+            ));
+        }
+        let limit = limit.clamp(1, 128);
+        let ids: Vec<Uuid> = sqlx::query_scalar(
+            "SELECT r.id FROM artifact_store.artifact_records r JOIN artifact_store.artifact_contents c ON c.scope_id=r.scope_id AND c.artifact_id=r.id JOIN artifact_store.publications p ON p.scope_id=r.scope_id AND p.publication_id=r.publication_id WHERE r.scope_id=$1 AND c.type_key=$2 AND p.scope_sequence<=$3 AND ($4::uuid IS NULL OR r.id>$4) ORDER BY r.id LIMIT $5",
+        ).bind(scope_id).bind(type_key).bind(snapshot_sequence).bind(after).bind(i64::from(limit) + 1)
+            .fetch_all(&self.pool).await?;
+        let next_after = if ids.len() > limit as usize {
+            ids.get(limit as usize - 1).copied()
+        } else {
+            None
+        };
+        let mut items = Vec::new();
+        for id in ids.into_iter().take(limit as usize) {
+            items.push(
+                self.get_artifact(scope_id, id)
+                    .await?
+                    .ok_or_else(|| StoreError::Integrity("query artifact disappeared".into()))?,
+            );
+        }
+        Ok(ArtifactQueryPage {
+            snapshot_sequence,
+            items,
+            next_after,
+        })
+    }
+
+    /// Resolve an immutable publication by its scope-bound identity without scanning the feed.
+    ///
+    /// # Errors
+    /// Returns an error for invalid retained data or database failure.
+    pub async fn read_publication(
+        &self,
+        scope_id: Uuid,
+        publication_id: Uuid,
+    ) -> Result<Option<PublicationDetails>, StoreError> {
+        let sequence: Option<i64> = sqlx::query_scalar(
+            "SELECT scope_sequence FROM artifact_store.publications WHERE scope_id=$1 AND publication_id=$2",
+        )
+        .bind(scope_id)
+        .bind(publication_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        let Some(sequence) = sequence else {
+            return Ok(None);
+        };
+        let epoch = self.context().await?.store_epoch;
+        let page = self.read_feed(scope_id, epoch, sequence - 1, 1).await?;
+        let item = page.items.into_iter().next();
+        if item
+            .as_ref()
+            .is_none_or(|item| item.publication_id != publication_id)
+        {
+            return Err(StoreError::Integrity(
+                "publication lookup changed identity".into(),
+            ));
+        }
+        let publication = item.expect("publication identity checked above");
+        let run = if let Some(run_id) = publication.run_id {
+            let row = sqlx::query("SELECT procedure_key, procedure_version, parameters FROM artifact_store.production_runs WHERE scope_id=$1 AND id=$2")
+                .bind(scope_id).bind(run_id).fetch_one(&self.pool).await?;
+            Some(CommittedRunMetadata {
+                procedure_key: row.get("procedure_key"),
+                procedure_version: row.get("procedure_version"),
+                parameters: serde_json::from_value(row.get("parameters"))?,
+            })
+        } else {
+            None
+        };
+        Ok(Some(PublicationDetails { publication, run }))
     }
 
     /// Read increasing whole publications after one scope-local sequence.

@@ -14,7 +14,7 @@ function compact(value: string): string {
 	return value
 		.normalize('NFKC')
 		.toUpperCase()
-		.replace(/[^A-Z0-9]+/g, '')
+		.replace(/[^\p{L}\p{N}]+/gu, '')
 }
 
 function validationStatus(value: unknown): ValidationStatus {
@@ -65,7 +65,7 @@ export async function normalizeStatement(
 	const accountRef = accountIban
 		? `iban:${compact(accountIban)}`
 		: accountNumber
-			? `account:${compact(accountNumber)}`
+			? `account:${await digest(JSON.stringify([compact(text(institution?.name) ?? ''), compact(text(institution?.city) ?? ''), compact(accountNumber)]))}`
 			: `derived:${(await digest(derivedIdentity || String(candidate.summary))).slice(0, 32)}`
 	const accountIdentityBasis = accountIban ? 'iban' : accountNumber ? 'account-number' : 'derived'
 	const status = validationStatus(validation.status)

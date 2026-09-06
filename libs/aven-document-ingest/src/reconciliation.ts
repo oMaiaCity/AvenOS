@@ -6,7 +6,7 @@ export type ValidationStatus =
 
 export interface OpenItem {
 	businessKey: string
-	businessKeyBasis: 'supplier-invoice-number' | 'document-fallback'
+	businessKeyBasis: 'supplier-invoice-number'
 	documentKind: string
 	direction: 'payable' | 'receivable' | 'unknown'
 	supplierName: string
@@ -50,9 +50,11 @@ export interface StatementTransaction {
 }
 
 export interface ReconciliationMatchCandidate {
-	matcherVersion: 'invoice-transaction-v1'
+	matcherVersion: 'invoice-transaction-v2'
 	openItemBusinessKey: string
 	transactionDedupKey: string
+	/** Exact occurrence in the ranker's bound input collection; fingerprints are not identity. */
+	transactionInputOrdinal: number
 	rank: number
 	rankScore: number
 	amountMatchBasis: 'account' | 'original' | null
@@ -79,7 +81,7 @@ function folded(value: string | null | undefined): string {
 		.normalize('NFKD')
 		.replace(/\p{M}/gu, '')
 		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, ' ')
+		.replace(/[^\p{L}\p{N}]+/gu, ' ')
 		.trim()
 }
 
@@ -92,6 +94,11 @@ function dateDistance(left: string | null, right: string | null): number | null 
 	const leftTime = Date.parse(`${left.slice(0, 10)}T00:00:00Z`)
 	const rightTime = Date.parse(`${right.slice(0, 10)}T00:00:00Z`)
 	if (!Number.isFinite(leftTime) || !Number.isFinite(rightTime)) return null
+	if (
+		new Date(leftTime).toISOString().slice(0, 10) !== left ||
+		new Date(rightTime).toISOString().slice(0, 10) !== right
+	)
+		return null
 	return Math.round(Math.abs(leftTime - rightTime) / DAY_MS)
 }
 
@@ -141,7 +148,7 @@ function amountComparison(
 			basis: 'account',
 			amount: transaction.amountMinor,
 			currency: transaction.currency,
-			distance: Math.abs(Math.abs(transaction.amountMinor) - Math.abs(openItem.amountDueMinor))
+			distance: Math.abs(Math.abs(transaction.amountMinor) - Math.abs(openItem.grossMinor))
 		})
 	}
 	if (
@@ -152,9 +159,7 @@ function amountComparison(
 			basis: 'original',
 			amount: transaction.originalAmountMinor,
 			currency: transaction.originalCurrency,
-			distance: Math.abs(
-				Math.abs(transaction.originalAmountMinor) - Math.abs(openItem.amountDueMinor)
-			)
+			distance: Math.abs(Math.abs(transaction.originalAmountMinor) - Math.abs(openItem.grossMinor))
 		})
 	}
 	const best = candidates.sort(
@@ -217,20 +222,34 @@ export function rankInvoiceTransactions(
 	transactions: StatementTransaction[]
 ): ReconciliationMatchCandidate[] {
 	const duplicateCounts = new Map<string, number>()
-	const representatives = new Map<string, StatementTransaction>()
-	for (const transaction of transactions) {
-		duplicateCounts.set(transaction.dedupKey, (duplicateCounts.get(transaction.dedupKey) ?? 0) + 1)
-		const current = representatives.get(transaction.dedupKey)
-		if (
-			!current ||
-			(transaction.dedupBasis === 'provider-id' && current.dedupBasis !== 'provider-id') ||
-			transaction.sourceOrdinal < current.sourceOrdinal
-		) {
-			representatives.set(transaction.dedupKey, transaction)
-		}
+	const representatives = new Map<string, { transaction: StatementTransaction; index: number }>()
+	const conflicts = new Set<string>()
+	const observationKey = (transaction: StatementTransaction) =>
+		JSON.stringify([
+			transaction.accountRef,
+			transaction.amountMinor,
+			transaction.currency,
+			transaction.bookingDate,
+			transaction.valueDate,
+			transaction.description,
+			transaction.counterpartyName,
+			transaction.counterpartyIban,
+			transaction.originalAmountMinor,
+			transaction.originalCurrency,
+			transaction.balanceAfterMinor
+		])
+	for (const [index, transaction] of transactions.entries()) {
+		const group =
+			transaction.dedupBasis === 'provider-id' ? transaction.dedupKey : `occurrence:${index}`
+		duplicateCounts.set(group, (duplicateCounts.get(group) ?? 0) + 1)
+		const current = representatives.get(group)
+		if (current && observationKey(current.transaction) !== observationKey(transaction))
+			conflicts.add(group)
+		if (!current || observationKey(transaction) < observationKey(current.transaction))
+			representatives.set(group, { transaction, index })
 	}
 
-	const candidates = [...representatives.values()].map((transaction) => {
+	const candidates = [...representatives.entries()].map(([group, { transaction, index }]) => {
 		const amount = amountComparison(openItem, transaction)
 		const purpose = [transaction.title, transaction.description, transaction.providerTransactionId]
 			.filter((value): value is string => Boolean(value))
@@ -240,7 +259,7 @@ export function rankInvoiceTransactions(
 		)
 			? 'exact'
 			: 'none'
-		const strongReferenceMatch = openItem.references.some((reference) => {
+		const strongReferenceMatch = [openItem.invoiceNumber].some((reference) => {
 			const normalized = compact(reference)
 			const sufficientlySpecific =
 				normalized.length >= 6 ||
@@ -260,7 +279,7 @@ export function rankInvoiceTransactions(
 					: 'none'
 		const issueDateDistanceDays = dateDistance(openItem.issueDate, transaction.bookingDate)
 		const dueDateDistanceDays = dateDistance(openItem.dueDate, transaction.bookingDate)
-		const signMatch = signComparison(openItem.direction, amount.matchedTransactionAmountMinor)
+		const signMatch = signComparison(openItem.direction, transaction.amountMinor)
 		const blockers = rejectBlockers(
 			openItem,
 			transaction,
@@ -268,6 +287,13 @@ export function rankInvoiceTransactions(
 			strongReferenceMatch,
 			signMatch
 		)
+		if (conflicts.has(group)) blockers.push('conflicting-provider-observations')
+		if (
+			transaction.originalAmountMinor !== null &&
+			transaction.amountMinor !== null &&
+			Math.sign(transaction.originalAmountMinor) !== Math.sign(transaction.amountMinor)
+		)
+			blockers.push('contradictory-fx-sign')
 
 		let rankScore = 0
 		const reasons: string[] = []
@@ -310,9 +336,10 @@ export function rankInvoiceTransactions(
 		}
 
 		return {
-			matcherVersion: 'invoice-transaction-v1' as const,
+			matcherVersion: 'invoice-transaction-v2' as const,
 			openItemBusinessKey: openItem.businessKey,
 			transactionDedupKey: transaction.dedupKey,
+			transactionInputOrdinal: index,
 			rank: 0,
 			rankScore: Math.min(10_000, rankScore),
 			...amount,
@@ -322,7 +349,7 @@ export function rankInvoiceTransactions(
 			counterpartyMatch,
 			ibanMatch,
 			signMatch,
-			duplicateCount: duplicateCounts.get(transaction.dedupKey) ?? 1,
+			duplicateCount: duplicateCounts.get(group) ?? 1,
 			reasons,
 			blockers,
 			pairEligible: blockers.length === 0,
@@ -334,9 +361,9 @@ export function rankInvoiceTransactions(
 	return candidates
 		.sort(
 			(left, right) =>
-				right.rankScore - left.rankScore ||
 				(left.amountDistanceMinor ?? Number.MAX_SAFE_INTEGER) -
 					(right.amountDistanceMinor ?? Number.MAX_SAFE_INTEGER) ||
+				right.rankScore - left.rankScore ||
 				(left.issueDateDistanceDays ?? Number.MAX_SAFE_INTEGER) -
 					(right.issueDateDistanceDays ?? Number.MAX_SAFE_INTEGER) ||
 				(left.transactionDedupKey < right.transactionDedupKey

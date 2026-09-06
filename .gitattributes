@@ -1,0 +1,4 @@
+# Test documents are byte-level inputs; preserve their original representation.
+deploy/e2e/fixtures/*.pdf binary
+fixtures/golden/reconciliation-market/*.pdf binary
+fixtures/golden/bank-csv/*.csv -text -diff
