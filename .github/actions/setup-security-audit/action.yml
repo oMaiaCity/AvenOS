@@ -1,9 +1,21 @@
-name: Build pinned Rust advisory checker
-description: Builds the checksum-verified crates.io source without sharing executable caches across trust boundaries
+name: Install pinned Rust advisory checker
+description: Verifies the official release checksum without sharing executable caches across trust boundaries
 runs:
   using: composite
   steps:
     - shell: bash
       run: |
-        cargo install cargo-audit --version 0.22.2 --locked --root "$RUNNER_TEMP/aven-security-tools" --jobs 2
+        set -euo pipefail
+        umask 077
+        [[ "$(uname -s):$(uname -m)" == Linux:x86_64 ]]
+        audit_stage=$(mktemp -d)
+        trap 'rm -rf "$audit_stage"' EXIT
+        curl --fail --silent --show-error --location --retry 2 --max-time 120 \
+          https://github.com/rustsec/rustsec/releases/download/cargo-audit/v0.22.2/cargo-audit-x86_64-unknown-linux-musl-v0.22.2.tgz \
+          --output "$audit_stage/audit.tgz"
+        test "$(sha256sum "$audit_stage/audit.tgz" | cut -d' ' -f1)" = 7fb9497f8594b389e5fce5ef9b92db08432996895b2e0c5a0167a69ed445c428
+        tar -xzf "$audit_stage/audit.tgz" -C "$audit_stage" --strip-components=1
+        install -d -m 700 "$RUNNER_TEMP/aven-security-tools/bin"
+        install -m 500 "$audit_stage/cargo-audit" "$RUNNER_TEMP/aven-security-tools/bin/cargo-audit"
+        "$RUNNER_TEMP/aven-security-tools/bin/cargo-audit" --version
         echo "$RUNNER_TEMP/aven-security-tools/bin" >> "$GITHUB_PATH"

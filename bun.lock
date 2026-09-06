@@ -154,7 +154,7 @@
     },
     "libs/aven-http-boundary": {
       "name": "@avenos/http-boundary",
-      "version": "0.1.0",
+      "version": "26.8.28-next.9",
     },
     "libs/aven-http-resources": {
       "name": "@avenos/http-resources",

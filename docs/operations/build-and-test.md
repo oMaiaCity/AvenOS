@@ -99,8 +99,10 @@ when Cargo proves it absent from every enabled target/feature graph on that run.
 vulnerabilities fail. RustSec informational/unmaintained warnings remain visible: Tauri's
 Linux GTK3 stack still requires old bindings, including the `glib::VariantStrIter`
 unsoundness warning. No local fork or unsupported GTK ABI upgrade conceals that upstream
-constraint. The auditor is built from a pinned crates.io release; CI does not share an
-executable scanner cache between development and release branches.
+constraint. CI installs the official pinned auditor release only after checking its
+recorded SHA-256; it does not share an executable scanner cache between development
+and release branches. The manual `cargo install` command above builds the same version
+from crates.io when a supported prebuilt CI binary is not applicable.
 
 ## Infrastructure and recovery checks
 
