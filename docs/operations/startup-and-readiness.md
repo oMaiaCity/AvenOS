@@ -168,8 +168,11 @@ reason codes and observation times.
 Checkout observes database access, stale or dead email and platform-event queues,
 SMTP verification, recent SMTP acceptance, Postscale sender verification and available
 sending capacity, and the required enabled raw Polar webhook. SMTP acceptance is not
-inbox delivery. With no accepted mail in the preceding day, acceptance is unproven,
-not silently healthy. Other SMTP providers need a capacity-check adapter; they are not
+inbox delivery. The separate `observations` section reports SMTP acceptance evidence
+and explicitly unverified inbox delivery. No recent traffic alone does not degrade an
+otherwise working new or idle installation; provider, worker and queue failures still do.
+A green capability response is therefore not a completed onboarding certificate.
+Other SMTP providers need a capacity-check adapter; they are not
 reported healthy merely because their credentials authenticate.
 
 The facade observes checkout capability health, identity and domain-service readiness,

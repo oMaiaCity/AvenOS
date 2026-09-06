@@ -395,12 +395,12 @@ for (const target of selectedTargets) {
 		updateProgress(`Moving the ${target} bootstrap state into its private state bucket.`)
 		await retryBootstrapStateBackendMigration({
 			migrate: async () => {
-				await run('pulumi', ['login', remoteBackend], { env: bootstrapEnvironment })
+				await run('pulumi', ['login', remoteBackend], { env: bootstrapEnvironment, capture: true })
 				await openPulumiStack(stack, bootstrapCwd, bootstrapEnvironment)
 				await run(
 					'pulumi',
 					['stack', 'import', '--stack', stack, '--cwd', bootstrapCwd, '--file', exportPath],
-					{ env: bootstrapEnvironment }
+					{ env: bootstrapEnvironment, capture: true }
 				)
 			},
 			onVisibilityWait: ({ retry, maxRetries, delayMs }) =>

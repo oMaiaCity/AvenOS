@@ -93,6 +93,8 @@ jobs:
           bun run --cwd libs/aven-customer-runtime test
           bun run --cwd libs/aven-actors test
           bun run --cwd libs/aven-artifact-store test
+          bun run --cwd libs/aven-document-ingest test
+          cargo test --locked --release --manifest-path app/src-tauri/Cargo.toml --lib service_token::tests
           cargo test --locked --workspace --manifest-path services/artifact-store/Cargo.toml
           bun run --cwd services/platform-provisioner test
           bun run --cwd services/intent-service test

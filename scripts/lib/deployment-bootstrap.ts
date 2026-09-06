@@ -163,7 +163,9 @@ export function isRetryableBootstrapStateBackendError(error: unknown): boolean {
 		.join('\n')
 	return (
 		/NoSuchBucket/i.test(output) &&
-		/(?:ListObjectsV2|could not (?:create stack|list bucket|list stacks))/i.test(output)
+		/(?:ListObjectsV2|PutObject|HeadBucket|could not (?:create stack|list bucket|list stacks))/i.test(
+			output
+		)
 	)
 }
 

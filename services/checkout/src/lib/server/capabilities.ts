@@ -43,7 +43,6 @@ export class CheckoutCapabilities {
 				'database',
 				'email_queue',
 				'smtp_connection',
-				'smtp_acceptance',
 				'smtp_provider',
 				'platform_events',
 				'polar_webhook'
@@ -65,7 +64,18 @@ export class CheckoutCapabilities {
 			status: Object.values(checks).every((check) => check.status === 'healthy')
 				? 'healthy'
 				: 'degraded',
-			checks
+			checks,
+			// An idle or newly installed service has no recent mail traffic. That is
+			// missing delivery evidence, not a broken connection or queue. Keep it
+			// visible without manufacturing traffic or claiming inbox verification.
+			observations: {
+				smtp_acceptance: this.values.smtp_acceptance ?? {
+					status: 'unverified',
+					code: 'RECENT_SMTP_ACCEPTANCE_UNPROVEN',
+					checkedAt: 0
+				},
+				inbox_delivery: { status: 'unverified', code: 'INBOX_DELIVERY_UNPROVEN' }
+			}
 		}
 	}
 	async refresh() {

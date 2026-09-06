@@ -203,7 +203,7 @@ test('fails after a bounded bucket visibility wait', async () => {
 	assert.equal(waits, BOOTSTRAP_BUCKET_VISIBILITY_RETRY_DELAYS_MS.length)
 })
 
-test('retries an idempotent state-backend migration only for transient missing-bucket reads', async () => {
+test('retries an idempotent state-backend migration only for transient missing-bucket operations', async () => {
 	let attempts = 0
 	const waits = []
 	assert.equal(
@@ -230,6 +230,36 @@ test('retries an idempotent state-backend migration only for transient missing-b
 		{ retry: 2, maxRetries: BOOTSTRAP_BUCKET_VISIBILITY_RETRY_DELAYS_MS.length, delayMs: 4_000 },
 		{ slept: 4_000 }
 	])
+})
+
+test('retries fresh-backend metadata writes without treating denied writes as propagation', async () => {
+	let attempts = 0
+	await retryBootstrapStateBackendMigration({
+		migrate: async () => {
+			if (++attempts === 1)
+				throw Object.assign(new Error('pulumi failed'), {
+					commandOutput:
+						'problem logging in: write ".pulumi/meta.yaml": operation error S3: PutObject, StatusCode: 404, NoSuchBucket'
+				})
+		},
+		sleep: async () => {}
+	})
+	assert.equal(attempts, 2)
+	assert.equal(
+		isRetryableBootstrapStateBackendError({
+			commandOutput: 'operation error S3: PutObject, AccessDenied'
+		}),
+		false
+	)
+	const source = readFileSync(
+		new URL('../../../scripts/deployment-bootstrap.ts', import.meta.url),
+		'utf8'
+	)
+	const migration = source.slice(source.indexOf('await retryBootstrapStateBackendMigration({'))
+	assert.match(
+		migration,
+		/\['login', remoteBackend\], \{ env: bootstrapEnvironment, capture: true \}/
+	)
 })
 
 test('skips a repeated provider update only for a complete settled local bootstrap stack', () => {

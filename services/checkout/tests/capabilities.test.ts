@@ -91,4 +91,21 @@ describe('checkout capability health', () => {
 		expect(queueCapability({ dead: 0, oldestSeconds: 301 }, 100).code).toBe('QUEUE_STALE')
 		expect(queueCapability({ dead: 0, oldestSeconds: null }, 100).status).toBe('healthy')
 	})
+
+	test('an idle installation can receive traffic without claiming delivered mail', async () => {
+		provider.enabled = true
+		const { capability, query } = monitor()
+		query.mockImplementation(async (sql: string) => ({
+			rows: sql.includes('email_queue')
+				? [{ dead: 0, oldest: null, sent: false }]
+				: sql.includes('worker_heartbeats')
+					? [{ fresh: true, metadata: { smtpVerifiedAt: Date.now() } }]
+					: [{ dead: 0, oldest: null }]
+		}))
+		await capability.refresh()
+		const result = capability.snapshot()
+		expect(result.status).toBe('healthy')
+		expect(result.observations.smtp_acceptance.code).toBe('RECENT_SMTP_ACCEPTANCE_UNPROVEN')
+		expect(result.observations.inbox_delivery.status).toBe('unverified')
+	})
 })
