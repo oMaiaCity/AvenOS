@@ -93,6 +93,14 @@ Its checksum-pinned scanner first proves that a synthetic registry credential is
 The historical baseline contains exact reviewed commit/file/rule fingerprints, not broad
 path exclusions. New occurrences still fail. Never add an active credential to the baseline.
 
+CI dependency installation temporarily authenticates through an owner-only project
+`.npmrc`, then restores its exact prior contents and permissions in the same step.
+The action restores it on success, failure and handled cancellation; it does not leave
+a token hidden behind Git's skip-worktree flag. A local action regression runs in both
+platform CI and release verification before scanning. An abruptly killed disposable
+runner cannot execute its cleanup trap, so no workspace or registry configuration is
+exported as a cache or artifact.
+
 The Rust audit checks every supported application, library and service lockfile, excluding
 archived code. Artifact Store's locked but unused SQLx MySQL/RSA dependency is exempt only
 when Cargo proves it absent from every enabled target/feature graph on that run. Other

@@ -58,6 +58,7 @@ jobs:
       - uses: ./.github/actions/setup-security-audit
       - name: Static checks
         run: |
+          bun test scripts/lib/bun-install-action.test.ts
           bun run check:secrets
           bun audit
           bun run check:rust-advisories
