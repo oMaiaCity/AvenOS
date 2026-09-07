@@ -76,6 +76,11 @@ curl() {
   return 0
 }
 
+bun() {
+  [[ "$1" == "$root/scripts/reconcile-deployed-polar-webhook.ts" ]]
+  [[ "$DEPLOYMENT_TARGET" == next || "$DEPLOYMENT_TARGET" == production ]]
+}
+
 run_target() (
   export DEPLOYMENT_TARGET=$1
   export PULUMI_STACK="organization/aven-platform/$DEPLOYMENT_TARGET"

@@ -89,6 +89,13 @@ Checkout itself stays closed when the published pricing manifest cannot be creat
 drift-corrected at Polar. The one-shot sync includes avenNAME, recurring products, and
 benefits and is safe to rerun on every deployment.
 
+Polar may disable a webhook after repeated delivery failures while a new installation
+is still offline. After checkout's public readiness succeeds, deployment verifies the
+one existing raw endpoint against its saved signing secret and required events, then
+re-enables it before capability verification. It does not create a replacement, change
+the URL or secret, or touch an unrelated endpoint. Missing, duplicate or drifted
+configuration stops deployment and requires bootstrap reconciliation.
+
 This graph runs independently on `next` and production. No readiness gate in one
 platform can satisfy a dependency in the other. Both platforms depend on the shared
 identity public issuer, but their customer reconciliation, tenant grants, and data
@@ -174,6 +181,12 @@ otherwise working new or idle installation; provider, worker and queue failures 
 A green capability response is therefore not a completed onboarding certificate.
 Other SMTP providers need a capacity-check adapter; they are not
 reported healthy merely because their credentials authenticate.
+
+Only the email worker receives SMTP credentials and calls the mail-provider API. It
+stores a timestamped status and fixed reason code in its existing database heartbeat.
+Checkout reads that observation without gaining the worker's credential. A missing,
+failed or three-minute-old observation, or a stale worker heartbeat, degrades health.
+Provider checks do not block email delivery or the worker's normal heartbeat.
 
 The facade observes checkout capability health, identity and domain-service readiness,
 provisioner heartbeat, failed/stale operations and leases, and the latest backup result.

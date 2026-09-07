@@ -28,6 +28,7 @@ bun test "$root/deploy/local/llm-catalog.test.ts" "$root/deploy/e2e/llm-catalog.
 
 grep -Fq "if: inputs.target != 'identity'" "$root/.github/workflows/platform-deploy-target.yml"
 bun test "$root/scripts/lib/platform-release.test.ts" "$root/deploy/e2e/mail-topology.test.ts"
+bun test "$root/scripts/reconcile-deployed-polar-webhook.test.ts"
 for workflow in platform-ci.yml platform-release.yml; do
   grep -Fq 'uses: ./.github/actions/setup-platform-test-host' "$root/.github/workflows/$workflow" || {
     echo "$workflow must use the shared native platform test-host setup" >&2
