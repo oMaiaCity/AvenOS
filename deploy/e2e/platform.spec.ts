@@ -1335,6 +1335,15 @@ test('fresh split stack: checkout, identity, facade, and managed hosting', async
 			max: 1
 		})
 		try {
+			const heartbeat = (
+				await checkoutDatabase.query(
+					"SELECT metadata FROM worker_heartbeats WHERE worker_name='email-worker'"
+				)
+			).rows[0]?.metadata
+			expect(heartbeat.providerHealth.code).toBe('SMTP_PROVIDER_NOT_OBSERVABLE')
+			expect(heartbeat.providerHealth.healthy).toBe(false)
+			expect(Date.now() - heartbeat.providerHealth.checkedAt).toBeLessThan(180_000)
+			expect(Object.keys(heartbeat.providerHealth).sort()).toEqual(['checkedAt', 'code', 'healthy'])
 			const delivery = (
 				await checkoutDatabase.query(
 					`SELECT event_type,payload,state,attempt_count
