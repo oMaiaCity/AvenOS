@@ -77,7 +77,7 @@ jobs:
       DEPLOYMENT_TARGET: ${{ inputs.target }}
       RECOVER_FROM_BACKUP: ${{ inputs.recover_from_backup }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
@@ -126,7 +126,7 @@ jobs:
           fi
           export DRILL_OUTPUT="$RUNNER_TEMP/restore-drill.json"
           bash deploy/operations/drill-latest.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: restore-drill-${{ inputs.target }}
@@ -139,7 +139,7 @@ jobs:
         env:
           RELEASE_MANIFEST: ${{ inputs.manifest }}
         run: printf '%s\n' "$RELEASE_MANIFEST" > next-proof.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: inputs.target == 'next'
         with:
           name: aven-next-proof
