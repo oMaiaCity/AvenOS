@@ -2,6 +2,7 @@ import { BodyLimitError, readBoundedBytes } from '@avenos/http-boundary'
 import { json } from '@sveltejs/kit'
 import { svelteKitHandler } from 'better-auth/svelte-kit'
 import { building } from '$app/environment'
+import { namePasskeyRegistration, passkeyNameSchema } from '$lib/passkey-name.js'
 import { enrollmentContext, setupAllowedPaths } from '$lib/server/enrollment.js'
 import { ProofOfWorkError, protectedAuthPaths } from '$lib/server/proof-of-work.js'
 import { runtime } from '$lib/server/runtime.js'
@@ -12,7 +13,9 @@ export const handle = async ({ event, resolve }) => {
 		try {
 			const path = event.url.pathname
 			const limit =
-				path === '/api/passkeys' || path === '/internal/v1/accounts'
+				path === '/api/passkeys' ||
+				path === '/api/auth/passkey/update-passkey' ||
+				path === '/internal/v1/accounts'
 					? 4096
 					: path === '/internal/v1/authorizations/roles'
 						? 32768
@@ -36,6 +39,32 @@ export const handle = async ({ event, resolve }) => {
 			.filter(Boolean)
 	])
 	const normalizedPath = event.url.pathname.replace(/\/$/, '')
+	const registrationName =
+		event.request.method === 'GET' &&
+		normalizedPath === '/api/auth/passkey/generate-register-options'
+			? event.url.searchParams.get('name')
+			: null
+	if (registrationName !== null && !passkeyNameSchema.safeParse(registrationName).success)
+		return json(
+			{ code: 'INVALID_PASSKEY_NAME', message: 'Use 1–128 characters for the passkey name.' },
+			{ status: 400 }
+		)
+	if (
+		event.request.method === 'POST' &&
+		['/api/auth/passkey/update-passkey', '/api/auth/passkey/verify-registration'].includes(
+			normalizedPath
+		)
+	) {
+		const body = await event.request
+			.clone()
+			.json()
+			.catch(() => null)
+		if (body?.name !== undefined && !passkeyNameSchema.safeParse(body.name).success)
+			return json(
+				{ code: 'INVALID_PASSKEY_NAME', message: 'Use 1–128 characters for the passkey name.' },
+				{ status: 400 }
+			)
+	}
 	const publicDeviceExchange =
 		normalizedPath === '/api/auth/device/code' || normalizedPath === '/api/auth/device/token'
 	if (
@@ -83,9 +112,18 @@ export const handle = async ({ event, resolve }) => {
 				return json({ code: 'PASSKEY_ENROLLMENT_REQUIRED' }, { status: 403 })
 		}
 	}
-	const response = await enrollmentContext.run({}, () =>
+	let response = await enrollmentContext.run({}, () =>
 		svelteKitHandler({ event, resolve, auth, building })
 	)
+	if (registrationName !== null && response.ok) {
+		const options = await response.json()
+		const headers = new Headers(response.headers)
+		headers.delete('content-length')
+		response = json(namePasskeyRegistration(options, registrationName), {
+			status: response.status,
+			headers
+		})
+	}
 	response.headers.set('x-content-type-options', 'nosniff')
 	response.headers.set('referrer-policy', 'no-referrer')
 	response.headers.set('x-frame-options', 'DENY')

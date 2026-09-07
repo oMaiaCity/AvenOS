@@ -71,6 +71,8 @@ bun run --cwd app build
 cargo check --locked --manifest-path app/src-tauri/Cargo.toml
 ```
 
+The [client download workflow](client-releases.md) builds and verifies Linux,
+macOS, and Android test installers and attaches them to a complete GitHub prerelease.
 Signed App Store, Android, and distribution-specific application builds have separate
 credentials and guides under `docs/deploy/`; they are not part of the server-platform
 deployment.

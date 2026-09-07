@@ -141,8 +141,10 @@ onMount(() => {
 <section class="section">
 	<div class="section-inner stack stack-center">
 		<!-- Which name is being paid for — the one fact the Polar embed cannot show. -->
-		<p class="text text--label">Du sicherst</p>
-		<p class="text text--digits">{data.name}.aven.ceo</p>
+		<div class="flow-card-code">
+			<span class="flow-card-code-label">Du sicherst</span>
+			<strong class="flow-card-code-value">{data.name}.aven.ceo</strong>
+		</div>
 
 		<div class="payment-frame payment-frame--height-tall">
 			{#if fakeParams}

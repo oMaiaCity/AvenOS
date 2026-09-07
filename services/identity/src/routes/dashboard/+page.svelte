@@ -2,6 +2,7 @@
 import { onMount } from 'svelte'
 import { goto } from '$app/navigation'
 import { authClient } from '$lib/auth-client.js'
+import { defaultPasskeyName, passkeyNameSchema } from '$lib/passkey-name.js'
 import type { PasskeySummary } from '$lib/types.js'
 
 const session = authClient.useSession()
@@ -10,6 +11,36 @@ let requirePrf = $state(false)
 let busy = $state(false)
 let error = $state('')
 let notice = $state('')
+let newName = $state('')
+let nameSuggested = $state(false)
+let editingId = $state<string | null>(null)
+let editedName = $state('')
+let saving = $state(false)
+$effect(() => {
+	if ($session.data?.user.email && !nameSuggested) {
+		newName = defaultPasskeyName($session.data.user.email, navigator.userAgent)
+		nameSuggested = true
+	}
+})
+
+async function renamePasskey(event: SubmitEvent) {
+	event.preventDefault()
+	const parsed = passkeyNameSchema.safeParse(editedName)
+	if (!editingId || !parsed.success) return
+	saving = true
+	error = ''
+	try {
+		// Reuse the identity plugin's authenticated, ownership-checked endpoint.
+		const result = await authClient.passkey.updatePasskey({ id: editingId, name: parsed.data })
+		if (result.error) throw new Error(result.error.message ?? 'Could not rename the passkey.')
+		await load()
+		editingId = null
+	} catch (cause) {
+		error = cause instanceof Error ? cause.message : 'Could not rename the passkey.'
+	} finally {
+		saving = false
+	}
+}
 async function resendSetup() {
 	busy = true
 	error = ''
@@ -45,11 +76,16 @@ onMount(() => {
 	})
 })
 async function addPasskey() {
+	const parsed = passkeyNameSchema.safeParse(newName)
+	if (!parsed.success) {
+		error = 'Give your passkey a name between 1 and 128 characters.'
+		return
+	}
 	busy = true
 	error = ''
 	try {
 		const result = await authClient.passkey.addPasskey({
-			name: `Passkey ${passkeys.length + 1}`,
+			name: parsed.data,
 			returnWebAuthnResponse: true,
 			...(requirePrf ? { extensions: { prf: {} } as never } : {})
 		})
@@ -119,10 +155,20 @@ async function addPasskey() {
 							<path d="m5 12.5 4.25 4.25L19 7" />
 						</svg>
 					</span>
-					<span class="row-list-name">
-						{passkey.name || 'Passkey'}{passkey.backed_up ? ' — synced' : ''}
-					</span>
-					<span class="row-list-meta">{new Date(passkey.created_at).toLocaleDateString()}</span>
+					<div>
+						<div class="row-list-name">
+							{passkey.name || 'Passkey'}{passkey.backed_up ? ' — synced' : ''}
+						</div>
+						<div class="row-list-meta">{new Date(passkey.created_at).toLocaleDateString()}</div>
+					</div>
+					<button
+						class="btn row-list-action"
+						disabled={busy || saving}
+						aria-label={`Rename ${passkey.name || 'Passkey'}`}
+						onclick={() => { editingId = passkey.id; editedName = passkey.name || '' }}
+					>
+						Rename
+					</button>
 				</li>
 			{/each}
 		</ul>
@@ -132,8 +178,56 @@ async function addPasskey() {
 			<p class="empty-state-body">Add one and this device can sign you in without a password.</p>
 		</div>
 	{/if}
+	{#if editingId}
+		<form class="field" onsubmit={renamePasskey} aria-label="Rename passkey">
+			<label class="field-label" for="rename-passkey">Passkey name</label>
+			<div class="field-shell">
+				<input
+					class="field-control"
+					id="rename-passkey"
+					bind:value={editedName}
+					required
+					maxlength="128"
+					disabled={saving}
+				>
+			</div>
+			<div class="flow-card-actions">
+				<button
+					class="btn btn--primary"
+					type="submit"
+					disabled={saving || !passkeyNameSchema.safeParse(editedName).success}
+				>
+					{saving ? 'Saving…' : 'Save name'}
+				</button>
+				<button class="btn" type="button" disabled={saving} onclick={() => { editingId = null }}>
+					Cancel
+				</button>
+			</div>
+		</form>
+	{/if}
+	<div class="field">
+		<label class="field-label" for="new-passkey-name">Name for your new passkey</label>
+		<div class="field-shell">
+			<input
+				class="field-control"
+				id="new-passkey-name"
+				bind:value={newName}
+				oninput={() => { nameSuggested = true }}
+				maxlength="128"
+				disabled={busy || saving}
+			>
+		</div>
+		<p class="field-hint">
+			Choose the name before continuing. We send it to your phone or password manager when you
+			create the passkey. Renaming it here afterward only changes this account list.
+		</p>
+	</div>
 	<div class="flow-card-actions">
-		<button class="btn btn--primary" disabled={busy || Boolean(notice)} onclick={addPasskey}>
+		<button
+			class="btn btn--primary"
+			disabled={busy || saving || Boolean(notice) || !passkeyNameSchema.safeParse(newName).success}
+			onclick={addPasskey}
+		>
 			{busy ? 'Adding…' : passkeys.length ? 'Add another passkey' : 'Add passkey'}
 		</button>
 		{#if !passkeys.length && !notice}

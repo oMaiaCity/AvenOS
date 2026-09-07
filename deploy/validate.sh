@@ -28,6 +28,8 @@ bun test "$root/deploy/local/llm-catalog.test.ts" "$root/deploy/e2e/llm-catalog.
 
 grep -Fq "if: inputs.target != 'identity'" "$root/.github/workflows/platform-deploy-target.yml"
 bun test "$root/scripts/lib/platform-release.test.ts" "$root/deploy/e2e/mail-topology.test.ts"
+bun test "$root/scripts/lib/client-release.test.ts"
+bun "$root/app/node_modules/typescript/bin/tsc" --noEmit --skipLibCheck --module esnext --moduleResolution bundler --target es2023 --typeRoots "$root/app/node_modules/@types" --types bun "$root/scripts/build-client-release.ts" "$root/scripts/client-release-manifest.ts" "$root/scripts/lib/client-release.ts" "$root/scripts/lib/client-release.test.ts" "$root/scripts/smoke-client-linux.ts"
 bun test "$root/scripts/reconcile-deployed-polar-webhook.test.ts"
 for workflow in platform-ci.yml platform-release.yml; do
   grep -Fq 'uses: ./.github/actions/setup-platform-test-host' "$root/.github/workflows/$workflow" || {

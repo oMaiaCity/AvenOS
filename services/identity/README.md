@@ -13,7 +13,21 @@ Public verification is deliberately small:
 - `GET /.well-known/openid-configuration` advertises those endpoints.
 
 The authenticated `/dashboard` lists the account's credentials and allows the
-holder to add additional passkeys. The provisioning endpoint under
+holder to add and rename passkeys. Registration suggests `aven.id-<email>-<device>-<browser>`;
+the holder edits that suggestion before the phone/password-manager creation prompt.
+Once the holder edits or clears the field, late-arriving account details do not
+replace that input with the suggestion.
+The chosen value is sent in both WebAuthn `user.name` and `user.displayName` before
+`navigator.credentials.create`, without changing the opaque user handle, RP ID,
+challenge, verification requirements, or exclusions. The password manager owns its
+presentation and may shorten or otherwise format that label.
+**Rename** afterward changes only the account's displayed list label.
+Names are trimmed, limited to 128 characters, and cannot contain control characters.
+The existing identity plugin owns registration and ownership-checked renaming; changing
+the label does not change credential material or rename the password-manager entry.
+Device/browser names are coarse suggestions, not hardware identification.
+
+The provisioning endpoint under
 `/internal/v1/accounts` is service-authenticated and is the only signup ingress;
 it returns a bootstrap link only until the first qualifying passkey exists.
 
