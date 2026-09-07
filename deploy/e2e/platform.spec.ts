@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { request as httpRequest } from 'node:http'
-import { expect, test } from '@playwright/test'
+import { expect, type Page, test } from '@playwright/test'
 import pg from 'pg'
 import { ACTOR_RUN_PROTOCOL } from '../../libs/aven-actors/src/index.js'
 import {
@@ -846,6 +846,23 @@ async function deviceSession(page: import('@playwright/test').Page): Promise<str
 	throw new Error('device token was not issued')
 }
 
+async function recordPasskeyCreation(page: Page) {
+	await page.evaluate(() => {
+		const create = navigator.credentials.create.bind(navigator.credentials)
+		navigator.credentials.create = (options) => {
+			if (options?.publicKey) {
+				Reflect.set(globalThis, '__passkeyCreationLabels', {
+					name: options.publicKey.user.name,
+					displayName: options.publicKey.user.displayName,
+					rpId: options.publicKey.rp.id
+				})
+			}
+			// Observe the real call; the normal authenticator still performs it.
+			return create(options)
+		}
+	})
+}
+
 test('fresh split stack: checkout, identity, facade, and managed hosting', async ({ browser }) => {
 	requireEnvironment()
 	const context = await browser.newContext()
@@ -948,8 +965,36 @@ test('fresh split stack: checkout, identity, facade, and managed hosting', async
 	await pendingPage.goto(setupUrl)
 	await expect(page.getByRole('heading', { name: 'Your account' })).toBeVisible()
 	expect((await pendingContext.request.get(`${identityBrowser}/api/auth/token`)).status()).toBe(403)
+	await expect(page.getByLabel('Name for your new passkey')).toHaveValue(
+		new RegExp(`^aven\\.id-${email}-`)
+	)
+	const firstPasskeyName = `aven.id-${email}-My phone`
+	await page.getByLabel('Name for your new passkey').fill(firstPasskeyName)
+	await recordPasskeyCreation(page)
+	expect(
+		(
+			await context.request.get(`${identityBrowser}/api/auth/passkey/generate-register-options`, {
+				params: { name: 'x'.repeat(129) }
+			})
+		).status()
+	).toBe(400)
 	await page.getByRole('button', { name: 'Add passkey' }).click()
 	await expect(page.getByRole('list', { name: 'Passkeys' }).getByRole('listitem')).toHaveCount(1)
+	await expect(page.getByRole('list', { name: 'Passkeys' })).toContainText(firstPasskeyName)
+	expect(await page.evaluate(() => Reflect.get(globalThis, '__passkeyCreationLabels'))).toEqual({
+		name: firstPasskeyName,
+		displayName: firstPasskeyName,
+		rpId: 'localhost'
+	})
+	await page.getByRole('button', { name: /^Rename / }).click()
+	await expect(page.getByLabel('Passkey name', { exact: true })).toHaveClass('field-control')
+	await page.getByLabel('Passkey name', { exact: true }).fill('My everyday passkey')
+	await page.getByRole('button', { name: 'Save name' }).click()
+	await expect(
+		page.getByRole('button', { name: 'Rename My everyday passkey', exact: true })
+	).toBeVisible()
+	await page.reload()
+	await expect(page.getByRole('list', { name: 'Passkeys' })).toContainText('My everyday passkey')
 	expect(
 		await (await pendingContext.request.get(`${identityBrowser}/api/auth/get-session`)).json()
 	).toBeNull()
@@ -973,13 +1018,40 @@ test('fresh split stack: checkout, identity, facade, and managed hosting', async
 	await expect(
 		secondPage.getByRole('list', { name: 'Passkeys' }).getByRole('listitem')
 	).toHaveCount(1)
+	await secondPage.getByLabel('Name for your new passkey').fill('')
+	await expect(secondPage.getByRole('button', { name: 'Add another passkey' })).toBeDisabled()
+	await secondPage.getByLabel('Name for your new passkey').fill('Spare security key')
+	await recordPasskeyCreation(secondPage)
 	await secondPage.getByRole('button', { name: 'Add another passkey' }).click()
 	await expect(
 		secondPage.getByRole('list', { name: 'Passkeys' }).getByRole('listitem')
 	).toHaveCount(2)
+	expect(
+		await secondPage.evaluate(() => Reflect.get(globalThis, '__passkeyCreationLabels'))
+	).toEqual({
+		name: 'Spare security key',
+		displayName: 'Spare security key',
+		rpId: 'localhost'
+	})
 	const [secondCredential] = await secondContext.credentials.get({ rpId: 'localhost' })
+	await expect(secondPage.getByRole('list', { name: 'Passkeys' })).toContainText(
+		'Spare security key'
+	)
 	expect(secondCredential).toBeDefined()
 	expect(secondCredential.id).not.toBe(firstCredential.id)
+	for (const width of [375, 1280]) {
+		await secondPage.setViewportSize({ width, height: 900 })
+		expect(
+			await secondPage
+				.getByLabel('Name for your new passkey')
+				.evaluate((input) => input.getBoundingClientRect().height)
+		).toBeGreaterThanOrEqual(44)
+		expect(await secondPage.evaluate(() => document.documentElement.scrollWidth)).toBe(width)
+		await secondPage.screenshot({
+			path: test.info().outputPath(`passkey-dashboard-${width}.png`),
+			fullPage: true
+		})
+	}
 
 	await secondPage.getByRole('button', { name: 'Sign out' }).click()
 	await expect(secondPage).toHaveURL(`${identityBrowser}/login`)

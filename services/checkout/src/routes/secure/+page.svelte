@@ -123,8 +123,10 @@ function onKey(event: KeyboardEvent) {
 			<img src="/aven-logo.svg" alt="" width="56" height="56">
 		</div>
 		<h1 class="flow-card-heading">Du bist auf der Liste</h1>
-		<p class="text text--label">Reserviert</p>
-		<div class="flow-card-code">{hold.name}.aven.ceo</div>
+		<div class="flow-card-code">
+			<span class="flow-card-code-label">Reserviert</span>
+			<strong class="flow-card-code-value">{hold.name}.aven.ceo</strong>
+		</div>
 		<p class="flow-card-description">
 			Wir haben dir den Link an <strong>{email}</strong> geschickt. Er gilt bis
 			{new Date(hold.expiresAt).toLocaleString('de-DE')}.
@@ -137,8 +139,10 @@ function onKey(event: KeyboardEvent) {
 			<img src="/aven-logo.svg" alt="" width="56" height="56">
 		</div>
 		<h1 class="flow-card-heading">{greeting ? `${greeting.name} sichern` : 'avenNAME sichern'}</h1>
-		<p class="text text--label">Dein Name</p>
-		<div class="flow-card-code">{name}.aven.ceo</div>
+		<div class="flow-card-code">
+			<span class="flow-card-code-label">Dein Name</span>
+			<strong class="flow-card-code-value">{name}.aven.ceo</strong>
+		</div>
 		<p class="flow-card-description">{info?.priceEur ?? 30} € einmalig, zzgl. USt.</p>
 
 		{#if info && !info.available}

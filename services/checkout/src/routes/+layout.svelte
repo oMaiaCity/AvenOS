@@ -33,17 +33,12 @@ const legal = $derived(
 
 <main class="section">{@render children()}</main>
 
-<footer class="site-footer site-footer--ground-page">
+<footer class="site-footer site-footer--ground-page site-footer--layout-inline">
 	<div class="site-footer-inner">
-		<div class="site-footer-groups">
-			<div class="site-footer-group">
-				<p class="site-footer-group-title">Legal</p>
-				{#each legal as item (item.href)}
-					<a class="site-footer-link" href={item.href} target="_blank" rel="noopener noreferrer">
-						{item.label}
-					</a>
-				{/each}
-			</div>
-		</div>
+		{#each legal as item (item.href)}
+			<a class="site-footer-link" href={item.href} target="_blank" rel="noopener noreferrer">
+				{item.label}
+			</a>
+		{/each}
 	</div>
 </footer>
