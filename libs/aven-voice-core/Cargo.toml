@@ -7,7 +7,7 @@ rust-version = "1.93"
 [dependencies]
 aven-voice-protocol = { path = "../aven-voice-protocol" }
 serde = { version = "1.0.219", features = ["derive"] }
-unicode-normalization = "=0.1.24"
+unicode-normalization = "=0.1.25"
 
 [dev-dependencies]
-proptest = "=1.7.0"
+proptest = "=1.11.0"

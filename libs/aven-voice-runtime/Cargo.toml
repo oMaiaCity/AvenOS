@@ -12,7 +12,7 @@ silent-audio-e2e = ["dep:serde", "dep:serde_json"]
 [dependencies]
 aven-voice-core = { path = "../aven-voice-core" }
 aven-voice-protocol = { path = "../aven-voice-protocol" }
-crossbeam-channel = "=0.5.15"
+crossbeam-channel = "=0.5.16"
 crossbeam-queue = "=0.3.13"
 log = "0.4"
 audioadapter-buffers = "=5.2.0"
@@ -27,4 +27,4 @@ name = "silent_audio_fixture"
 required-features = ["silent-audio-e2e"]
 
 [dev-dependencies]
-proptest = "=1.7.0"
+proptest = "=1.11.0"
