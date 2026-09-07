@@ -8,6 +8,7 @@ import { sanitizeError } from '../../validation.js'
 import type { EmailWorkerConfig } from '../config.js'
 import { decryptPayload } from '../crypto.js'
 import { withTransaction } from '../db.js'
+import { type MailProviderObservation, observeMailProvider } from './provider-health.js'
 import { renderEmail, type SystemEmailTemplate, type TemplateDataMap } from './templates.js'
 
 export interface ClaimedEmail {
@@ -107,12 +108,16 @@ export class EmailWorker {
 	private started = new Date()
 	private smtpVerifiedAt = 0
 	private smtpTimer?: NodeJS.Timeout
+	private providerTimer?: NodeJS.Timeout
+	private providerRunning = false
+	private providerHealth?: MailProviderObservation & { checkedAt: number }
 	constructor(
 		private pool: pg.Pool,
 		private config: EmailWorkerConfig,
 		private key: Buffer,
 		private transport: Transporter,
-		private logger: pino.Logger
+		private logger: pino.Logger,
+		private observeProvider = observeMailProvider
 	) {}
 
 	start() {
@@ -139,6 +144,9 @@ export class EmailWorker {
 		void this.verifyTransport(smtp)
 		this.smtpTimer = setInterval(() => void this.verifyTransport(smtp), 300_000)
 		this.smtpTimer.unref()
+		void this.refreshProviderHealth()
+		this.providerTimer = setInterval(() => void this.refreshProviderHealth(), 60_000)
+		this.providerTimer.unref()
 		void this.heartbeat()
 		this.timer = setInterval(() => {
 			void this.tick()
@@ -153,11 +161,30 @@ export class EmailWorker {
 	}
 
 	stop() {
+		if (this.providerTimer) clearInterval(this.providerTimer)
 		if (this.smtpTimer) clearInterval(this.smtpTimer)
 		if (this.timer) clearInterval(this.timer)
 		if (this.heartbeatTimer) clearInterval(this.heartbeatTimer)
 		this.transport.close()
 		this.logger.info({ instanceId: this.owner }, 'email worker stopped')
+	}
+
+	async refreshProviderHealth() {
+		if (this.providerRunning) return
+		this.providerRunning = true
+		try {
+			const observation = await this.observeProvider(this.config.SMTP_URL, this.config.SMTP_FROM)
+			this.providerHealth = { ...observation, checkedAt: Date.now() }
+		} catch {
+			this.providerHealth = {
+				healthy: false,
+				code: 'SMTP_PROVIDER_OBSERVATION_FAILED',
+				checkedAt: Date.now()
+			}
+		} finally {
+			this.providerRunning = false
+			await this.heartbeat()
+		}
 	}
 
 	private async verifyTransport(smtp: SmtpEndpoint) {
@@ -187,7 +214,8 @@ export class EmailWorker {
 					new Date(),
 					JSON.stringify({
 						batchSize: this.config.EMAIL_WORKER_BATCH_SIZE,
-						smtpVerifiedAt: this.smtpVerifiedAt
+						smtpVerifiedAt: this.smtpVerifiedAt,
+						providerHealth: this.providerHealth
 					})
 				]
 			)

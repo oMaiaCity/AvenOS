@@ -1,9 +1,44 @@
 import { Polar } from '@polar-sh/sdk'
 import type pg from 'pg'
 import type { ServerConfig } from './config.js'
-import { observeMailProvider } from './email/provider-health.js'
 
 export type Capability = { status: 'healthy' | 'degraded'; code: string; checkedAt: number }
+// Only the email worker holds the SMTP credential. Its heartbeat carries bounded
+// observations, never a credential or a provider response, across this boundary.
+export function mailProviderCapability(
+	value: unknown,
+	workerFresh: boolean,
+	now: number
+): Capability {
+	const observation = value as
+		| { healthy?: unknown; code?: unknown; checkedAt?: unknown }
+		| undefined
+	if (
+		!workerFresh ||
+		typeof observation?.checkedAt !== 'number' ||
+		!Number.isFinite(observation.checkedAt) ||
+		observation.checkedAt > now ||
+		now - observation.checkedAt >= 180_000
+	)
+		return { status: 'degraded', code: 'SMTP_PROVIDER_OBSERVATION_STALE', checkedAt: now }
+	if (observation.healthy === true && observation.code === 'OK')
+		return { status: 'healthy', code: 'OK', checkedAt: observation.checkedAt }
+	const known = [
+		'SMTP_PROVIDER_NOT_OBSERVABLE',
+		'SMTP_SENDER_INVALID',
+		'SMTP_LIVE_CREDENTIAL_REQUIRED',
+		'SMTP_SENDER_UNVERIFIED',
+		'SMTP_SENDING_CAPACITY_UNAVAILABLE',
+		'SMTP_PROVIDER_OBSERVATION_FAILED'
+	]
+	return {
+		status: 'degraded',
+		code: known.includes(String(observation.code))
+			? String(observation.code)
+			: 'SMTP_PROVIDER_OBSERVATION_FAILED',
+		checkedAt: observation.checkedAt
+	}
+}
 export function queueCapability(
 	input: { dead: number; oldestSeconds: number | null },
 	now: number
@@ -99,7 +134,10 @@ export class CheckoutCapabilities {
 					)
 				).rows[0]
 				const worker = (
-					await this.pool.query<{ fresh: boolean; metadata: { smtpVerifiedAt?: number } }>(
+					await this.pool.query<{
+						fresh: boolean
+						metadata: { smtpVerifiedAt?: number; providerHealth?: unknown }
+					}>(
 						`SELECT last_heartbeat_at > now()-interval '45 seconds' AS fresh, metadata
 					 FROM worker_heartbeats WHERE worker_name='email-worker'`
 					)
@@ -128,20 +166,24 @@ export class CheckoutCapabilities {
 				)
 				// SMTP acceptance is weaker than inbox delivery; the controlled-inbox E2E probe is separate.
 				record('smtp_acceptance', email.sent, 'RECENT_SMTP_ACCEPTANCE_UNPROVEN')
+				this.values.smtp_provider = this.config.ALLOW_FAKE_PAYMENTS
+					? { status: 'healthy', code: 'LOCAL_MAIL_PROVIDER', checkedAt: now }
+					: mailProviderCapability(
+							worker?.metadata.providerHealth,
+							Boolean(worker?.fresh),
+							Date.now()
+						)
 			} catch {
 				for (const name of [
 					'database',
 					'email_queue',
 					'smtp_connection',
+					'smtp_provider',
 					'smtp_acceptance',
 					'platform_events'
 				])
 					record(name, false, 'DATABASE_OBSERVATION_FAILED')
 			}
-			const mailProvider = this.config.ALLOW_FAKE_PAYMENTS
-				? { healthy: true, code: 'LOCAL_MAIL_PROVIDER' }
-				: await observeMailProvider(this.config.SMTP_URL, this.config.SMTP_FROM)
-			record('smtp_provider', mailProvider.healthy, mailProvider.code)
 			try {
 				if (this.config.ALLOW_FAKE_PAYMENTS) record('polar_webhook', true, 'LOCAL_PAYMENT_PROVIDER')
 				else {
