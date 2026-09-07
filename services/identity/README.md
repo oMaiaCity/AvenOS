@@ -15,6 +15,8 @@ Public verification is deliberately small:
 The authenticated `/dashboard` lists the account's credentials and allows the
 holder to add and rename passkeys. Registration suggests `aven.id-<email>-<device>-<browser>`;
 the holder edits that suggestion before the phone/password-manager creation prompt.
+Once the holder edits or clears the field, late-arriving account details do not
+replace that input with the suggestion.
 The chosen value is sent in both WebAuthn `user.name` and `user.displayName` before
 `navigator.credentials.create`, without changing the opaque user handle, RP ID,
 challenge, verification requirements, or exclusions. The password manager owns its

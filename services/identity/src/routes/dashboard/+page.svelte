@@ -212,6 +212,7 @@ async function addPasskey() {
 				class="field-control"
 				id="new-passkey-name"
 				bind:value={newName}
+				oninput={() => { nameSuggested = true }}
 				maxlength="128"
 				disabled={busy || saving}
 			>
