@@ -117,7 +117,7 @@ impl RuntimeObserver {
         publish_observation(&self.observations, observation)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "silent-audio-e2e"))]
     pub(crate) fn test_pair(capacity: usize) -> (Self, Receiver<Observation>) {
         let (observations, receiver) = bounded(capacity);
         (Self { observations }, receiver)

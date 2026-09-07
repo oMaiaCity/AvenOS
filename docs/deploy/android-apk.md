@@ -83,16 +83,16 @@ the complete GitHub Actions setup, published JSON contract, verification command
 and safe certificate-rotation procedure.
 
 After deploying the API, verify that
-`https://id.next.aven.ceo/.well-known/assetlinks.json` returns HTTP 200, no
+`https://aven.id/.well-known/assetlinks.json` returns HTTP 200, no
 redirect, `application/json`, package `ceo.aven.os`, and each current signing
 fingerprint. Android Credential Manager uses this Digital Asset Link to let the
-native app make passkey assertions for `id.next.aven.ceo`. Better Auth also
+native app make passkey assertions for `aven.id`. Better Auth also
 trusts the corresponding `android:apk-key-hash:...` WebAuthn origins.
 
 ## Android platform integration
 
 - Passkeys use AndroidX Credential Manager and Google Play Services Auth. The RP
-  ID is pinned to `id.next.aven.ceo`; the browser approval flow remains the
+  ID is pinned to `aven.id`; the browser approval flow remains the
   fallback when Credential Manager cannot provide a credential.
 - `INTERNET`, `RECORD_AUDIO`, and `MODIFY_AUDIO_SETTINGS` are declared. Voice
   preparation requests Android microphone permission at runtime.
@@ -118,11 +118,11 @@ debug APK for Android-related pull requests and pushes to `main`. It is isolated
 from the existing platform jobs and uses the same root build command as local
 development.
 
-The `release-next` workflow can attach a signed ARM64 release APK to the existing
-GitHub prerelease. The job is opt-in so adding Android does not disrupt current
-macOS, iOS, Linux, or service releases. Configure the following in the `next`
-GitHub Environment, then set the repository variable
-`ANDROID_RELEASE_ENABLED=true`:
+The old combined `release-next` workflow was removed with the monolith. A future
+application-release workflow may attach a signed ARM64 APK to a GitHub release,
+but it must remain separate from the identity/platform service deployment.
+Configure the following in the protected release environment when that workflow
+is introduced:
 
 - Optional variable `ANDROID_PLAY_APP_CERT_SHA256_FINGERPRINTS`, containing the
   Google Play App Signing certificate when Play distribution is enabled. CI
@@ -130,6 +130,8 @@ GitHub Environment, then set the repository variable
 - Secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`,
   `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD`.
 
-CI derives the upload certificate fingerprint from the protected keystore,
-constructs the mandatory Digital Asset Links allowlist, passes it to Aven API,
-and verifies the exact public association before the release job builds the APK.
+Release CI must derive the upload certificate fingerprint from the protected
+keystore, construct the mandatory Digital Asset Links allowlist for
+`aven-identity`, and verify the exact public association before building the
+APK. Until that gate exists, signed Android distribution is a documented manual
+operation, not part of `platform-deploy`.

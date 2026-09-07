@@ -23,8 +23,8 @@ final class IosPasskeyPlugin: Plugin, ASAuthorizationControllerDelegate,
 
     do {
       let args = try invoke.parseArgs(LoginArgs.self)
-      guard args.domain == "id.next.aven.ceo" else {
-        invoke.reject("Native passkeys are restricted to id.next.aven.ceo.")
+      guard args.domain == "aven.id" else {
+		invoke.reject("Native passkeys are restricted to aven.id.")
         return
       }
 

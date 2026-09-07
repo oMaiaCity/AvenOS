@@ -501,8 +501,8 @@ onDestroy(() => {
 				<span
 					class="rounded-full px-2 py-0.5 text-[length:var(--fs-micro)] font-medium uppercase tracking-[var(--tracking-wider)] {s.cancelAtPeriodEnd ||
 					['paused', 'past_due', 'unpaid', 'incomplete'].includes(s.status)
-						? 'bg-warning/15 text-warning-strong'
-						: 'bg-success/15 text-success-strong'}"
+						? 'bg-warning/15 text-warning-ink'
+						: 'bg-success/15 text-success-ink'}"
 				>
 					{s.cancelAtPeriodEnd
 						? 'Endet bald'
@@ -534,7 +534,17 @@ onDestroy(() => {
 				{#if p.runtime}
 					<li class="flex gap-2">
 						<span class="opacity-50">·</span>
-						<span>Aven Worker Minutes — {p.runtime.hoursPerDay} Std./Tag</span>
+						<!-- MIND credits, not hours. `hoursPerDay` was the runtime shape
+						     before the 0.9.0 SSOT; the app kept compiling against it only
+						     because the lockfile pinned aven-ceo 0.8.1 here while every
+						     other surface had moved on. The wording matches the website's
+						     `mindWeekly` / `mindOnce`, which is the point of a shared
+						     price list. -->
+						<span>
+							{p.runtime.per === 'week'
+								? `${p.runtime.mindCredits} MIND Credits pro Woche inklusive`
+								: `${p.runtime.mindCredits} MIND Credits — für Early-Bird-Tests`}
+						</span>
 					</li>
 				{/if}
 				{#each p.features as feature, index (index)}
@@ -626,7 +636,7 @@ onDestroy(() => {
 						type="button"
 						onclick={() => (confirming = `cancel:${p.id}`)}
 						disabled={busy !== ''}
-						class="rounded-full border border-error bg-transparent px-4 py-2 text-sm font-medium text-error-strong transition-colors hover:bg-error/8 disabled:opacity-40"
+						class="rounded-full border border-error bg-transparent text-sm font-medium text-error-ink transition-colors hover:bg-error/8 disabled:opacity-40"
 					>
 						Kündigen
 					</button>
@@ -636,7 +646,7 @@ onDestroy(() => {
 				<p class="text-xs opacity-60">{pending.note}</p>
 			{/if}
 			{#if cardFailure?.tier === p.id}
-				<p class="text-xs text-error-strong">{cardFailure.message}</p>
+				<p class="text-xs text-error-ink">{cardFailure.message}</p>
 			{/if}
 		</div>
 	</article>
@@ -647,7 +657,7 @@ onDestroy(() => {
 
 	{#if loading}
 		<p
-			class="rounded-xl border border-foreground/8 bg-surface-raised px-4 py-3 text-xs opacity-50 shadow-[0_1px_3px_rgba(30,41,59,0.05)]"
+			class="surface surface--raised text-xs opacity-50"
 		>
 			Deine Abrechnung wird geladen …
 		</p>
@@ -657,10 +667,10 @@ onDestroy(() => {
 			     fullscreen overlay, hard-coded light, Polar's embed protocol
 			     spoken directly. -->
 			<div
-				class="flex flex-col gap-2 rounded-xl border border-foreground/8 bg-surface-raised px-4 py-4 shadow-[0_1px_3px_rgba(30,41,59,0.05)]"
+				class="flex flex-col gap-2 surface surface--raised"
 			>
 				<div class="flex items-baseline justify-between gap-2">
-					<p class="eyebrow-quiet">
+					<p class="text text--eyebrow-quiet">
 						Checkout · {TIER_PLANS.find((p) => p.id === checkout?.tier)?.name ?? checkout.tier}
 					</p>
 					<button
@@ -706,7 +716,7 @@ onDestroy(() => {
 		     settings und Website können sich beim Preis nicht widersprechen. -->
 		<!--
 		<div class="flex flex-col gap-2">
-			<p class="eyebrow-quiet">Deine Produkte</p>
+			<p class="text text--eyebrow-quiet">Deine Produkte</p>
 			<div class="flex flex-col gap-3 sm:flex-row">
 				{#each TIER_PLANS as p (p.id)}
 					{@render planCard(p)}
@@ -718,10 +728,10 @@ onDestroy(() => {
 		<!-- Meine Bestellungen: each order expands into its in-app detail from
 		     real order data; the official Polar invoice PDF is one click away. -->
 		<div class="flex flex-col gap-2">
-			<p class="eyebrow-quiet">Meine Bestellungen</p>
+			<p class="text text--eyebrow-quiet">Meine Bestellungen</p>
 			{#if orders.length}
 				<ul
-					class="flex flex-col divide-y divide-foreground/8 rounded-xl border border-foreground/8 bg-surface-raised shadow-[0_1px_3px_rgba(30,41,59,0.05)]"
+					class="flex flex-col divide-y divide-foreground/8 surface surface--raised"
 				>
 					{#each orders as order (order.id)}
 						{@const plan = planOfOrder(order)}
@@ -791,7 +801,7 @@ onDestroy(() => {
 										</p>
 									{/if}
 									{#if invoiceFailure?.orderId === order.id}
-										<p class="text-xs text-error-strong">{invoiceFailure.message}</p>
+										<p class="text-xs text-error-ink">{invoiceFailure.message}</p>
 									{/if}
 								</div>
 							{/if}
@@ -800,7 +810,7 @@ onDestroy(() => {
 				</ul>
 			{:else}
 				<p
-					class="rounded-xl border border-foreground/8 bg-surface-raised px-4 py-3 text-xs opacity-50 shadow-[0_1px_3px_rgba(30,41,59,0.05)]"
+					class="surface surface--raised text-xs opacity-50"
 				>
 					Noch keine Bestellungen — sobald du etwas buchst, steht sie hier.
 				</p>
@@ -810,7 +820,7 @@ onDestroy(() => {
 
 	<!-- Page-level banner: ONLY for load failures that belong to no card. -->
 	{#if failure}
-		<p class="rounded-xl border border-error/25 bg-error-muted px-4 py-3 text-xs text-error-strong">
+		<p class="rounded-xl border border-error/25 bg-error-surface text-xs text-error-ink">
 			{failure}
 		</p>
 	{/if}

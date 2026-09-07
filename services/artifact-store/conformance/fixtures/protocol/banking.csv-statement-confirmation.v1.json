@@ -1,0 +1,42 @@
+{
+  "typeKey": "banking.csv-statement-confirmation",
+  "version": 1,
+  "schemaProfileId": "artifact-json-schema-profile-v1",
+  "payloadSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "sourceArtifactId",
+      "sourceSha256",
+      "detectorVersion",
+      "detectionArtifactId",
+      "decision"
+    ],
+    "properties": {
+      "sourceArtifactId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "sourceSha256": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      },
+      "detectorVersion": {
+        "const": "csv-statement-v1"
+      },
+      "detectionArtifactId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "decision": {
+        "enum": [
+          "accepted",
+          "rejected"
+        ]
+      }
+    }
+  },
+  "blobPolicy": "forbidden",
+  "referenceRules": []
+}

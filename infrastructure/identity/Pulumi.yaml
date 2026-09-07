@@ -1,5 +1,0 @@
-name: aven-identity
-description: Hetzner foundation for the Aven identity service
-runtime:
-  name: nodejs
-main: src/index.mjs

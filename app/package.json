@@ -32,13 +32,15 @@
 		"vite": "^8.0.7"
 	},
 	"dependencies": {
-		"@avenos/aven-ui": "workspace:*",
-		"@myavenceo/aven-ceo": "^0.8.0",
+		"@avenos/actors": "workspace:*",
+		"@avenos/artifact-store": "workspace:*",
+		"@avenos/document-ingest": "workspace:*",
+		"@avenos/llm-client": "workspace:*",
+		"@myavenceo/aven-ceo": "^0.12.2",
 		"@tauri-apps/api": "^2",
 		"@tauri-apps/plugin-opener": "^2.5.4",
 		"@xyflow/svelte": "^1.6.2",
 		"pdfjs-dist": "^6.2.108",
-		"quickjs-emscripten": "^0.31.0",
 		"three": "^0.185.1"
 	}
 }

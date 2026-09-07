@@ -8,7 +8,7 @@
 	 * serif or mono face is one line in the brand and no change to any
 	 * component. */
 	--font-sans: "InterVariable", ui-sans-serif, system-ui, -apple-system, sans-serif;
-	--font-display: "InterVariable", ui-sans-serif, system-ui, -apple-system, sans-serif;
+	--font-display: "FogtwoNo5", "Google Sans Flex", "Inter", ui-sans-serif, system-ui, sans-serif;
 	--font-serif: "InterVariable", ui-sans-serif, system-ui, -apple-system, sans-serif;
 	--font-mono: "InterVariable", ui-sans-serif, system-ui, -apple-system, sans-serif;
 
@@ -16,79 +16,144 @@
 	--font-weight-semibold: 600;
 	--font-weight-bold: 700;
 
-	/* ══ 1 · THE BRAND TONES — the paint, each spelled exactly once ══ */
+	/* ══ 1 · THE BRAND TONES — identity, each spelled exactly once ══ */
 	--color-marine: #1e293b;
-	--color-anchor: #57789e;
-	--color-tidal-blue: #2489a0;
-	--color-paradise-water: #449c94;
+	--color-paradise: #2489a0;
+	--color-turquoise: #449c94;
+	--color-sunflower: #f2ba3d;
+
+	/* ══ colours that carry a MEANING and are never identity ══ */
 	--color-terracotta: #c15b40;
-	--color-sunflower: #d2a24a;
 	--color-earth: #d4a373;
-	--color-sand: #f3e7c6;
-	--color-chalk: #f8fafc;
-	--color-ink: #1f2a3d;
 
-	/* ══ the cream family, lightest to warmest ══ */
-	--color-porcelain: #fffdf7;
-	--color-linen: #faf9f4;
-	--color-eggshell: #f6f3e8;
-	--color-ivory: #f6f1e2;
+	/* ══ the inks guaranteed to read on a filled colour ══ */
+	--color-on-light: #1e293b;
+	--color-on-dark: #f8fafc;
+	--color-on-primary: #f8fafc;
+	--color-on-warning: #2b2313;
+	--color-on-error: #fffefb;
+	--color-on-success: #fafaf9;
+	--color-on-info: #2b231c;
+	--color-white: #ffffff;
+	--color-on-primary-soft: #ccd0d5;
+	--color-on-primary-quiet: #acb1b8;
+	--color-on-dark-soft: #f8fafcf0;
+	--color-on-dark-quiet: #f8fafcb8;
 
-	/* ══ 2 · THE SURFACES — which rung each part stands on ══ */
-	--color-surface-raised: var(--color-porcelain);
-	--color-surface-cream: var(--color-linen);
-	--color-surface-soft: var(--color-eggshell);
-	--color-surface-card: var(--color-ivory);
-	--color-surface-card-selected: var(--color-sand);
-	--color-background: var(--color-surface-cream);
-	--color-surface-card-hover: var(--color-eggshell);
+	/* ══ 2 · THE SURFACES — every rung, both themes ══ */
+	--color-light-page: #fdfbf3;
+	--color-light-raised: #f8f6ed;
+	--color-light-sunken: #f6f3e8;
+	--color-light-card: #f6f1e2;
+	--color-light-selected: #f3e7c6;
+	--color-dark-page: #161f30;
+	--color-dark-raised: #1e293b;
+	--color-dark-sunken: #131a28;
+	--color-dark-card: #243448;
+	--color-dark-selected: #3e4b60;
+
+	/* THE THEME SEAM — derived, never authored. Light is the default. */
+	--color-surface-page: var(--color-light-page);
+	--color-surface-raised: var(--color-light-raised);
+	--color-surface-sunken: var(--color-light-sunken);
+	--color-surface-card: var(--color-light-card);
+	--color-surface-selected: var(--color-light-selected);
 
 	/* ══ 3 · THE ROLES — what a colour MEANS ══ */
+	--color-background: var(--color-surface-page);
+	--color-foreground: var(--color-on-light);
+	--color-foreground-soft: #4b5360;
+	--color-muted: #f4f4f0;
+	--color-muted-foreground: #7d8593;
+	--color-border: #dfe1e6;
+	--color-input: #fefdfa;
 	--color-primary: var(--color-marine);
-	--color-primary-foreground: var(--color-chalk);
-	--color-quiet: var(--color-anchor);
-	--color-quiet-foreground: var(--color-chalk);
-	--color-quiet-ink: color-mix(in oklab, var(--color-anchor) 82%, black);
-	--color-progress: var(--color-tidal-blue);
-	--color-progress-foreground: var(--color-chalk);
-	--color-progress-ink: var(--color-tidal-blue);
-	--color-success: var(--color-paradise-water);
-	--color-success-foreground: #fafaf9;
-	--color-success-ink: var(--color-paradise-water);
+	--color-primary-edge: #68707d;
+	--color-primary-ring: #c3c4c3;
+	--color-primary-foreground: var(--color-on-primary);
+	--color-primary-foreground-soft: var(--color-on-primary-soft);
+	--color-primary-foreground-quiet: var(--color-on-primary-quiet);
+	--color-secondary: var(--color-paradise);
+	--color-secondary-foreground: var(--color-on-dark);
+	--color-tertiary: var(--color-turquoise);
+	--color-tertiary-foreground: var(--color-on-dark);
+	--color-band: #217c91;
+	--color-band-alt: #377d77;
+	--color-band-foreground: var(--color-on-dark);
+	--color-scrim-thin: #fdfbf3e6;
+	--color-scrim: #1e293bad;
+	--color-scrim-strong: #1e293ba6;
+	--color-scrim-heavy: #1e293b8c;
+	--color-scrim-text: #1e293b73;
+	--color-quiet: #57789e;
+	--color-quiet-foreground: var(--color-on-dark);
+	--color-quiet-ink: #415b78;
+	--color-progress: var(--color-secondary);
+	--color-progress-foreground: var(--color-on-dark);
+	--color-progress-ink: #135665;
+	--color-progress-surface: #dceae7;
+	--color-progress-border: #b8d7d8;
+	--color-success: var(--color-tertiary);
+	--color-success-edge: #84beb8;
+	--color-success-ring: #cde2da;
+	--color-success-foreground: var(--color-on-success);
+	--color-success-ink: #255b56;
+	--color-success-surface: #e1ede5;
+	--color-success-border: #c2ddd5;
 	--color-warning: var(--color-sunflower);
-	--color-warning-foreground: #2b2313;
-	--color-warning-ink: color-mix(in oklab, var(--color-sunflower) 74%, black);
+	--color-warning-foreground: var(--color-on-warning);
+	--color-warning-ink: #7f601b;
+	--color-warning-surface: #fbf1d8;
+	--color-warning-border: #f9e6b9;
 	--color-error: var(--color-terracotta);
-	--color-error-foreground: #fffefb;
-	--color-error-ink: color-mix(in oklab, var(--color-terracotta) 85%, black);
+	--color-terracotta-strong: #a8452f;
+	--color-terracotta-surface: #faf0e8;
+	--color-terracotta-edge: var(--color-terracotta);
+	--color-error-edge: #d69280;
+	--color-error-ring: #edd1c4;
+	--color-error-foreground: var(--color-on-error);
+	--color-error-ink: #9b4832;
 	--color-info: var(--color-earth);
-	--color-info-foreground: #2b231c;
-	--color-info-ink: color-mix(in oklab, var(--color-earth) 72%, black);
-	--color-secondary: var(--color-sand);
-	--color-secondary-foreground: var(--color-marine);
-	--color-foreground: var(--color-ink);
-	--color-card-foreground: var(--color-foreground);
-	--color-muted: color-mix(in srgb, var(--color-marine) 6%, var(--color-surface-cream));
-	--color-muted-foreground: color-mix(in srgb, var(--color-marine) 42%, transparent);
-	--color-border: color-mix(in srgb, var(--color-marine) 14%, transparent);
-	--color-input: color-mix(in srgb, #ffffff 65%, var(--color-surface-cream));
-	--color-error-muted: color-mix(in oklab, var(--color-terracotta) 22%, white);
-	--color-error-strong: color-mix(in oklab, var(--color-terracotta) 78%, black);
-	--color-success-muted: color-mix(in oklab, var(--color-paradise-water) 22%, white);
-	--color-success-strong: color-mix(in oklab, var(--color-paradise-water) 78%, black);
-	--color-warning-muted: color-mix(in oklab, var(--color-sunflower) 22%, white);
-	--color-warning-strong: color-mix(in oklab, var(--color-sunflower) 78%, black);
-	--color-info-muted: color-mix(in oklab, var(--color-earth) 22%, white);
-	--color-info-strong: color-mix(in oklab, var(--color-earth) 78%, black);
-	--color-evidence: var(--color-sunflower);
-	--color-evidence-soft: color-mix(in oklab, var(--color-sunflower) 26%, white);
-	--color-evidence-ink: color-mix(in oklab, var(--color-sunflower) 76%, black);
-	--color-card: #ffffff;
-	--color-sandbox-host: color-mix(in srgb, var(--color-background) 94%, var(--color-foreground));
+	--color-info-foreground: var(--color-on-info);
+	--color-info-ink: #886748;
+	--color-info-surface: #f7eee0;
+	--color-info-border: #f0dfca;
+	--color-accent: var(--color-sunflower);
+	--color-accent-edge: #f6d17f;
+	--color-accent-ring: #faeac4;
+	--color-accent-foreground: #4a3208;
+	--color-accent-ink: #7f601b;
+	--color-accent-surface: #fbf1d8;
+	--color-accent-border: #f9e6b9;
+	--color-card: var(--color-surface-card);
+	--color-card-foreground: var(--color-on-light);
+	--color-border-strong: #c7c7c8;
+	--color-border-soft: #edece8;
+	--color-track: #e4e3e0;
+	--color-error-surface: #faf0e8;
+	--color-error-border: #e9c5b7;
+	--color-foreground-quiet: #626770;
+	--color-eyebrow-ink: #1d7084;
+	--color-icon-tint: #8fa0b4;
+	--color-focus: #ab790b;
+	--color-secondary-ink: var(--color-progress-ink);
+	--color-tertiary-ink: var(--color-success-ink);
+	--color-secondary-edge: #6ca9b6;
+	--color-secondary-ring: #c4dada;
+	--color-tertiary-edge: #7ba9a5;
+	--color-tertiary-ring: #cadad3;
+	--color-secondary-strong: #217c91;
+	--color-tertiary-strong: #377d77;
+	--color-secondary-surface: #dceae7;
+	--color-secondary-border: #b8d7d8;
+	--color-tertiary-surface: #e1ede5;
+	--color-tertiary-border: #c2ddd5;
 
-	--radius-lg: 1rem;
-	--radius-xl: 1.5rem;
-	--radius-2xl: 2rem;
+	--radius-xs: 0.375rem;
+	--radius-sm: 0.625rem;
+	--radius-md: 0.875rem;
+	--radius-lg: 1.25rem;
+	--radius-xl: 1.75rem;
 	--radius-full: 9999px;
 
 	/* ══ 4 · THE SCALES — type, tracking, emphasis, elevation, geometry ══
@@ -115,22 +180,93 @@
 	--shadow-raised: 0 1px 3px rgba(30, 41, 59, 0.05);
 	--shadow-floating: 0 4px 16px rgba(30, 41, 59, 0.12);
 	--shadow-overlay: 0 12px 40px rgba(30, 41, 59, 0.18);
-	--radius-chip: 0.5rem;
-	--radius-inner: 0.75rem;
-	--radius-card: 1.5rem;
-	--radius-panel: 2rem;
-	--radius-pill: 9999px;
+	--radius-xs: 0.375rem;
+	--radius-sm: 0.625rem;
+	--radius-md: 0.875rem;
+	--radius-lg: 1.25rem;
+	--radius-xl: 1.75rem;
+	--radius-full: 9999px;
+	--space-hairline: 0.25rem;
 	--space-tight: 0.5rem;
 	--space-snug: 0.75rem;
 	--space-comfortable: 1rem;
 	--space-loose: 1.5rem;
 	--space-section: 2.5rem;
 	--ink-faint: 0.35;
-	--ink-quiet: 0.5;
-	--ink-muted: 0.65;
-	--ink-strong: 0.8;
+	--ink-quiet: 0.65;
+	--ink-muted: 0.75;
+	--ink-strong: 0.85;
 	--ink-full: 0.9;
 	--tint-hairline: 0.08;
 	--tint-soft: 0.15;
 	--tint-firm: 0.25;
+	--rule-mark: 2px;
+	--rule-accent: 3px;
+	--rule-frame: 6px;
+	--duration-instant: 80ms;
+	--duration-quick: 140ms;
+	--duration-moderate: 240ms;
+	--duration-slow: 360ms;
+	--ease-out: cubic-bezier(0.2, 0, 0, 1);
+	--ease-in: cubic-bezier(0.4, 0, 1, 1);
+	--ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+	--z-base: 0;
+	--z-sticky: 50;
+	--z-overlay: 100;
+	--z-modal: 200;
+	--z-toast: 300;
+	--blur-soft: 8px;
+	--blur-firm: 10px;
+	--blur-veil: 16px;
+}
+
+/* The dark theme. Inert until something sets data-theme, and LAST so it
+ * wins — it shares a specificity with `:root`, so only order separates
+ * them. */
+[data-theme="dark"] {
+	--color-surface-page: var(--color-dark-page);
+	--color-surface-raised: var(--color-dark-raised);
+	--color-surface-sunken: var(--color-dark-sunken);
+	--color-surface-card: var(--color-dark-card);
+	--color-surface-selected: var(--color-dark-selected);
+
+	/* roles that differ in the dark. */
+	--color-scrim-thin: #151e30e6;
+	--color-progress-surface: #193649;
+	--color-progress-border: #1c4c5f;
+	--color-success-surface: #203a46;
+	--color-success-border: #29545a;
+	--color-warning-surface: #464133;
+	--color-warning-border: #726035;
+	--color-info-surface: #403c3f;
+	--color-info-border: #66564c;
+	--color-accent-surface: #464133;
+	--color-accent-border: #726035;
+	--color-foreground: var(--color-on-dark);
+	--color-foreground-soft: #cbced3;
+	--color-card-foreground: var(--color-on-dark);
+	--color-muted: #1c2637;
+	--color-muted-foreground: #8e9bb0;
+	--color-border: #2c3a4f;
+	--color-input: #1a2434;
+	--color-secondary: #2a3a56;
+	--color-secondary-foreground: var(--color-on-dark);
+	--color-primary: #f8fafc;
+	--color-primary-foreground: #1e293b;
+	--color-quiet-ink: #9fb3cc;
+	--color-progress-ink: #5cc0d8;
+	--color-success-ink: #6fc9c0;
+	--color-warning-ink: #f2c766;
+	--color-error-ink: #e08b73;
+	--color-info-ink: #e0b98f;
+	--color-accent-ink: #f2c766;
+	--color-border-strong: #44536b;
+	--color-border-soft: #232d3e;
+	--color-track: #2a3548;
+	--color-error-surface: #2e1c16;
+	--color-error-border: #6b3626;
+	--color-foreground-quiet: #b5bcc7;
+	--color-icon-tint: #54657c;
+	--color-focus: var(--color-sunflower);
+	--color-eyebrow-ink: #6cc3dd;
 }

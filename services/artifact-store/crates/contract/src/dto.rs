@@ -71,6 +71,29 @@ pub struct DeclaredBlob {
     pub length: u64,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CommittedRunMetadata {
+    pub procedure_key: String,
+    pub procedure_version: String,
+    pub parameters: CanonicalValue,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PublicationDetails {
+    pub publication: PublicationFeedItem,
+    pub run: Option<CommittedRunMetadata>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ArtifactQueryPage {
+    pub snapshot_sequence: i64,
+    pub items: Vec<ArtifactEnvelope>,
+    pub next_after: Option<Uuid>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
     tag = "kind",

@@ -1,6 +1,8 @@
 use aven_voice_core::{CachedResult, Command};
 use aven_voice_protocol::*;
 use tauri::State;
+#[cfg(feature = "e2e-voice-proof")]
+use tauri::Emitter;
 
 use super::service::{ServiceError, VoiceService};
 
@@ -265,6 +267,340 @@ pub async fn voice_diagnostics_subscribe(
 		Ok(())
 	})
 	.await
+}
+
+/// Deterministic full-stack proof seam. Production builds register the command
+/// but cannot execute it because the PCM fixture and emitter are compiled out.
+#[tauri::command]
+pub async fn voice_e2e_inject_silent_final(
+	app: tauri::AppHandle,
+	session_id: String,
+) -> Result<serde_json::Value, ServiceError> {
+	#[cfg(not(feature = "e2e-voice-proof"))]
+	{
+		let _ = (app, session_id);
+		return Err(ServiceError {
+			code: VoiceErrorCode::Internal,
+			message: "The silent voice proof is not enabled in this build.".into(),
+		});
+	}
+
+	#[cfg(feature = "e2e-voice-proof")]
+	{
+		let session_id = SessionId::parse(session_id).map_err(protocol_error)?;
+		let fixture = blocking(|| {
+			aven_voice_runtime::silent_fixture::generate_silent_contribution_fixture().map_err(
+				|message| ServiceError {
+					code: VoiceErrorCode::AsrFailed,
+					message,
+				},
+			)
+		})
+		.await?;
+		let candidate_id = CandidateId::parse("e2e-silent-candidate").map_err(protocol_error)?;
+		let speaker_id = SpeakerId::parse(fixture.speaker_id.clone()).map_err(protocol_error)?;
+		let events = [
+			VoiceEvent::InputCandidateStarted {
+				candidate_id: candidate_id.clone(),
+				far_end_active: false,
+			},
+			VoiceEvent::InputPartial {
+				candidate_id: candidate_id.clone(),
+				text: fixture.text.clone(),
+			},
+			VoiceEvent::InputConfirmed {
+				candidate_id: candidate_id.clone(),
+				barge_in_started: false,
+			},
+			VoiceEvent::InputSpeakerIdentified {
+				candidate_id: candidate_id.clone(),
+				speaker: SpeakerAttribution {
+					speaker_id,
+					confidence: fixture.confidence,
+				},
+			},
+			VoiceEvent::InputFinal {
+				candidate_id,
+				text: fixture.text.clone(),
+			},
+		];
+		for (index, event) in events.into_iter().enumerate() {
+			app.emit(
+				"voice-event",
+				VoiceEventEnvelope {
+					protocol_version: PROTOCOL_VERSION,
+					sequence: DecimalU64::new(index as u64 + 1),
+					session_id: Some(session_id.clone()),
+					route_generation: None,
+					at_mono_ms: index as f64,
+					event,
+				},
+			)
+			.map_err(|error| ServiceError {
+				code: VoiceErrorCode::Internal,
+				message: format!("Could not emit the silent voice proof: {error}"),
+			})?;
+		}
+		serde_json::to_value(fixture).map_err(|error| ServiceError {
+			code: VoiceErrorCode::Internal,
+			message: format!("Could not serialize the silent voice proof: {error}"),
+		})
+	}
+}
+
+/// Gives the frontend the deterministic fixture identity before any events
+/// are emitted, so its event subscription can be scoped to the same session.
+#[tauri::command]
+pub async fn voice_e2e_duplex_fixture() -> Result<serde_json::Value, ServiceError> {
+	#[cfg(not(feature = "e2e-voice-proof"))]
+	{
+		return Err(e2e_disabled());
+	}
+
+	#[cfg(feature = "e2e-voice-proof")]
+	{
+		serde_json::to_value(duplex_fixture().await?).map_err(serialization_error)
+	}
+}
+
+/// Starts an E2E-only narrated turn so the browser can first observe active
+/// playback and then independently trigger the interruption.
+#[tauri::command]
+pub async fn voice_e2e_begin_narration(
+	app: tauri::AppHandle,
+	session_id: String,
+) -> Result<serde_json::Value, ServiceError> {
+	#[cfg(not(feature = "e2e-voice-proof"))]
+	{
+		let _ = (app, session_id);
+		return Err(e2e_disabled());
+	}
+
+	#[cfg(feature = "e2e-voice-proof")]
+	{
+		let session_id = SessionId::parse(session_id).map_err(protocol_error)?;
+		let fixture = duplex_fixture().await?;
+		validate_duplex_session(&fixture, &session_id)?;
+		let turn_id = TurnId::parse(fixture.turn_id.clone()).map_err(protocol_error)?;
+		emit_e2e_events(
+			&app,
+			&session_id,
+			0,
+			[
+				VoiceEvent::PlaybackTurnStarted {
+					turn_id: turn_id.clone(),
+				},
+				VoiceEvent::PlaybackStarted { turn_id },
+			],
+		)?;
+		serde_json::to_value(fixture).map_err(serialization_error)
+	}
+}
+
+/// Injects a PCM-derived, lexically confirmed first speaker. The pause after
+/// confirmation gives the real actor bus time to abort the in-flight streamed
+/// reply before the final utterance is submitted as the next turn.
+#[tauri::command]
+pub async fn voice_e2e_inject_interruption(
+	app: tauri::AppHandle,
+	session_id: String,
+) -> Result<serde_json::Value, ServiceError> {
+	#[cfg(not(feature = "e2e-voice-proof"))]
+	{
+		let _ = (app, session_id);
+		return Err(e2e_disabled());
+	}
+
+	#[cfg(feature = "e2e-voice-proof")]
+	{
+		let session_id = SessionId::parse(session_id).map_err(protocol_error)?;
+		let fixture = duplex_fixture().await?;
+		validate_duplex_session(&fixture, &session_id)?;
+		let turn_id = TurnId::parse(fixture.turn_id.clone()).map_err(protocol_error)?;
+		let candidate_id =
+			CandidateId::parse("e2e-duplex-interrupt").map_err(protocol_error)?;
+		let speaker_id = SpeakerId::parse(fixture.interrupted.speaker_id.clone())
+			.map_err(protocol_error)?;
+		emit_e2e_events(
+			&app,
+			&session_id,
+			2,
+			[
+				VoiceEvent::InputCandidateStarted {
+					candidate_id: candidate_id.clone(),
+					far_end_active: true,
+				},
+				VoiceEvent::InputPartial {
+					candidate_id: candidate_id.clone(),
+					text: fixture.interrupted.text.clone(),
+				},
+				VoiceEvent::InputConfirmed {
+					candidate_id: candidate_id.clone(),
+					barge_in_started: true,
+				},
+			],
+		)?;
+		blocking(|| {
+			std::thread::sleep(std::time::Duration::from_millis(250));
+			Ok(())
+		})
+		.await?;
+		emit_e2e_events(
+			&app,
+			&session_id,
+			5,
+			[
+				VoiceEvent::PlaybackFading {
+					turn_id: turn_id.clone(),
+					duration_ms: fixture.fade_duration_ms,
+				},
+				VoiceEvent::PlaybackCancelled {
+					turn_id,
+					reason: SpeechCancelReason::BargeIn,
+				},
+				VoiceEvent::InputSpeakerIdentified {
+					candidate_id: candidate_id.clone(),
+					speaker: SpeakerAttribution {
+						speaker_id,
+						confidence: fixture.interrupted.confidence,
+					},
+				},
+				VoiceEvent::InputFinal {
+					candidate_id,
+					text: fixture.interrupted.text.clone(),
+				},
+			],
+		)?;
+		serde_json::to_value(fixture).map_err(serialization_error)
+	}
+}
+
+/// Injects the second PCM-derived speaker after the interrupted turn has
+/// settled, retaining the same E2E voice session and sequence.
+#[tauri::command]
+pub async fn voice_e2e_inject_second_speaker(
+	app: tauri::AppHandle,
+	session_id: String,
+) -> Result<serde_json::Value, ServiceError> {
+	#[cfg(not(feature = "e2e-voice-proof"))]
+	{
+		let _ = (app, session_id);
+		return Err(e2e_disabled());
+	}
+
+	#[cfg(feature = "e2e-voice-proof")]
+	{
+		let session_id = SessionId::parse(session_id).map_err(protocol_error)?;
+		let fixture = duplex_fixture().await?;
+		validate_duplex_session(&fixture, &session_id)?;
+		let candidate_id =
+			CandidateId::parse("e2e-duplex-follow-up").map_err(protocol_error)?;
+		let speaker_id = SpeakerId::parse(fixture.follow_up.speaker_id.clone())
+			.map_err(protocol_error)?;
+		emit_e2e_events(
+			&app,
+			&session_id,
+			9,
+			[
+				VoiceEvent::InputCandidateStarted {
+					candidate_id: candidate_id.clone(),
+					far_end_active: false,
+				},
+				VoiceEvent::InputPartial {
+					candidate_id: candidate_id.clone(),
+					text: fixture.follow_up.text.clone(),
+				},
+				VoiceEvent::InputConfirmed {
+					candidate_id: candidate_id.clone(),
+					barge_in_started: false,
+				},
+				VoiceEvent::InputSpeakerIdentified {
+					candidate_id: candidate_id.clone(),
+					speaker: SpeakerAttribution {
+						speaker_id,
+						confidence: fixture.follow_up.confidence,
+					},
+				},
+				VoiceEvent::InputFinal {
+					candidate_id,
+					text: fixture.follow_up.text.clone(),
+				},
+			],
+		)?;
+		serde_json::to_value(fixture).map_err(serialization_error)
+	}
+}
+
+#[cfg(feature = "e2e-voice-proof")]
+async fn duplex_fixture(
+) -> Result<aven_voice_runtime::silent_fixture::SilentDuplexConversationFixture, ServiceError> {
+	blocking(|| {
+		aven_voice_runtime::silent_fixture::generate_silent_duplex_conversation_fixture().map_err(
+			|message| ServiceError {
+				code: VoiceErrorCode::AsrFailed,
+				message,
+			},
+		)
+	})
+	.await
+}
+
+#[cfg(feature = "e2e-voice-proof")]
+fn validate_duplex_session(
+	fixture: &aven_voice_runtime::silent_fixture::SilentDuplexConversationFixture,
+	session_id: &SessionId,
+) -> Result<(), ServiceError> {
+	if fixture.session_id == session_id.as_str() {
+		Ok(())
+	} else {
+		Err(ServiceError {
+			code: VoiceErrorCode::StaleSession,
+			message: "The silent duplex fixture session is stale.".into(),
+		})
+	}
+}
+
+#[cfg(feature = "e2e-voice-proof")]
+fn emit_e2e_events<const N: usize>(
+	app: &tauri::AppHandle,
+	session_id: &SessionId,
+	sequence_offset: u64,
+	events: [VoiceEvent; N],
+) -> Result<(), ServiceError> {
+	for (index, event) in events.into_iter().enumerate() {
+		app.emit(
+			"voice-event",
+			VoiceEventEnvelope {
+				protocol_version: PROTOCOL_VERSION,
+				sequence: DecimalU64::new(sequence_offset + index as u64 + 1),
+				session_id: Some(session_id.clone()),
+				route_generation: None,
+				at_mono_ms: (sequence_offset + index as u64) as f64,
+				event,
+			},
+		)
+		.map_err(|error| ServiceError {
+			code: VoiceErrorCode::Internal,
+			message: format!("Could not emit the silent duplex proof: {error}"),
+		})?;
+	}
+	Ok(())
+}
+
+#[cfg(not(feature = "e2e-voice-proof"))]
+fn e2e_disabled() -> ServiceError {
+	ServiceError {
+		code: VoiceErrorCode::Internal,
+		message: "The silent voice proof is not enabled in this build.".into(),
+	}
+}
+
+#[cfg(feature = "e2e-voice-proof")]
+fn serialization_error(error: serde_json::Error) -> ServiceError {
+	ServiceError {
+		code: VoiceErrorCode::Internal,
+		message: format!("Could not serialize the silent voice proof: {error}"),
+	}
 }
 
 fn internal(message: &'static str) -> ServiceError {

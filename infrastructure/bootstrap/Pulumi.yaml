@@ -1,0 +1,5 @@
+name: aven-bootstrap
+description: One-time recoverable object-storage foundation for avenOS deployments
+runtime:
+  name: nodejs
+main: src/index.mjs

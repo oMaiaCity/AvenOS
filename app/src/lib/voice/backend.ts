@@ -2,10 +2,10 @@ import type {
 	EnqueueResult,
 	InputResetReason,
 	PreparationSnapshot,
+	SessionId,
 	SpeechCancelReason,
 	SpeechTurnStarted,
 	TurnId,
-	SessionId,
 	VoiceEventEnvelope,
 	VoiceFeature,
 	VoiceSessionStarted,
@@ -57,5 +57,6 @@ export interface VoiceBackend {
 	snapshot(sessionId?: SessionId): Promise<VoiceSnapshot>
 	setDiagnostics(sessionId: SessionId, enabled: boolean): Promise<void>
 	subscribe(handler: (event: VoiceEventEnvelope) => void): Unsubscribe
+	waitForEventSubscription?(): Promise<void>
 	subscribeModelStatus?(handler: (status: ModelLoadStatus) => void): Unsubscribe
 }

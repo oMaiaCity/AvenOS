@@ -47,6 +47,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
+          cache-dependency-path: |
+            app/src-tauri/gen/android/gradle/wrapper/gradle-wrapper.properties
+            app/src-tauri/gen/android/**/*.gradle*
       - uses: android-actions/setup-android@v3
       - name: Install Android SDK and NDK
         run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' "ndk;$ANDROID_NDK_VERSION"
@@ -56,7 +60,7 @@ jobs:
           targets: aarch64-linux-android
       - uses: ./.github/actions/bun-install
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.PACKAGE_READ_TOKEN }}
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: app/src-tauri -> ../../target/rust

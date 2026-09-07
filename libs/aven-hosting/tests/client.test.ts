@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test'
 import { createSiteHostingClient, type SiteBindingDraft } from '../src/index.js'
 
 const draft: SiteBindingDraft = {
-	name: 'aurora',
 	hostname: 'www.customer.example',
 	repository: 'myavenceo/avenceo',
 	sourceBranch: 'next',

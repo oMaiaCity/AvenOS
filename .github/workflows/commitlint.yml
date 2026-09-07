@@ -26,6 +26,6 @@ jobs:
 
       - uses: ./.github/actions/bun-install
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.PACKAGE_READ_TOKEN }}
       - name: Lint pushed commit range
         run: bunx commitlint --from ${{ github.event.before }} --to ${{ github.sha }} --verbose

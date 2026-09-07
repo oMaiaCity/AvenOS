@@ -81,10 +81,11 @@ describe('VoiceController', () => {
 		const controller = new VoiceController(backend)
 		await controller.start()
 		const speakers: string[] = []
-		const finals: Array<{ text: string; speaker: string | null }> = []
+		const finals: Array<{ text: string; speaker: string | null; session: string | null }> = []
 		controller.onInput({
 			onSpeaker: (speaker) => speakers.push(speaker.speaker_id),
-			onFinal: (text, speaker) => finals.push({ text, speaker: speaker?.speaker_id ?? null })
+			onFinal: (text, speaker, session) =>
+				finals.push({ text, speaker: speaker?.speaker_id ?? null, session })
 		})
 
 		backend.emit({
@@ -104,7 +105,9 @@ describe('VoiceController', () => {
 		})
 
 		expect(speakers).toEqual(['speaker-2'])
-		expect(finals).toEqual([{ text: 'Ich übernehme das.', speaker: 'speaker-2' }])
+		expect(finals).toEqual([
+			{ text: 'Ich übernehme das.', speaker: 'speaker-2', session: controller.sessionId }
+		])
 		expect(controller.speaker?.speaker_id).toBe('speaker-2')
 		controller.dispose()
 	})
@@ -127,6 +130,23 @@ describe('VoiceController', () => {
 		const controller = new VoiceController(backend)
 		await controller.previewSpeech('Eine Vorschau.', 'M1')
 		expect(backend.segments.map((segment) => segment.text)).toEqual(['Eine Vorschau.'])
+		expect(controller.speaking).toBe(false)
+		controller.dispose()
+	})
+
+	test('authoritative playback events restore and cancel an active narrated turn', async () => {
+		const backend = new FakeVoiceBackend()
+		const controller = new VoiceController(backend)
+		await controller.start()
+		backend.emit({ type: 'playback.turn_started', turn_id: 'restored-turn' })
+		backend.emit({ type: 'playback.started', turn_id: 'restored-turn' })
+		expect(controller.speaking).toBe(true)
+		controller.cancelSpeech('manual')
+		backend.emit({
+			type: 'playback.cancelled',
+			turn_id: 'restored-turn',
+			reason: 'barge_in'
+		})
 		expect(controller.speaking).toBe(false)
 		controller.dispose()
 	})

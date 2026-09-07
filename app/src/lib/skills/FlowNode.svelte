@@ -25,115 +25,82 @@ const n = $derived(data.node)
 const verb = $derived(n.type.split(':')[0])
 
 /**
- * A node's instance overlay speaks the SAME state vocabulary as the intent
- * stream — a node that is running and an intent that is working are one
- * meaning, so they must not be two colours.
+ * The node's KIND and its RUN state are both variants of the `flow-node`
+ * actor, which was written for this card. They used to be two local maps of
+ * Tailwind classes here — `INSTANCE_RING` and `BADGE` — which meant the node's
+ * state vocabulary lived in this file while the intent stream's lived in
+ * another, and the promise that "a node that is running and an intent that is
+ * working are one meaning" was kept by hand.
  */
-const INSTANCE_RING: Record<FlowInstanceState, string> = {
-	done: 'ring-2 ring-success/25',
-	running: 'ring-2 ring-progress/25',
-	waiting: 'ring-2 ring-foreground/15',
-	retrying: 'ring-2 ring-warning/25',
-	error: 'ring-2 ring-error/25',
-	review: 'ring-2 ring-info/25',
-	skipped: 'opacity-60 ring-1 ring-foreground/8'
+/*
+ * The variant classes are written out, not interpolated.
+ *
+ * The utility generator scans source for class names it must emit, and
+ * `flow-node--kind-{kind}` gives it the literal prefix and nothing else — so it
+ * emitted `flow-node--kind-` and the build failed the "resolves to nothing"
+ * check, correctly. A lookup keeps the full names visible to the scanner and
+ * keeps the mapping in one place.
+ */
+const KIND_CLASS: Record<string, string> = {
+	trigger: 'flow-node--kind-trigger',
+	llm: 'flow-node--kind-llm',
+	route: 'flow-node--kind-route',
+	view: 'flow-node--kind-view',
+	human: 'flow-node--kind-human',
+	door: 'flow-node--kind-door'
 }
-
-/** Node KINDS are a categorical palette, not states — hence the roles vary. */
-const BADGE: Record<string, string> = {
-	trigger: 'bg-progress/15 text-progress-ink',
-	llm: 'bg-error/15 text-error-ink',
-	route: 'bg-warning/15 text-warning-ink',
-	op: 'bg-quiet/15 text-quiet-ink',
-	view: 'bg-primary/8 text-primary',
-	human: 'bg-info/15 text-info-ink'
+const RUN_CLASS: Record<string, string> = {
+	running: 'flow-node--run-running',
+	retrying: 'flow-node--run-retrying',
+	waiting: 'flow-node--run-waiting',
+	review: 'flow-node--run-review',
+	done: 'flow-node--run-done',
+	error: 'flow-node--run-error',
+	skipped: 'flow-node--run-skipped'
 }
+const kind = $derived(data.door ? 'door' : (n.kind ?? verb))
+const RUN_LABEL: Record<string, string> = {
+	done: 'erledigt',
+	running: 'läuft',
+	retrying: 'wird wiederholt',
+	error: 'fehlgeschlagen',
+	review: 'Prüfung nötig',
+	skipped: 'übersprungen',
+	waiting: 'wartet'
+}
+const runState = $derived(data.instance ?? (n.live ? 'running' : undefined))
 </script>
 
 <div
-	class="w-60 rounded-xl px-3.5 py-3 font-sans text-foreground shadow-[0_1px_3px_rgba(30,41,59,0.06)] transition-all {data.door
-		? 'border-2 border-success/25 border-dashed bg-success/[0.05]'
-		: n.kind === 'trigger'
-			? 'border border-progress/25 bg-surface-raised'
-			: 'border border-foreground/8 bg-surface-raised'} {data.selected
-		? 'border-primary ring-2 ring-primary/15'
-		: (data.instance && INSTANCE_RING[data.instance]) || ''}"
+	class="flow-node {KIND_CLASS[kind] ?? ''} {runState ? (RUN_CLASS[runState] ?? '') : ''}"
+	aria-selected={data.selected ? 'true' : undefined}
 >
 	<Handle type="target" position={Position.Left} />
-	<div class="flex items-center gap-1.5 pb-1">
-		<span
-			class="rounded-md px-1.5 py-0.5 font-mono text-[length:var(--fs-micro)] {data.door
-				? 'bg-success/15 text-success-ink'
-				: (BADGE[verb] ?? BADGE.op)}"
-		>
-			{data.door ? 'skill' : verb}
-		</span>
-		<span class="font-medium text-sm leading-tight">{data.door ? `→ ${n.name}` : n.name}</span>
-		{#if data.instance === 'done'}
-			<!-- the instance overlay: this node already ran for the intent -->
-			<span
-				class="ml-auto flex size-4 items-center justify-center rounded-full bg-success text-success-foreground"
-				title="erledigt"
-			>
-				<svg
-					viewBox="0 0 24 24"
-					class="size-2.5"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="3.5"
-					stroke-linecap="round"
-					stroke-linejoin="round"
-				>
-					<path d="m5 13 4 4L19 7" />
-				</svg>
-			</span>
-		{:else if data.instance === 'running'}
-			<span class="ml-auto size-2 animate-pulse rounded-full bg-progress" title="läuft"></span>
-		{:else if data.instance === 'retrying'}
-			<span
-				class="ml-auto size-2 animate-pulse rounded-full bg-warning"
-				title="wird wiederholt"
-			></span>
-		{:else if data.instance === 'error'}
-			<span
-				class="ml-auto flex size-4 items-center justify-center rounded-full bg-error text-error-foreground"
-				title="fehlgeschlagen"
-				>×</span
-			>
-		{:else if data.instance === 'review'}
-			<span class="ml-auto size-2 rounded-full bg-info" title="Prüfung nötig"></span>
-		{:else if data.instance === 'skipped'}
-			<span class="ml-auto text-foreground/35 text-xs" title="übersprungen">—</span>
-		{:else if data.instance === 'waiting'}
-			<span class="ml-auto size-2 rounded-full bg-foreground/15" title="wartet"></span>
-		{:else if n.live}
-			<span class="ml-auto size-1.5 rounded-full bg-success" title="live"></span>
+	<div class="flow-node-head">
+		<span class="flow-node-kind">{data.door ? 'skill' : verb}</span>
+		<span class="flow-node-name">{data.door ? `→ ${n.name}` : n.name}</span>
+		{#if runState}
+			<!-- The run marker. The actor's `run` variant decides its colour, so
+			     the shape is all this file supplies. `title` carries the meaning
+			     for a pointer; the variant carries it for the eye. -->
+			<span class="flow-node-mark" title={RUN_LABEL[runState] ?? runState}></span>
 		{/if}
 	</div>
-	<p class="pb-1.5 text-[length:var(--fs-eyebrow)] text-foreground/50 leading-snug">{n.about}</p>
+	<p class="flow-node-about">{n.about}</p>
 	{#if data.outputCount}
-		<p class="pb-1.5 mono-meta">
+		<p class="flow-node-meta">
 			{data.outputCount} {data.outputCount === 1 ? 'Artefakt' : 'Artefakte'}
 		</p>
 	{/if}
-	<div class="flex gap-2">
-		<ul class="flex min-w-0 flex-1 flex-col items-start gap-1">
+	<div class="flow-node-ports">
+		<ul class="flow-node-requires">
 			{#each n.requires ?? [] as f (f)}
-				<li
-					class="max-w-full truncate rounded-md bg-surface-soft px-1.5 py-0.5 font-mono text-[length:var(--fs-micro)]"
-				>
-					→ {f}
-				</li>
+				<li class="flow-node-port">{f}</li>
 			{/each}
 		</ul>
-		<ul class="flex min-w-0 flex-1 flex-col items-end gap-1">
+		<ul class="flow-node-provides">
 			{#each n.provides ?? [] as f (f)}
-				<li
-					class="max-w-full truncate rounded-md bg-surface-cream px-1.5 py-0.5 font-mono text-[length:var(--fs-micro)]"
-				>
-					{f}
-					→
-				</li>
+				<li class="flow-node-port">{f}</li>
 			{/each}
 		</ul>
 	</div>

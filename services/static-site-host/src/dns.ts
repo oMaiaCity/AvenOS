@@ -25,13 +25,16 @@ export async function verifyDns(
 	tokenHash: string,
 	allowedIpv4: Set<string>,
 	allowedIpv6: Set<string>,
+	verificationMode: 'txt' | 'operator' = 'txt',
 	resolver: DnsResolver = dns
 ): Promise<{ ok: boolean; reason?: string }> {
-	const records = await optional(() => resolver.resolveTxt(`_aven-site.${hostname}`), [])
-	const verified = records.some(
-		(parts) => createHash('sha256').update(parts.join('')).digest('hex') === tokenHash
-	)
-	if (!verified) return { ok: false, reason: 'TXT ownership verification is missing or invalid' }
+	if (verificationMode === 'txt') {
+		const records = await optional(() => resolver.resolveTxt(`_aven-site.${hostname}`), [])
+		const verified = records.some(
+			(parts) => createHash('sha256').update(parts.join('')).digest('hex') === tokenHash
+		)
+		if (!verified) return { ok: false, reason: 'TXT ownership verification is missing or invalid' }
+	}
 	const ipv4 = await optional(() => resolver.resolve4(hostname), [])
 	if (!ipv4.length || ipv4.some((address) => !allowedIpv4.has(address)))
 		return { ok: false, reason: 'A records must point only to this hosting service' }

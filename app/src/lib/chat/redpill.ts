@@ -1,12 +1,10 @@
 /**
  * The client half of the RedPill chat stream.
  *
- * `/api/chat` hands back raw OpenAI-style SSE, so all that is left here is
- * turning the byte stream into events. Kept free of Svelte runes so it can be
- * unit-tested and reused outside a component.
+ * The native host returns raw OpenAI-style SSE from the authenticated facade,
+ * so this module only turns the byte stream into events.
  */
 
-import { isTauri } from '@tauri-apps/api/core'
 import { type OpenAiChatCompletionRequest, streamOpenAiChat } from '$lib/models/gateway'
 
 export type ChatRole = 'system' | 'user' | 'assistant' | 'tool'
@@ -176,25 +174,6 @@ export function repairCall(call: ToolCall): ToolCall {
 	}
 }
 
-/**
- * A readable sentence out of a failed response.
- *
- * SvelteKit wraps `error()` as `{"message":"…"}` and RedPill nests its own under
- * `{"error":{"message":"…"}}`; showing either envelope raw in a chat bubble is
- * just noise around the one line that matters.
- */
-async function failureText(response: Response): Promise<string> {
-	const body = await response.text()
-	try {
-		const parsed = JSON.parse(body)
-		const message = parsed?.message ?? parsed?.error?.message
-		if (typeof message === 'string' && message !== '') return message
-	} catch {
-		// not JSON — fall through and show whatever came back
-	}
-	return body || `chat failed with ${response.status}`
-}
-
 export interface ChatProxyRequest {
 	messages: ChatMessage[]
 	tools: ToolSpec[]
@@ -230,37 +209,11 @@ export function openAiGatewayRequest(input: ChatProxyRequest): OpenAiChatComplet
 	}
 }
 
-async function* responseChunks(response: Response): AsyncGenerator<string> {
-	if (!response.body) throw new Error('chat response had no stream body')
-	const reader = response.body.getReader()
-	const decoder = new TextDecoder()
-	try {
-		while (true) {
-			const { done, value } = await reader.read()
-			if (done) break
-			yield decoder.decode(value, { stream: true })
-		}
-		const tail = decoder.decode()
-		if (tail !== '') yield tail
-	} finally {
-		reader.cancel().catch(() => {})
-	}
-}
-
 async function openChatStream(
 	request: ChatProxyRequest,
 	signal?: AbortSignal
 ): Promise<AsyncIterable<string>> {
-	if (isTauri()) return streamOpenAiChat(openAiGatewayRequest(request), signal)
-
-	const response = await fetch('/api/chat', {
-		method: 'POST',
-		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify(request),
-		signal
-	})
-	if (!response.ok || !response.body) throw new Error(await failureText(response))
-	return responseChunks(response)
+	return streamOpenAiChat(openAiGatewayRequest(request), signal)
 }
 
 async function* withStallWatchdog(

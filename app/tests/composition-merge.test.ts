@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import { Actor, compositeInterface } from '../src/lib/actors/actor'
 
+const TEST_MANIFEST_IDENTITY = {
+	authority: 'ceo.aven',
+	namespace: 'tests.composition',
+	version: '1'
+} as const
+
 /**
  * The merge law (0148): a composite's interface is DERIVED from its members —
  * requires = what members need and nobody inside provides; produces =
@@ -9,7 +15,16 @@ import { Actor, compositeInterface } from '../src/lib/actors/actor'
  */
 
 const leaf = (id: string, requires: string[], produces: string[]) =>
-	new Actor({ id, name: id, description: '', tags: [], methods: [], requires, produces })
+	new Actor({
+		id,
+		...TEST_MANIFEST_IDENTITY,
+		name: id,
+		description: '',
+		tags: [],
+		methods: [],
+		requires,
+		produces
+	})
 
 describe('compositeInterface — derive, never store', () => {
 	test('the internal functor is hidden, the boundary exposed', () => {

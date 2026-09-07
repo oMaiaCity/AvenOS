@@ -45,6 +45,8 @@ function meta(): { protocol_version: number; request_id: RequestId } {
 }
 
 export class TauriNativeVoiceBackend implements VoiceBackend {
+	#eventSubscriptionReady: Promise<void> = Promise.resolve()
+
 	async prepare(features: VoiceFeature[]): Promise<PreparationSnapshot> {
 		if (features.includes('input') && /Android/i.test(navigator.userAgent)) {
 			await invoke('plugin:android-passkey|request_microphone')
@@ -125,7 +127,7 @@ export class TauriNativeVoiceBackend implements VoiceBackend {
 	subscribe(handler: (event: VoiceEventEnvelope) => void): Unsubscribe {
 		let active = true
 		let release: Unsubscribe | undefined
-		void listen<VoiceEventEnvelope>('voice-event', ({ payload }) => {
+		this.#eventSubscriptionReady = listen<VoiceEventEnvelope>('voice-event', ({ payload }) => {
 			if (active) handler(payload)
 		}).then((unlisten) => {
 			if (active) release = unlisten
@@ -135,6 +137,10 @@ export class TauriNativeVoiceBackend implements VoiceBackend {
 			active = false
 			release?.()
 		}
+	}
+
+	waitForEventSubscription(): Promise<void> {
+		return this.#eventSubscriptionReady
 	}
 
 	subscribeModelStatus(handler: (status: ModelLoadStatus) => void): Unsubscribe {

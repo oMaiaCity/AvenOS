@@ -109,12 +109,12 @@ function title(): string {
 }
 </script>
 
-<div class="min-h-0 flex-1 overflow-auto bg-surface-soft/25 p-3 sm:p-5">
+<div class="min-h-0 flex-1 overflow-auto bg-surface-sunken/25 p-3 sm:p-5">
 	{#if candidateInvoice || detailedInvoice}
 		<article
 			class="mx-auto max-w-3xl overflow-hidden rounded-sm border border-border bg-white text-foreground shadow-[0_12px_40px_rgba(30,41,59,0.10)] dark:bg-surface-raised"
 		>
-			<div class="h-1.5 bg-gradient-to-r from-evidence via-earth to-terracotta"></div>
+			<div class="h-1.5 bg-gradient-to-r from-info via-earth to-terracotta"></div>
 			<header class="flex items-start justify-between gap-6 border-border border-b px-6 py-6">
 				<div class="min-w-0">
 					<p
@@ -128,7 +128,7 @@ function title(): string {
 						class="mt-2 block max-w-full text-left {edge('/supplier') ? 'cursor-crosshair' : ''}"
 					>
 						<span
-							class="block truncate font-semibold text-lg {active('/supplier') ? 'rounded bg-evidence-soft ring-2 ring-evidence' : ''}"
+							class="block truncate font-semibold text-lg {active('/supplier') ? 'rounded bg-info-surface ring-2 ring-info' : ''}"
 							>{stringValue(candidateInvoice ? data.supplier : supplier.name, 'Unbekannter Lieferant')}</span
 						>
 					</button>
@@ -143,7 +143,7 @@ function title(): string {
 					<button
 						type="button"
 						onclick={() => choose('/invoiceNumber')}
-						class="font-mono font-semibold text-sm {active('/invoiceNumber') ? 'rounded bg-evidence-soft ring-2 ring-evidence' : ''}"
+						class="font-mono font-semibold text-sm {active('/invoiceNumber') ? 'rounded bg-info-surface ring-2 ring-info' : ''}"
 					>
 						{stringValue(data.invoiceNumber, stringValue(data.orderNumber))}
 					</button>
@@ -159,14 +159,14 @@ function title(): string {
 						<button
 							type="button"
 							onclick={() => choose(`/${item[1]}`)}
-							class="bg-white px-4 py-4 text-left hover:bg-evidence-soft"
+							class="bg-white px-4 py-4 text-left hover:bg-info-surface"
 						>
 							<span
 								class="block text-[length:var(--fs-micro)] text-muted-foreground uppercase tracking-wide"
 								>{item[0]}</span
 							>
 							<strong
-								class="mt-1 block {active(`/${item[1]}`) ? 'rounded bg-evidence-soft ring-2 ring-evidence' : ''}"
+								class="mt-1 block {active(`/${item[1]}`) ? 'rounded bg-info-surface ring-2 ring-info' : ''}"
 								>{item[1] === 'dueDate' ? displayValue(data[item[1]]) : formatMoney(data[item[1]], data.currency)}</strong
 							>
 						</button>
@@ -212,10 +212,10 @@ function title(): string {
 											<button
 												type="button"
 												onclick={() => choose(`/lineItems/${index}`)}
-												class="text-left {edge(`/lineItems/${index}`) ? 'cursor-crosshair hover:text-evidence-ink' : ''}"
+												class="text-left {edge(`/lineItems/${index}`) ? 'cursor-crosshair hover:text-info-ink' : ''}"
 											>
 												<span
-													class={active(`/lineItems/${index}`) ? 'rounded bg-evidence-soft ring-2 ring-evidence' : ''}
+													class={active(`/lineItems/${index}`) ? 'rounded bg-info-surface ring-2 ring-info' : ''}
 													>{stringValue(item.description)}</span
 												>
 											</button>
@@ -246,7 +246,7 @@ function title(): string {
 			{/if}
 			{#if evidence.length > 0}
 				<footer
-					class="border-border border-t bg-evidence-soft/70 px-6 py-3 text-evidence-ink text-xs"
+					class="border-border border-t bg-info-surface/70 px-6 py-3 text-info-ink text-xs"
 				>
 					▣ {evidence.length} belegte {evidence.length === 1 ? 'Fundstelle' : 'Fundstellen'} · Feld
 					anklicken, um die Quelle zu markieren
@@ -300,7 +300,7 @@ function title(): string {
 						</thead>
 						<tbody>
 							{#each transactions as transaction, index}
-								<tr class="border-border/25 border-b hover:bg-surface-soft">
+								<tr class="border-border/25 border-b hover:bg-surface-sunken">
 									<td class="px-4 py-3">
 										{stringValue(transaction.bookingDate)}
 									</td>
@@ -311,7 +311,7 @@ function title(): string {
 											class="text-left {edge(`/transactions/${index}`) ? 'cursor-crosshair' : ''}"
 										>
 											<span
-												class={active(`/transactions/${index}`) ? 'rounded bg-evidence-soft/60 ring-2 ring-evidence' : ''}
+												class={active(`/transactions/${index}`) ? 'rounded bg-info-surface/60 ring-2 ring-info' : ''}
 												>{stringValue(transaction.description)}</span
 											>
 										</button>
@@ -331,7 +331,7 @@ function title(): string {
 		</article>
 	{:else if validation}
 		<div class="mx-auto max-w-3xl space-y-3">
-			<div class="rounded-2xl border border-border bg-surface-raised p-5">
+			<div class="surface surface--raised surface--size-lg">
 				<div class="flex items-center justify-between gap-4">
 					<div>
 						<p class="text-[length:var(--fs-micro)] text-foreground/35 uppercase tracking-wide">
@@ -344,7 +344,7 @@ function title(): string {
 						<p class="text-foreground/35 text-xs">Abdeckung</p>
 					</div>
 				</div>
-				<div class="mt-4 h-2 overflow-hidden rounded-full bg-surface-soft">
+				<div class="mt-4 h-2 overflow-hidden rounded-full bg-surface-sunken">
 					<div
 						class="h-full rounded-full bg-primary"
 						style:width={`${Math.max(0, Math.min(100, (Number(data.coverageBps) || 0) / 100))}%`}
@@ -355,10 +355,10 @@ function title(): string {
 				<button
 					type="button"
 					onclick={() => choose(`/checks/${index}`)}
-					class="flex w-full items-start gap-3 rounded-xl border border-border bg-surface-raised p-4 text-left hover:bg-surface-soft"
+					class="flex w-full items-start gap-3 rounded-xl border border-border bg-surface-raised p-4 text-left hover:bg-surface-sunken"
 				>
 					<span
-						class="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full text-xs {check.status === 'pass' ? 'bg-success-muted text-success-strong' : check.status === 'fail' ? 'bg-error-muted text-error-strong' : 'bg-evidence-soft text-evidence-ink'}"
+						class="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full text-xs {check.status === 'pass' ? 'bg-success-surface text-success-ink' : check.status === 'fail' ? 'bg-error-surface text-error-ink' : 'bg-info-surface text-info-ink'}"
 						>{check.status === 'pass' ? '✓' : check.status === 'fail' ? '×' : '?'}</span
 					><span
 						><strong class="block text-sm"
@@ -372,7 +372,7 @@ function title(): string {
 		</div>
 	{:else}
 		<div class="mx-auto max-w-3xl space-y-4">
-			<header class="rounded-2xl border border-border bg-surface-raised p-5">
+			<header class="surface surface--raised surface--size-lg">
 				<div class="flex items-start justify-between gap-4">
 					<div>
 						<p
@@ -400,7 +400,7 @@ function title(): string {
 						type="button"
 						onclick={() => choose(pointer)}
 						disabled={!edge(pointer)}
-						class="min-w-0 rounded-xl border border-border bg-surface-raised p-4 text-left {edge(pointer) ? 'cursor-crosshair hover:border-evidence hover:bg-evidence-soft/40' : ''} {active(pointer) ? 'border-evidence ring-2 ring-evidence/50' : ''}"
+						class="min-w-0 rounded-xl border border-border bg-surface-raised p-4 text-left {edge(pointer) ? 'cursor-crosshair hover:border-info hover:bg-info-surface/40' : ''} {active(pointer) ? 'border-info ring-2 ring-info/50' : ''}"
 					>
 						<span
 							class="block text-[length:var(--fs-micro)] text-foreground/35 uppercase tracking-wide"
@@ -417,7 +417,7 @@ function title(): string {
 							<span class="mt-1 block break-words text-sm">{displayValue(value)}</span>
 						{/if}
 						{#if edge(pointer)}
-							<span class="mt-2 block text-evidence-ink text-[length:var(--fs-micro)]"
+							<span class="mt-2 block text-info-ink text-[length:var(--fs-micro)]"
 								>▣ Quelle anzeigen</span
 							>
 						{/if}

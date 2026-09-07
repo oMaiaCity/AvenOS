@@ -6,6 +6,7 @@ import { settings, VOICES, type Voice } from '$lib/settings.svelte'
 import { voiceController } from '$lib/voice/controller.svelte'
 import Account from './Account.svelte'
 import Billing from './Billing.svelte'
+import Hosting from './Hosting.svelte'
 
 /**
  * Settings — today, one decision: which voice speaks.
@@ -20,12 +21,13 @@ import Billing from './Billing.svelte'
 const CATEGORIES = [
 	{ id: 'account' as const, label: 'Konto' },
 	{ id: 'billing' as const, label: 'Abrechnung' },
+	{ id: 'hosting' as const, label: 'Hosting' },
 	{ id: 'general' as const, label: 'Models' },
 	{ id: 'voice' as const, label: 'Stimme' }
 ]
 // Account opens first: before anything is configured, the question is whose
 // app this is.
-let category = $state<'account' | 'billing' | 'general' | 'voice'>('account')
+let category = $state<'account' | 'billing' | 'hosting' | 'general' | 'voice'>('account')
 
 /** The voice currently sounding a preview, if any. */
 let playing = $state<Voice | null>(null)
@@ -79,7 +81,7 @@ async function preview(voice: Voice) {
 	<header class="flex flex-col items-center gap-1.5">
 		<!-- The same quiet route stamp the dashboard wears. No Back link: the rail
 		     is one exclusive group, so the gear (or any other entry) leaves. -->
-		<p class="eyebrow-quiet">Settings</p>
+		<p class="text text--eyebrow-quiet">Settings</p>
 	</header>
 
 	<!-- Phones: the categories become a row above the content instead of a
@@ -93,8 +95,8 @@ async function preview(voice: Voice) {
 					onclick={() => {
 						category = c.id
 					}}
-					class="rounded-xl px-3 py-2 text-left text-sm transition-colors {category === c.id
-						? 'border border-foreground/8 bg-surface-raised font-medium shadow-[0_1px_3px_rgba(30,41,59,0.05)]'
+					class="rounded-xl text-left text-sm transition-colors {category === c.id
+						? 'border border-foreground/8 bg-surface-raised font-medium'
 						: 'opacity-60 hover:opacity-100'}"
 				>
 					{c.label}
@@ -134,6 +136,8 @@ async function preview(voice: Voice) {
 				<Account />
 			{:else if category === 'billing'}
 				<Billing />
+			{:else if category === 'hosting'}
+				<Hosting />
 			{:else if category === 'voice'}
 				<section class="flex min-h-0 flex-col gap-3">
 					<div class="flex items-baseline justify-between">
@@ -143,7 +147,7 @@ async function preview(voice: Voice) {
 
 					{#if !isTauri()}
 						<p
-							class="rounded-xl border border-foreground/8 bg-surface-raised px-4 py-3 text-xs opacity-60 shadow-[0_1px_3px_rgba(30,41,59,0.05)]"
+							class="surface surface--raised text-xs opacity-60"
 						>
 							The voice only runs in the app — there is nothing to hear in the browser.
 						</p>
@@ -210,7 +214,7 @@ async function preview(voice: Voice) {
 
 					{#if failure}
 						<p
-							class="rounded-xl border border-error/25 bg-error-muted px-4 py-3 text-xs text-error-strong"
+							class="rounded-xl border border-error/25 bg-error-surface text-xs text-error-ink"
 						>
 							{failure}
 						</p>
@@ -222,7 +226,7 @@ async function preview(voice: Voice) {
 				<section class="flex flex-col gap-3">
 					<h2 class="text-sm">Model</h2>
 					<p
-						class="rounded-xl border border-foreground/8 bg-surface-raised px-4 py-3 font-mono text-xs opacity-70 shadow-[0_1px_3px_rgba(30,41,59,0.05)]"
+						class="surface surface--raised font-mono text-xs opacity-70"
 					>
 						deepseek/deepseek-v4-flash-0731 · RedPill TEE
 					</p>

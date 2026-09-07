@@ -45,7 +45,10 @@ export class SpeechPlanner {
 		const scalars = [...trimmed]
 		const result: PlannedSegment[] = []
 		for (let offset = 0; offset < scalars.length; offset += MAX_SEGMENT_SCALARS) {
-			const part = scalars.slice(offset, offset + MAX_SEGMENT_SCALARS).join('').trim()
+			const part = scalars
+				.slice(offset, offset + MAX_SEGMENT_SCALARS)
+				.join('')
+				.trim()
 			if (part === '') continue
 			result.push({ index: this.#nextIndex++, text: part })
 		}

@@ -1,8 +1,0 @@
-{
-	"subject": "Login for {{name}}",
-	"fixture": {
-		"name": "aurora",
-		"accessUrl": "https://id.next.aven.ceo/passkey/create?access=designer-example",
-		"baseUrl": "https://id.next.aven.ceo"
-	}
-}

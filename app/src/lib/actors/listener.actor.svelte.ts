@@ -1,4 +1,5 @@
 import { Listener } from '$lib/asr/listener.svelte'
+import { anonymousSpeaker } from '$lib/chat/anonymous-speaker'
 import { Actor } from './actor'
 import { bus } from './bus'
 import listenerMachineSource from './listener-machine.pl?raw'
@@ -17,14 +18,21 @@ export class ListenerActor extends Actor {
 		onSpeechStart: () => {
 			void bus.emit('interrupted()', {}, 'listener')
 		},
-		onUtterance: (text) => {
-			void bus.emit('utterance(T)', { text }, 'listener')
+		onUtterance: (text, attribution, sessionId) => {
+			void bus.emit(
+				'utterance(T)',
+				{ text, anonymousSpeaker: anonymousSpeaker(sessionId, attribution) },
+				'listener'
+			)
 		}
 	})
 
 	constructor() {
 		super({
 			id: 'listener',
+			authority: 'os.aven',
+			namespace: 'voice',
+			version: '1',
 			name: 'Listener',
 			description:
 				'The ears: Silero VAD and Nemotron recognition on-device. Finished utterances ' +

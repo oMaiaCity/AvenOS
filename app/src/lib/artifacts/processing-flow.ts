@@ -76,6 +76,17 @@ function inferredDependencies(stage: ArtifactProcessingStage, orderedKeys: strin
 	if (key === 'validate-invoice') return keys.has('extract-invoice') ? ['extract-invoice'] : []
 	if (key === 'validate-statement')
 		return keys.has('extract-statement') ? ['extract-statement'] : []
+	if (key === 'normalize-invoice-open-item')
+		return keys.has('validate-invoice') ? ['validate-invoice'] : []
+	if (key === 'normalize-statement')
+		return keys.has('validate-statement') ? ['validate-statement'] : []
+	if (key.startsWith('fanout-statement-transactions-'))
+		return keys.has('normalize-statement') ? ['normalize-statement'] : []
+	if (key === 'rank-invoice-transactions') {
+		return ['normalize-invoice-open-item', 'normalize-statement'].filter((dependency) =>
+			keys.has(dependency)
+		)
+	}
 	return []
 }
 

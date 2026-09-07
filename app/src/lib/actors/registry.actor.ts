@@ -65,6 +65,9 @@ function shape(state, rawText) {
 
 const REGISTRY_MANIFEST: Manifest = {
 	id: 'registry',
+	authority: 'os.aven',
+	namespace: 'actors.system',
+	version: '1',
 	name: 'Registry',
 	description:
 		'The directory itself, as an actor: knows every actor in the mesh and describes ' +

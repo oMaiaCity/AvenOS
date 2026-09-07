@@ -17,6 +17,7 @@ node_modules
 /build
 /ARCHIVE/*/build
 /app/build
+/services/*/build/
 /services/aven-api/email-templates/.maizzle/
 /services/aven-api/email-templates/.maizzle-dist/
 
@@ -36,6 +37,25 @@ Thumbs.db
 # Pulumi DIY-backend state and environment-specific stack configuration
 **/.pulumi/
 /infrastructure/**/Pulumi.*.yaml
+
+# Deployment bootstrap recovery material (owner-only; never commit)
+avenos-bootstrap-record/
+**/bootstrap-input.json
+**/bootstrap-input.json.*.next
+**/bootstrap.generated.json
+**/bootstrap.generated.json.*.next
+**/credentials.csv
+**/credentials.csv.*.next
+**/avenos-recovery.csv
+**/bootstrap-apply.log
+**/initial-rollout.log
+**/uninstall.log
+**/bootstrap-state-*.json
+**/bootstrap.*.remote
+**/pulumi-state/
+**/uninstall-pulumi-state/
+**/uninstall-platform-*.json
+**/uninstall-bootstrap-*.json
 
 # One-time identity deployment trust bootstrap files
 /aven-identity-next-deploy
@@ -70,6 +90,8 @@ target/
 # App Store / local packaging outputs (never commit)
 /dist/
 **/*.pkg
+/playwright-report/
+/test-results/
 
 # Repo-local P2p signal relay keys (relay-hyperdht.seed, bootstrap-hyperdht.seed)
 /.avenOS/

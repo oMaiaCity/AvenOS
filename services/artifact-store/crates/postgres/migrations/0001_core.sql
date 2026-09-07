@@ -1,5 +1,3 @@
-CREATE SCHEMA IF NOT EXISTS artifact_store;
-
 CREATE TABLE artifact_store.store_state (
     singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
     store_epoch uuid NOT NULL,

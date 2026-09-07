@@ -1,204 +1,306 @@
-# AvenOS
+# avenOS
 
-Bun **monorepo**: active code lives under `libs/`, `app/`, `services/`, and `docs/`; legacy or optional packages live under `ARCHIVE/`.
+avenOS is the open-source foundation for an Aven: an AI intended to help one person
+run their life and company while the knowledge, skills, and working history it builds
+remain under that person's control. avenCEO is the product built on this foundation.
+This repository contains the Rust client, portable Actor runtime, service boundaries,
+and deployment automation that make the system inspectable and independently
+operable.
 
-| Package | Description |
-|---------|-------------|
-| **`libs/aven-website`** | `@avenos/aven-website` — SvelteKit marketing site — home, skills, pricing, waitlist |
-| **`libs/aven-db`** | Local-first Groove core (RocksDB, sync layer) |
-| **`libs/aven-p2p`** | Placeholder for future sync transport |
-| **`libs/tauri-plugin-self`** | Device identity Tauri plugin |
-| **`libs/tauri-plugin-android-passkey`** | Android Credential Manager passkeys and runtime platform permissions |
-| **`libs/aven-vibes`** | `@avenos/aven-vibes` — mini-app HTML catalog for intent HITL views |
-| **`libs/aven-vibe-sandbox`** | `@avenos/aven-vibe-sandbox` — MCP app sandbox host (iframe / Tauri WebView) |
-| **`docs`** | `@avenos/docs` — Markdown for in-app docs (self, network, sparks, deploy, content) |
-| **`app`** | `@AvenOS/app` — Tauri + SvelteKit shell (identity, local Groove, docs, vibe-apps) |
-| **`services/aven-api`** | `@avenos/aven-api` — checkout, email setup login, passkeys, downloads, and customer environments |
-| **`infrastructure/identity`** | Pulumi — Hetzner foundation and DNS for `id.next.aven.ceo` |
-| **`ARCHIVE/ocr-example`** | Python Gemini OCR/JSON extract CLI (optional; separate `pip` venv) |
-| **`ARCHIVE/tauri-plugin-passkey`** | macOS passkey Tauri plugin (archived; not wired into `app` today) |
+The [product model](docs/product-model.md) gives precise meanings to Aven, avenCEO,
+avenOS, and working intelligence, including the guarantees the current repository does
+and does not provide.
 
-The current control-plane and per-customer database boundaries, all worker and data
-paths, their guarantees, and the proposed standard tenant runtime rail are mapped in
-[Customer data-plane architecture](CUSTOMER-DATA-PLANE-ARCHITECTURE.md).
+In the current application, text, voice, and documents enter the same workspace. Work
+lives as an Intent with its source material, conversation, activity, artifacts, and
+the skills or Actors involved. An Intent is therefore more than a chat transcript or
+document-processing job: it is the durable context in which an Aven can continue a
+piece of work and account for what happened.
 
-**`bun install`** also attaches **`../MaiaOS/libs/*`** as workspaces so `@MaiaOS/*` / `@AvenOS/db` resolve. Clone [MaiaOS](https://github.com/) **next to** this repo (`Development/MaiaOS` alongside `Development/AvenOS`), or edit root `package.json` `workspaces` if your layout differs.
+An account starts with checkout. After a verified purchase, the customer receives a
+link to create a passkey at `aven.id`. The Rust client then asks the customer to
+approve that device with the same identity. Once a customer environment is selected,
+the client reaches its data through `api.aven.ceo`; it never receives database
+credentials or chooses a database by name.
 
-## Install
+The application is a work in progress. The current foundation proves customer-specific
+databases, bounded service roles, passkey identity, persistent Intents and Actor runs,
+remote document execution, and fresh-host deployment and recovery. It does not yet
+provide client-side end-to-end encryption or a complete customer export and migration
+path. The complete system runs locally and has isolated `next` and production platform
+targets behind one shared identity service.
 
-From the **repo root**:
+## What the current system does
 
-```sh
-bun install
+The current application brings these parts into one flow:
+
+- Passkeys establish the account identity, and another passkey can be added from the
+  identity dashboard.
+- Checkout records purchases, subscriptions, invoices, and every verified Polar
+  webhook, including event types the product does not act on yet.
+- Documents can be imported, processed, stored as artifacts, and discussed in the
+  same Intent history.
+- Skills describe reusable work; Actor Runner admits durable runs and keeps their
+  status, attempts, and recovery state.
+- A customer environment owns its Intents, artifacts, Actor runs, and future domain
+  data in a separate PostgreSQL database.
+- `aven.ceo` is rebuilt from Git and served as a static site. It does not share an
+  application or session boundary with checkout or identity.
+
+An Intent is the durable thread for one piece of work. It records what was requested,
+what material belongs to it, what ran, what was produced, and where human input was
+needed. An Actor is an executable participant in that work. This distinction keeps a
+customer's history useful even when the implementation of a skill changes.
+
+## Why the services are separate
+
+Identity, commerce, customer work, and public content have different failure and
+security boundaries. avenOS therefore gives each public origin one job:
+
+| Address | What happens there | What does not belong there |
+| --- | --- | --- |
+| `aven.id` | Account setup, passkeys, sessions, device approval, authentication, and identity authorization | Billing, customer data, document processing, or public-site hosting |
+| `portal.aven.ceo` | Checkout, billing, purchase email, subscriptions, and Polar webhooks | Passkeys, sessions, or customer domain records |
+| `api.aven.ceo` | Authentication of product requests, customer authorization, and fixed routing to server-side services | Browser pages, passkey registration, or arbitrary database access |
+| `aven.ceo` | The public static website built from its Git source | Authentication, checkout, mutable APIs, or secrets |
+
+The `next` platform uses the parallel origins `portal.next.aven.ceo`,
+`api.next.aven.ceo`, and `next.aven.ceo`. Both platform environments trust the same
+`aven.id` issuer, but they have independent commerce data, customer databases,
+service credentials, tenant-signing keys, backups, and deployment approvals.
+
+The desktop client obtains a short-lived identity token from `aven.id` and sends it to
+the facade. The facade checks the current product entitlement and issues a narrower
+grant for one customer environment, one downstream service, and a bounded set of
+actions. The downstream service verifies that grant before opening the corresponding
+customer database.
+
+```text
+checkout ──creates account──> aven.id
+                                  │
+Rust client ──passkey/device───────┘
+     │
+     └──identity token──> api.aven.ceo ──tenant grant──> domain service
+                                                        │
+                                                        └──> customer database
 ```
 
-Python OCR example (optional): `cd ARCHIVE/ocr-example && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt`
+Every customer database contains separate schemas for its installed components. Each
+service function receives its own database role with only the privileges needed for
+that function. Identity, commerce, and platform reconciliation keep their bounded
+control data in separate central databases; they are not customer-domain stores.
 
-## Develop
+The exact invariants are defined in
+[Customer databases as a first-class platform boundary](docs/customer-database-platform.md).
+The [implemented customer-database system map](docs/customer-database-system-map.md)
+shows which parts exist today and which operational hardening remains. The
+[identity, checkout, facade, and public-web cut](docs/identity-checkout-facade-cut.md)
+records the four-origin trust boundary.
 
-```sh
-bun run dev:aven-website  # SvelteKit marketing site (default: bun run dev)
-bun run dev:ocr-example    # prints CLI help (requires Python + venv above)
-bun run dev:app:all        # Tauri desktop app (macOS or Linux — auto)
-bun run dev:app:mac        # Tauri desktop app on macOS
-bun run dev:app:ios        # Tauri in iOS Simulator — `tauri ios dev [device]` (macOS + Xcode; run ios init once)
-bun run dev:app:android    # Tauri on an Android device/emulator (Android Studio SDK + NDK)
-bun run dev:app:linux      # Tauri desktop app on Linux
-bun run dev:app            # SvelteKit only in browser (:1420), no Tauri shell
-bun run dev:api            # Identity API and checkout UI
-bun run build:app:android  # Signed debug APK in dist/android/
+## Run the whole system locally
 
-# or from the package folder
-cd libs/aven-website && bun run dev
-```
+The local composition runs identity, checkout, the facade, the provisioner, domain
+services, databases, email capture, and the Rust client on one Linux or macOS
+workstation. By default it does not call a deployed Aven service, Polar, an SMTP
+provider, or an LLM provider. An operator can instead connect the local facade to a
+trusted OpenAI-compatible model server for chat and document processing.
 
-Env for the **marketing site** and **OCR CLI**: keep **`.env`** at the **repo root** (see **`.env.example`**). `libs/aven-website` loads it via Bun **`--env-file=../../.env`**; Python also reads that path plus optional **`ARCHIVE/ocr-example/.env`** overrides (see `ARCHIVE/ocr-example/README.md`).
+Install Git, Bun 1.3.13, Rust 1.93.1 through `rustup`, Docker with Compose v2,
+OpenSSL, the native Tauri dependencies, and a GitHub Packages token with
+`read:packages`. The
+[workstation setup guide](docs/operations/workstation-setup.md) gives the exact Linux
+and macOS packages and explains where the package token belongs.
 
-### Run the full local service stack
-
-Docker with Compose and Bun are required. From the repository root, start Aven
-API, its email and environment workers, Mailpit, the Artifact Store, Processor, and
-Intent Service runtimes/provisioners, and their shared PostgreSQL cluster. Each customer
-database contains isolated schemas owned by restricted service roles:
-
-```sh
-bun run dev:api:artifacts
-```
-
-Leave that command running. Once the services report healthy, verify the full
-Artifact Store path from a second terminal:
+From the repository root:
 
 ```sh
-bun run test:artifact-store:smoke
-bun run test:persistent-intent:smoke
-bun run test:intent-service:lifecycle
+bun install --frozen-lockfile
+bun run local:up
+bun run local:account -- you@example.test
 ```
 
-A successful run prints JSON containing `"status": "ok"` after creating an
-upload and root publication and verifying metadata, downloaded content, and
-feed replay. The default local endpoints are:
+The last command prints an identity setup URL. Open it at the exact `localhost`
+address, create a passkey, and wait for the customer database to become ready. This
+command is a developer shortcut: it creates a disposable entitlement without going
+through checkout. To exercise the customer-facing path, start at
+`http://localhost:13200` and read the purchase email in Mailpit at
+`http://localhost:18025`.
 
-| Service | Endpoint |
-|---------|----------|
-| Aven API | `http://localhost:3000` |
-| Artifact Store | `http://localhost:8087` |
-| Artifact Processor | `http://localhost:8089` |
-| Intent Service | `http://localhost:8091` |
-| Mailpit | `http://localhost:8025` |
-| Aven API PostgreSQL | `127.0.0.1:55432` |
-
-If a port is occupied, override it for both commands. For example:
+Start the client on Linux:
 
 ```sh
-APP_PORT=13000 MAILPIT_HTTP_PORT=18025 DB_PORT=15432 \
-ARTIFACT_STORE_PORT=18087 \
-bun run dev:api:artifacts
-
-ARTIFACT_STORE_PORT=18087 bun run test:artifact-store:smoke
+bun run local:app -- linux
 ```
 
-Press Ctrl+C to stop the foreground stack. Remove its stopped containers and
-network without deleting the database volumes with:
+Or on macOS:
 
 ```sh
-docker compose \
-  -f services/aven-api/docker-compose.yml \
-  -f services/aven-api/docker-compose.artifact-store.yml \
-  down
+bun run local:app -- mac
 ```
 
-The Tauri desktop application is run natively in a separate terminal; it is not
-part of the Docker stack. See the commands above and the
-[`services/aven-api` local-service documentation](services/aven-api/README.md#local-services)
-for additional configuration and detached operation.
+The client opens the local identity dashboard and displays a device code. Sign in
+with the passkey and approve that code. You can then import a document, inspect its
+artifacts, chat, and exercise persistent Intent and Actor features against the local
+customer database.
 
-### Native passkey authentication
+To use a real local model, start an OpenAI-compatible server such as LM Studio and set
+`LOCAL_LLM_MODEL` to its exact model identifier before `local:up`. The
+[local-stack guide](docs/operations/local-stack.md#use-lm-studio-or-another-local-model)
+contains the complete setup, capability requirements, and vision option.
 
-The Tauri app is gated on launch. On supported Apple devices and Android 9+ it requests a challenge for `id.next.aven.ceo`, opens the native system passkey sheet (Authentication Services or Android Credential Manager), and exchanges the assertion for a revocable Better Auth bearer session. Only platforms or OS versions without that native mechanism fall back to the HTTPS device-code approval flow in the system browser while avenOS shows a waiting screen. The bearer token is not exposed to the frontend or persisted in browser storage; this spike requires authentication again after an app restart.
-
-The authentication spike accepts ordinary passkeys; WebAuthn PRF is optional until encrypted client data needs it. Firefox on Linux exposes WebAuthn but has no built-in platform passkey provider, so enrollment there requires a FIDO2 security key or a passkey-provider extension. The same setup link can instead be opened on a browser or device with a platform passkey provider.
-
-Android signing, Digital Asset Links, prerequisites, and the on-device checklist are in [the Android APK guide](docs/deploy/android-apk.md).
-
-For local development, run the identity API and compile the app with its local origin:
+When finished, remove the disposable containers, networks, and **all local volumes**:
 
 ```sh
-bun run dev:api
-AVEN_IDENTITY_BASE_URL=http://localhost:5173 bun run dev:app:linux
+bun run local:down
 ```
 
-The intended next layer is name-scoped authorization: the authenticated dashboard lists every owned name, selecting one establishes that name as the active context, and API endpoints—not direct client PostgreSQL credentials—enforce the user's entitlement for every read and write. Name selection and customer-data operations are intentionally outside the current authentication spike.
+[Run the full stack locally](docs/operations/local-stack.md) covers the second-passkey
+flow, local endpoints, checkout and email, and common failures.
 
-## Scripts
+## Build and prove it
 
-See **[`scripts/README.md`](scripts/README.md)** for which root scripts are active vs manual maintenance.
-
-## Linux desktop prerequisites
-
-`bun run dev:app:linux` builds the Tauri shell against system WebKitGTK / GTK / DBus libraries. On a fresh Linux install, missing native packages usually show up as Cargo errors such as `pkg-config ... dbus-1` not found.
-
-Ubuntu / Debian:
+Run the broad static and unit checks while developing:
 
 ```sh
-sudo apt update
-sudo apt install -y \
-  pkg-config \
-  libdbus-1-dev \
-  libgtk-3-dev \
-  libsoup-3.0-dev \
-  libwebkit2gtk-4.1-dev \
-  libayatana-appindicator3-dev \
-  build-essential \
-  curl \
-  wget \
-  file \
-  libssl-dev
+bun run check
+bun run test:identity
+bun run test:api
+bun run test:checkout
+bun run test:customer-platform
 ```
 
-Fedora:
+Infrastructure, deployment, and recovery have executable tests as well:
 
 ```sh
-sudo dnf install \
-  pkgconf-pkg-config \
-  dbus-devel \
-  gtk3-devel \
-  libsoup3-devel \
-  webkit2gtk4.1-devel \
-  libappindicator-gtk3-devel \
-  openssl-devel \
-  curl \
-  wget \
-  file \
-  gcc-c++
+bun run test:infra
+bun run test:deploy
+bun run test:recovery
 ```
 
-After installing the packages, retry:
+On a prepared Linux workstation, the full product proof is:
 
 ```sh
-bun run dev:app:linux
+bun run test:e2e:platform
 ```
 
-## Lint / format (repo root)
+It builds the optimized Rust client and real service images. The test walks through
+checkout and email, first and second passkeys, native device authorization, customer
+provisioning, artifact upload, document import, chat, session-local anonymous speaker
+attribution, duplex interruption, Intent and Actor persistence, raw Polar retention,
+tenant isolation, authorization failures, static hosting, and complete teardown. It
+is evidence for that tested composition; it does not turn a synthetic voice fixture
+into acoustic-device qualification or local proof into evidence that a provider
+deployment has occurred.
 
-[Biome](https://biomejs.dev) applies across the tree.
+[Build and test](docs/operations/build-and-test.md) lists the complete release gate,
+component commands, platform requirements, and the behavior covered by each test.
+
+Operators preparing a fresh hosted installation start with
+[Initial provisioning](docs/operations/initial-provisioning.md). The resumable
+`bun run bootstrap:deployment:guided` command collects and verifies provider-issued
+credentials, creates isolated state and backup storage, configures GitHub, provisions the
+three hosts, publishes the `aven.id` records through United Domains, then verifies,
+publishes, and deploys the first complete installation. It ends with public readiness or a recoverable
+error. The same saved-generation menu can uninstall a test installation in dependency
+order, including its backups and state, after an exact destructive confirmation. Later
+application and infrastructure updates run through CI.
+
+## Find the code
+
+| Path | What it owns |
+| --- | --- |
+| `app/` | Svelte workspace and the Rust/Tauri client |
+| `services/identity/` | The narrow `aven.id` passkey and identity service |
+| `services/checkout/` | The `portal.aven.ceo` checkout and billing application |
+| `services/aven-api/` | The authenticated `api.aven.ceo` facade |
+| `services/platform-provisioner/` | Customer database creation and reconciliation |
+| `services/artifact-store/` | Customer-scoped artifact metadata and content |
+| `services/intent-service/` | Customer-scoped Intent and conversation history |
+| `services/actor-runner/` | Customer-scoped durable Actor execution |
+| `services/static-site-host/` | Verified managed static hosting |
+| `libs/` | Shared identity, customer-runtime, Actor, artifact, document, UI, and native libraries |
+| `infrastructure/platform/` | Pulumi resources for the identity and platform hosts |
+| `infrastructure/bootstrap/` | Pulumi resources for private state and backup storage |
+| `deploy/` | Local, E2E, deployment, backup, and recovery automation |
+| `docs/operations/` | The authoritative operations handbook |
+
+New stateful services join the customer platform through a component manifest,
+append-only migrations, distinct owner and function roles, facade actions, an
+audience-bound tenant grant, and isolation and recovery tests. They do not receive
+cluster-wide customer access or caller-selected connection details.
+
+The execution design is split across a few focused references:
+
+- [Actor skills and goal-directed problem solving](docs/actor-skills-and-problem-solving.md)
+  explains capabilities, generated plans, durable runs, and artifact-backed
+  resumption.
+- [Actor runtime proof strategy](docs/actor-runtime-proof-strategy.md) separates
+  portable runtime conformance, document acceptance, and live-provider smoke tests.
+- [Artifact-first semantic enrichment and affordance discovery](docs/artifact-first-semantic-enrichment.md)
+  defines exhaustive non-effecting enrichment, understanding bundles, and the actions
+  enabled by supported facts.
+- [Client-owned document ingestion](docs/client-document-ingest.md) describes the
+  current document pipeline and its server migration boundary.
+- [Generic authenticated LLM gateway](docs/llm-gateway.md) defines model discovery,
+  streaming, schemas, tool calls, and provider configuration.
+- [HTTP resource actors and credential routing](docs/http-resource-actors.md) proposes
+  immutable request/response artifacts, byte-stream materialization, and URL-scoped
+  credential selection through a customer-scoped, session-bound Vault service.
+- [Automatic invoice-to-bank-transaction reconciliation](docs/invoice-statement-reconciliation.md)
+  specifies how extracted invoice and statement facts become evidence-bearing matches,
+  review decisions, and a narrowly automated exact case.
+
+## Deploy and operate it
+
+Pulumi creates three replaceable Hetzner hosts: one shared `aven.id` host and one
+isolated platform host each for `next` and production. Every target has its own
+protected volume, firewall, SSH role identities, database credentials, backup path,
+and internal secrets. GitHub Actions runs the same verified infrastructure,
+deployment, recovery, and monitoring playbook for each target.
+
+An operator still supplies provider-issued cloud, DNS, billing, mail, model, and package
+credentials. The guided first installation validates them, configures GitHub, dispatches
+the required workflows, and updates both DNS providers. One repository administrator can
+operate the installation; an optional second-person deployment review can be enabled later.
+The deployment does not ask an operator to invent SSH keys, copy database passwords,
+or edit files on either server.
+
+Start with the [operations handbook](docs/operations/README.md). Its chapters cover:
+
+- [access, generated credentials, and secrets](docs/operations/access-and-secrets.md);
+- [bootstrapping storage and GitHub](docs/operations/initial-provisioning.md);
+- [deploying shared identity, `next`, and production](docs/operations/deployment.md);
+- [routine maintenance and observation](docs/operations/maintenance.md);
+- [backup, restore, and fresh-host recovery](docs/operations/backup-and-recovery.md);
+  and
+- [bounded incident access and response](docs/operations/incident-response.md).
+
+The active namespaced GitHub Environments use separate Pulumi stacks and protected-branch
+policies. Promotion changes a Git reference; deployment still requires an explicit target
+and exact ref. Production cannot read the `next` platform state or backup path.
+Each platform generates its own identity provisioning token; the protected identity
+deployment reads both platform states to admit those exact callers.
+
+Hosts carry no irreplaceable configuration. Git, encrypted Pulumi state, and
+encrypted off-host logical backups are the recovery sources of truth. Disaster
+recovery provisions fresh hosts through the same workflow as an initial deployment,
+then restores the selected backup before admitting writes.
+
+## Keep the documentation true
+
+The root README explains the product, its current boundaries, and the shortest local
+path. The operations handbook owns procedures and secret lists; architectural papers
+own their stated decisions. Other documents link to those authorities instead of
+copying progressively older instructions.
+
+Read the [repository writing standard](docs/writing.md) before changing documentation.
+`AGENTS.md` maps implementation changes to the documents that must change with them.
+Run the documentation gate before opening a pull request:
 
 ```sh
-bun run lint
-bun run lint:fix
+bun run check:docs
 ```
 
-API verification runs from the root with `bun run check:api`, `bun run test:api`, and `bun run build:api`. See [`services/aven-api/README.md`](services/aven-api/README.md) for PostgreSQL, Mailpit, migrations, and workers.
-
-Infrastructure validation runs with `bun run test:infra`. Provisioning and deployment use protected GitHub Environment values and encrypted Pulumi state in a private Hetzner Object Storage bucket; see [`infrastructure/identity/README.md`](infrastructure/identity/README.md), the [GitHub deployment guide](services/aven-api/docs/github-deployment.md), and the [first-install checklist](GITHUB_HETZNER_DEPLOYMENT_CHECKLIST.md). Do not commit deployment `.env` files, Pulumi stack configuration/state, or credentials.
-
-## Architecture notes
-
-- [Generic authenticated LLM gateway](docs/llm-gateway.md) documents capability-based
-  model discovery, explicit model selection, OpenAI-compatible streaming, schemas, tool
-  calls, desktop transport, provider configuration, security, and operations.
-
-## Reference — recreate Svelte app
-
-```sh
-bunx sv@0.15.2 create --template minimal --types ts --install bun .
-```
+The gate validates links and headings, documented root commands, the authoritative
+document set, and coverage of deployment workflow settings. It cannot decide whether
+prose still tells the truth; reviewing semantic accuracy remains part of every change.

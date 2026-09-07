@@ -1,12 +1,15 @@
+import { Resolver } from 'node:dns/promises'
 import { mkdir } from 'node:fs/promises'
 import { loadConfig } from './config.js'
 import { StaticSiteHost } from './host.js'
 
 const config = loadConfig()
 await mkdir(config.dataRoot, { recursive: true })
-const host = new StaticSiteHost(config)
+const resolver = config.dnsServers.length > 0 ? new Resolver() : undefined
+resolver?.setServers(config.dnsServers)
+const host = new StaticSiteHost(config, resolver)
 
-await host.loadSnapshot().catch(() => {})
+await host.loadPersistedState().catch(() => {})
 
 Bun.serve({ hostname: config.hostname, port: config.port, fetch: host.handle })
 console.info(JSON.stringify({ message: 'static site host listening', port: config.port }))

@@ -258,3 +258,19 @@ captures. The clustering gate is deliberately bounded to three people and uses
 a 0.55 match threshold plus a 0.06 previous-speaker margin to avoid label churn.
 These are initial conversational heuristics, not biometric accuracy claims;
 multi-device tester feedback remains part of duplex qualification.
+
+### Application attribution persistence
+
+The full-stack release gate carries two deterministic silent fixtures through the
+production voice semantic state machine and the real Rust/Tauri application. The
+first emits a confirmed final with a session-local anonymous speaker label. The
+second starts assistant playback, confirms a lexical interruption and its cancellation
+fade, then emits a follow-up from a different anonymous speaker. The browser journey
+proves that both labels reach chat state and that the speaker-attributed contributions
+persist in the selected customer's Intent history.
+
+This rail proves event ordering, session-scoped label correlation, duplex cancellation
+semantics, frontend rendering, and persistence. Its PCM is synthetic and silent, so it
+does not prove microphone capture, acoustic echo cancellation, diarization accuracy,
+or a physical device route. The autonomous conversational lab above remains the
+acoustic qualification path.

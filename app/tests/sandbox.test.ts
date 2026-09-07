@@ -148,7 +148,7 @@ describe('logic sandbox (0130 slice A)', () => {
 
 describe('todo logic (0130 slice B — parity + validation)', () => {
 	test('both faces validate and the style passes the whitelist', async () => {
-		const { validateStyleDef, validateViewDef } = await import('@avenos/aven-ui')
+		const { validateStyleDef, validateViewDef } = await import('@myavenceo/aven-vibes')
 		const { todoBoardView, todoListView } = await import('../src/lib/actors/views/todo/view')
 		const { todoStyle } = await import('../src/lib/actors/views/todo/style')
 		expect(() => validateViewDef(todoListView)).not.toThrow()

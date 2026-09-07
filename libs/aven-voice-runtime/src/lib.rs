@@ -11,6 +11,8 @@ pub mod output;
 pub mod pipeline;
 pub mod ring;
 pub mod runtime;
+#[cfg(feature = "silent-audio-e2e")]
+pub mod silent_fixture;
 pub mod speaker;
 pub mod trace;
 pub mod workers;

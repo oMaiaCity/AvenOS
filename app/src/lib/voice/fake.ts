@@ -1,17 +1,4 @@
 import type {
-	EnqueueResult,
-	InputResetReason,
-	PreparationSnapshot,
-	SpeechTurnStarted,
-	TurnId,
-	SessionId,
-	VoiceEvent,
-	VoiceEventEnvelope,
-	VoiceFeature,
-	VoiceSessionStarted,
-	VoiceSnapshot
-} from './protocol'
-import type {
 	BeginSpeech,
 	CancelSpeech,
 	ModelLoadStatus,
@@ -20,6 +7,19 @@ import type {
 	VoiceBackend,
 	VoiceSessionOptions
 } from './backend'
+import type {
+	EnqueueResult,
+	InputResetReason,
+	PreparationSnapshot,
+	SessionId,
+	SpeechTurnStarted,
+	TurnId,
+	VoiceEvent,
+	VoiceEventEnvelope,
+	VoiceFeature,
+	VoiceSessionStarted,
+	VoiceSnapshot
+} from './protocol'
 
 export class FakeVoiceBackend implements VoiceBackend {
 	#handlers = new Set<(event: VoiceEventEnvelope) => void>()
@@ -106,13 +106,18 @@ export class FakeVoiceBackend implements VoiceBackend {
 
 	emit(
 		event: VoiceEvent,
-		override: { session_id?: SessionId | null; route_generation?: string | null; sequence?: number } = {}
+		override: {
+			session_id?: SessionId | null
+			route_generation?: string | null
+			sequence?: number
+		} = {}
 	): void {
 		this.#sequence = override.sequence ?? this.#sequence + 1
 		const envelope: VoiceEventEnvelope = {
 			protocol_version: 1,
 			sequence: String(this.#sequence),
-			session_id: override.session_id === undefined ? (this.#activeSession ?? null) : override.session_id,
+			session_id:
+				override.session_id === undefined ? (this.#activeSession ?? null) : override.session_id,
 			route_generation:
 				override.route_generation === undefined
 					? this.#activeSession

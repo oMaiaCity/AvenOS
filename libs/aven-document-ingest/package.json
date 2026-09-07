@@ -1,0 +1,40 @@
+{
+	"name": "@avenos/document-ingest",
+	"private": true,
+	"version": "26.8.28-next.9",
+	"type": "module",
+	"description": "Headless document actors, model contract, and resumable Artifact Store runner.",
+	"main": "./src/index.ts",
+	"types": "./src/index.ts",
+	"exports": {
+		".": "./src/index.ts",
+		"./actors": "./src/actors.ts",
+		"./actors/registry": "./src/actors/registry.ts",
+		"./actors/*": "./src/actors/*/index.ts",
+		"./execution": "./src/execution.ts",
+		"./llm-gateway": "./src/llm-gateway.ts",
+		"./model": "./src/model.ts",
+		"./csv": "./src/csv.ts",
+		"./csv-confirmation": "./src/csv-confirmation.ts",
+		"./pdf-text": "./src/pdf-text.ts",
+		"./reconciliation-flow": "./src/reconciliation-flow.ts",
+		"./runtime": "./src/runtime.ts",
+		"./server": "./src/server.ts"
+	},
+	"scripts": {
+		"check": "tsc --noEmit",
+		"test": "vitest run",
+		"test:provider": "REQUIRE_DOCUMENT_PROVIDER_GOLDEN=true vitest run tests/provider-golden.e2e.test.ts"
+	},
+	"dependencies": {
+		"@avenos/actors": "workspace:*",
+		"@avenos/artifact-store": "workspace:*",
+		"@avenos/llm-client": "workspace:*",
+		"@napi-rs/canvas": "1.0.8",
+		"pdfjs-dist": "^6.2.108"
+	},
+	"devDependencies": {
+		"typescript": "^6.0.2",
+		"vitest": "^4.1.10"
+	}
+}

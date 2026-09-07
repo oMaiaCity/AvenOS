@@ -80,7 +80,7 @@ export default defineConfig(({ mode }) => {
 		envPrefix: ['VITE_', 'PUBLIC_', 'TAURI_ENV_'],
 		cacheDir,
 		clearScreen: false,
-		plugins: [avenUtilities({ content: ['src', '../libs/aven-ui/src'] }), sveltekit()],
+		plugins: [avenUtilities({ content: ['src'] }), sveltekit()],
 		preview: {
 			headers: crossOriginIsolationHeaders
 		},

@@ -1,73 +1,12 @@
+import type {
+	LlmCompletionRequest,
+	LlmCompletionResponse,
+	LlmModelDescriptor,
+	OpenAiChatCompletionRequest
+} from '@avenos/llm-client'
 import { Channel, invoke } from '@tauri-apps/api/core'
 
-export const LLM_CAPABILITIES = {
-	textGeneration: 'text-generation',
-	vision: 'vision',
-	structuredOutput: 'structured-output',
-	streaming: 'streaming',
-	toolCalling: 'tool-calling'
-} as const
-
-export interface LlmModelDescriptor {
-	id: string
-	label: string
-	capabilities: string[]
-}
-
-export type LlmContentPart =
-	| { type: 'text'; text: string }
-	| {
-			type: 'image'
-			mediaType: 'image/png' | 'image/jpeg'
-			base64: string
-			detail?: 'low' | 'high' | 'auto'
-	  }
-
-export interface LlmMessage {
-	role: 'user' | 'assistant'
-	content: LlmContentPart[]
-}
-
-export type LlmOutputRequest =
-	| { format: 'text' }
-	| {
-			format: 'json'
-			name: string
-			description?: string
-			schema: Record<string, unknown>
-	  }
-
-export interface LlmCompletionRequest {
-	modelId: string
-	requiredCapabilities?: string[]
-	instructions?: string
-	messages: LlmMessage[]
-	output?: LlmOutputRequest
-	temperature?: number
-	maxOutputTokens?: number
-}
-
-export interface LlmGatewayReceipt {
-	modelId: string
-	modelLabel: string
-	capabilities: string[]
-	providerRequestId: string | null
-	httpRequestId: string | null
-	providerReportedModel: string
-	profile: string
-	usage: Record<string, unknown> | null
-	finishReason: string | null
-	requestKey: string
-	inputDigest: string
-	implementationDigest: string
-}
-
-export type LlmCompletionResponse =
-	| { output: { format: 'text'; text: string }; receipt: LlmGatewayReceipt }
-	| {
-			output: { format: 'json'; value: Record<string, unknown> }
-			receipt: LlmGatewayReceipt
-	  }
+export * from '@avenos/llm-client'
 
 /** Returns every model containing all required capabilities, in operator order. */
 export async function discoverLlmModels(
@@ -88,12 +27,6 @@ export function completeWithLlm(request: LlmCompletionRequest): Promise<LlmCompl
  * Raw OpenAI-compatible request. `model` is an Aven catalog id; all other
  * standard/provider-compatible fields are transported unchanged.
  */
-export interface OpenAiChatCompletionRequest extends Record<string, unknown> {
-	model: string
-	messages: unknown[]
-	stream?: boolean
-}
-
 export function completeOpenAiChat<T extends Record<string, unknown> = Record<string, unknown>>(
 	request: OpenAiChatCompletionRequest
 ): Promise<T> {

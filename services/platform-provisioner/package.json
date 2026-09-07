@@ -1,0 +1,26 @@
+{
+	"name": "@avenos/platform-provisioner",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "bun --watch src/index.ts",
+		"start": "bun src/index.ts",
+		"build": "bun build src/index.ts src/ops.ts --target=bun --outdir=build",
+		"check": "tsc --noEmit",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@avenos/aven-customer-contracts": "workspace:*",
+		"pg": "8.16.3",
+		"pino": "10.3.1",
+		"zod": "4.4.3"
+	},
+	"devDependencies": {
+		"@types/bun": "1.3.13",
+		"@types/node": "24.10.13",
+		"@types/pg": "8.15.6",
+		"typescript": "6.0.3",
+		"vitest": "4.1.10"
+	}
+}

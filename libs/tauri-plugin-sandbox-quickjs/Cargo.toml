@@ -1,7 +1,7 @@
 [package]
 name = "tauri-plugin-sandbox-quickjs"
 version = "26.8.28-next.9"
-description = "Tauri plugin: QuickJS sandbox for @avenos/aven-ui fixture logic."
+description = "Tauri plugin: QuickJS sandbox for actor fixture logic."
 authors = ["Aven"]
 license = "MIT OR Apache-2.0"
 edition = "2021"

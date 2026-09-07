@@ -1,19 +1,18 @@
 # Tools
 
-Repository-maintained operational tools live here. Each tool has its own setup,
-security model, ignored local profiles, and detailed usage documentation.
+Repository-maintained restricted operator tools live here. The authoritative
+procedures and required access are in
+[Maintain an installation](../docs/operations/maintenance.md).
 
 | Tool | Purpose | Entry point |
 | --- | --- | --- |
-| [Account administration](account-admin/README.md) | List identity accounts and promote or demote admins through a least-privileged SSH tunnel | `./tools/account-admin/account-admin.sh` |
-| [Database tunnel](db-tunnel/README.md) | Forward a local port to PostgreSQL through a restricted, per-operator SSH account | `./tools/db-tunnel/connect.sh` |
-| [Stack observer](stack-observe/README.md) | Inspect the deployed Compose stack, public health, and bounded service logs | `./tools/stack-observe/observe.sh` |
+| Stack observer | Show fixed-scope Compose state, health summary, disk/backup status, or recent logs with the Pulumi-generated observe key | `./tools/stack-observe/run.sh platform status` |
+| Database tunnel | Open a host-key-pinned loopback tunnel with the Pulumi-generated tunnel key; database authorization stays separate | `./tools/db-tunnel/open.sh platform 55432` |
 
 ## Shared rules
 
-- Copy each tool's `.env.example` to `.env.<profile>` and set mode `0600`.
-- Never commit `.env.<profile>`, private keys, passwords, tokens, or downloaded
-  runtime artifacts.
-- Keep `next` and `production` identities and profiles separate.
-- Pin and verify SSH host keys; do not disable strict host-key checking.
-- Prefer the least-privileged credential appropriate to each operation.
+- Never commit private keys, passwords, tokens, or downloaded runtime artifacts.
+- Rebuild public hosting from its Git source and the managed system-site declaration;
+  no old host or imported volume is part of recovery.
+- Tunnel access does not imply database access. Use a separately issued read-only
+  database role; never reuse a runtime, migrator, provisioner, or `postgres` credential.

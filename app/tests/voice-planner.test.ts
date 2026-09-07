@@ -12,7 +12,9 @@ describe('SpeechPlanner', () => {
 
 	test('uses an opening clause to reduce first audio latency', () => {
 		const planner = new SpeechPlanner()
-		const planned = planner.feed('Dies ist eine absichtlich sehr lange eröffnende Formulierung, danach geht es weiter')
+		const planned = planner.feed(
+			'Dies ist eine absichtlich sehr lange eröffnende Formulierung, danach geht es weiter'
+		)
 		expect(planned).toEqual([
 			{ index: 0, text: 'Dies ist eine absichtlich sehr lange eröffnende Formulierung,' }
 		])

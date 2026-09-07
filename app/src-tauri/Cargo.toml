@@ -39,6 +39,8 @@ rust-version = "1.93"
 [features]
 default = ["software-voice-cpal"]
 software-voice-cpal = ["dep:aven-voice-host-cpal", "aven-voice-host-cpal/cpal-host"]
+custom-protocol = ["tauri/custom-protocol"]
+e2e-voice-proof = ["aven-voice-runtime/silent-audio-e2e"]
 
 [lib]
 name = "aven_os_app_lib"

@@ -3,7 +3,6 @@ members = [
     "crates/contract",
     "crates/core",
     "crates/postgres",
-    "crates/processor",
     "crates/server",
 ]
 resolver = "2"
@@ -24,6 +23,7 @@ bytes = "1"
 crc32fast = "1"
 futures-util = "0.3"
 hex = "0.4"
+hmac = "0.12"
 http = "1"
 jsonschema = { version = "0.33", default-features = false }
 serde = { version = "1", features = ["derive"] }
@@ -46,11 +46,6 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 url = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
-roxmltree = "0.21"
-tempfile = "3"
-wait-timeout = "0.2"
-aven-tenant-runtime = { path = "../tenant-runtime" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

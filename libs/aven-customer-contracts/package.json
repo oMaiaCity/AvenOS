@@ -1,0 +1,22 @@
+{
+	"name": "@avenos/aven-customer-contracts",
+	"version": "26.8.28-next.9",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"check": "tsc --noEmit",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"jose": "6.2.9",
+		"zod": "4.4.3"
+	},
+	"devDependencies": {
+		"@types/node": "24.10.13",
+		"typescript": "6.0.3",
+		"vitest": "4.1.10"
+	}
+}

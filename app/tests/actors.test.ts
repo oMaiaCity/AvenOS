@@ -2,11 +2,18 @@ import { describe, expect, test } from 'bun:test'
 import { Actor, functor } from '../src/lib/actors/actor'
 import { MessageBus } from '../src/lib/actors/bus'
 
+const TEST_MANIFEST_IDENTITY = {
+	authority: 'ceo.aven',
+	namespace: 'tests.actors',
+	version: '1'
+} as const
+
 /** Two tiny actors whose contracts chain: source produces what sink requires. */
 function pair() {
 	const source = new Actor(
 		{
 			id: 'source',
+			...TEST_MANIFEST_IDENTITY,
 			name: 'Source',
 			description: 'Erzeugt Dinge.',
 			tags: ['test'],
@@ -25,6 +32,7 @@ function pair() {
 	)
 	const sink = new Actor({
 		id: 'sink',
+		...TEST_MANIFEST_IDENTITY,
 		name: 'Sink',
 		description: 'Verbraucht Dinge.',
 		tags: ['test'],
@@ -84,6 +92,7 @@ describe('execution engine', () => {
 			new Actor(
 				{
 					id,
+					...TEST_MANIFEST_IDENTITY,
 					name: id,
 					description: '',
 					tags: [],
@@ -103,7 +112,15 @@ describe('execution engine', () => {
 		// c requires something else and must NOT receive the emit
 		bus.register(
 			new Actor(
-				{ id: 'c', name: 'c', description: '', tags: [], methods: [], requires: ['other(Y)'] },
+				{
+					id: 'c',
+					...TEST_MANIFEST_IDENTITY,
+					name: 'c',
+					description: '',
+					tags: [],
+					methods: [],
+					requires: ['other(Y)']
+				},
 				{
 					other: () => {
 						seen.push('c')
@@ -119,7 +136,14 @@ describe('execution engine', () => {
 	test('a mailbox processes async handlers strictly one at a time, in order', async () => {
 		const log: string[] = []
 		const actor = new Actor(
-			{ id: 's', name: 's', description: '', tags: [], methods: [] },
+			{
+				id: 's',
+				...TEST_MANIFEST_IDENTITY,
+				name: 's',
+				description: '',
+				tags: [],
+				methods: []
+			},
 			{
 				slow: async (p) => {
 					log.push(`start:${p.n}`)
@@ -137,7 +161,14 @@ describe('execution engine', () => {
 
 	test('a throwing handler is contained as a structured error', async () => {
 		const actor = new Actor(
-			{ id: 't', name: 't', description: '', tags: [], methods: [] },
+			{
+				id: 't',
+				...TEST_MANIFEST_IDENTITY,
+				name: 't',
+				description: '',
+				tags: [],
+				methods: []
+			},
 			{
 				boom: () => {
 					throw new Error('kaputt')
@@ -154,7 +185,14 @@ describe('supervision', () => {
 	test('a handler that throws once is retried and succeeds silently', async () => {
 		let calls = 0
 		const actor = new Actor(
-			{ id: 'flaky', name: 'flaky', description: '', tags: [], methods: [] },
+			{
+				id: 'flaky',
+				...TEST_MANIFEST_IDENTITY,
+				name: 'flaky',
+				description: '',
+				tags: [],
+				methods: []
+			},
 			{
 				work: () => {
 					calls++
@@ -170,7 +208,14 @@ describe('supervision', () => {
 
 	test('a handler that keeps throwing is recorded after the retry', async () => {
 		const actor = new Actor(
-			{ id: 'dead', name: 'dead', description: '', tags: [], methods: [] },
+			{
+				id: 'dead',
+				...TEST_MANIFEST_IDENTITY,
+				name: 'dead',
+				description: '',
+				tags: [],
+				methods: []
+			},
 			{
 				work: () => {
 					throw new Error('permanent')
@@ -201,6 +246,7 @@ describe('term unification (0128)', () => {
 			new Actor(
 				{
 					id: 'done-only',
+					...TEST_MANIFEST_IDENTITY,
 					name: '',
 					description: '',
 					tags: [],
@@ -225,9 +271,20 @@ describe('term unification (0128)', () => {
 describe('registry actor (0128)', () => {
 	test('registry_list names every registered actor', async () => {
 		const bus = new MessageBus()
-		bus.register(new Actor({ id: 'a', name: 'A', description: '', tags: [], methods: [] }))
+		bus.register(
+			new Actor({
+				id: 'a',
+				...TEST_MANIFEST_IDENTITY,
+				name: 'A',
+				description: '',
+				tags: [],
+				methods: []
+			})
+		)
 		const { RegistryActor } = await import('../src/lib/actors/registry.actor')
-		bus.register(new RegistryActor(bus))
+		const registry = new RegistryActor(bus)
+		expect(registry.manifest.authority).toBe('os.aven')
+		bus.register(registry)
 		const result = await bus.dispatch('test', 'registry_list', {})
 		expect(result.wire).toContain('a')
 		expect(result.wire).toContain('registry')
@@ -263,6 +320,7 @@ describe('the UI event door reduces through the sandbox', () => {
 		const bus = new MessageBus()
 		const actor = new Actor({
 			id: 'todo',
+			...TEST_MANIFEST_IDENTITY,
 			name: 'Todo',
 			description: 'Keeps todos.',
 			tags: [],
@@ -301,6 +359,7 @@ describe('one primitive (0130): declared events serve tools, UI and the proof en
 		// all it takes.
 		return new Actor({
 			id: 'todo',
+			...TEST_MANIFEST_IDENTITY,
 			name: 'Todo',
 			description: 'Keeps todos.',
 			tags: [],

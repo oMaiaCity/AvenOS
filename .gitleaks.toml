@@ -1,0 +1,39 @@
+title = "avenOS secret scan"
+[extend]
+useDefault = true
+
+[[rules]]
+id = "npm-registry-token"
+description = "Literal npm registry credential, including JWT-shaped installation tokens"
+regex = '''(?m)^[^#\r\n]*:_authToken\s*=\s*([A-Za-z0-9_.-]{16,})'''
+secretGroup = 1
+keywords = ["_authToken"]
+
+# These are exact public fixtures/placeholders, not path-wide exemptions.
+[[allowlists]]
+description = "Literal Pulumi mock keys contain only the word test"
+condition = "AND"
+paths = ['''infrastructure/platform/tests/program(?:-platform|-teardown)?\.test\.mjs$''']
+regexes = ['''-----BEGIN (?:OPENSSH )?PRIVATE KEY-----\\ntest\\n-----END (?:OPENSSH )?PRIVATE KEY-----''']
+regexTarget = "match"
+
+[[allowlists]]
+description = "Compose substitutes a required runtime secret; no value is committed"
+condition = "AND"
+paths = ['''deploy/platform/docker-compose\.yml$''']
+regexes = ['''^\s*LLM_GATEWAY_BEARER_TOKEN: \$\{ACTOR_RUNNER_LLM_GATEWAY_TOKEN:\?required\}\s*$''']
+regexTarget = "line"
+
+[[allowlists]]
+description = "Disposable local authentication fixtures"
+condition = "AND"
+paths = ['''deploy/(?:local/account\.sh|e2e/docker-compose\.yml)$''']
+regexes = ['''identity-provisioning-secret-for-e2e-only''', '''customer-entitlement-token-for-e2e''', '''actor-runner-llm-gateway-token-e2e-01''']
+regexTarget = "match"
+
+[[allowlists]]
+description = "Public API specification idempotency identifiers, not credentials"
+condition = "AND"
+paths = ['''services/artifact-store/artifact-store-spec/ARTIFACT-STORE-EXTERNAL-INTERFACE\.md$''']
+regexes = ['''84dc168d-7ba4-4d49-b31c-502fc27d296a''', '''4f6a53c5-6222-4fb5-b57d-333260f5b639''']
+regexTarget = "secret"

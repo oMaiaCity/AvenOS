@@ -18,7 +18,7 @@ export interface InputHooks {
 	onPartial?: (text: string) => void
 	onConfirmed?: () => void
 	onSpeaker?: (speaker: SpeakerAttribution) => void
-	onFinal?: (text: string, speaker: SpeakerAttribution | null) => void
+	onFinal?: (text: string, speaker: SpeakerAttribution | null, sessionId: SessionId | null) => void
 	onDiscarded?: () => void
 }
 
@@ -46,6 +46,7 @@ export class VoiceController {
 
 	#inputHooks = new Set<InputHooks>()
 	#playbackHooks = new Set<PlaybackHooks>()
+	#e2eSession = false
 	#unsubscribe: (() => void) | null = null
 	#modelUnsubscribe: (() => void) | null = null
 	#starting: Promise<void> | null = null
@@ -56,6 +57,7 @@ export class VoiceController {
 	#candidateSpeakers = new Map<CandidateId, SpeakerAttribution>()
 	#planner = new SpeechPlanner()
 	#turn: TurnId | null = null
+	#audibleTurn: TurnId | null = null
 	#playbackWaiters = new Map<TurnId, { resolve: () => void; reject: (error: Error) => void }>()
 	#speechEpoch = 0
 	#speechChain: Promise<void> = Promise.resolve()
@@ -84,7 +86,8 @@ export class VoiceController {
 	dispose(): void {
 		this.#speechEpoch++
 		this.#wakeCapacityWaiters()
-		if (this.sessionId) void this.backend.setDiagnostics(this.sessionId, false).catch(() => {})
+		if (this.sessionId && !this.#e2eSession)
+			void this.backend.setDiagnostics(this.sessionId, false).catch(() => {})
 		this.#unsubscribe?.()
 		this.#unsubscribe = null
 		this.#modelUnsubscribe?.()
@@ -107,6 +110,7 @@ export class VoiceController {
 	}
 
 	async #start(): Promise<void> {
+		this.#e2eSession = false
 		this.failure = null
 		this.runtime = 'preparing'
 		this.#unsubscribe ??= this.backend.subscribe((event) => this.#event(event))
@@ -120,6 +124,7 @@ export class VoiceController {
 					this.outputModelProgress = status.progress
 				}
 			}) ?? null
+		await this.backend.waitForEventSubscription?.()
 		try {
 			if (this.sessionId) {
 				const stale = this.sessionId
@@ -149,6 +154,26 @@ export class VoiceController {
 		}
 	}
 
+	/** Attach the compiled E2E build to native events without opening host audio. */
+	async attachE2eSession(sessionId: SessionId): Promise<void> {
+		if (import.meta.env.VITE_AVEN_E2E !== 'true') {
+			throw new Error('Synthetic voice sessions are available only in E2E builds.')
+		}
+		this.#unsubscribe ??= this.backend.subscribe((event) => this.#event(event))
+		await this.backend.waitForEventSubscription?.()
+		this.#lastSequence = 0n
+		this.#routeGeneration = null
+		this.#e2eSession = true
+		this.sessionId = sessionId
+		this.runtime = 'ready'
+		this.session = 'active'
+		this.capture = 'live'
+		this.inputModelStage = 'ready'
+		this.inputModelProgress = 1
+		this.outputModelStage = 'ready'
+		this.outputModelProgress = 1
+	}
+
 	async stop(): Promise<void> {
 		this.cancelSpeech('session_stopped')
 		const session = this.sessionId
@@ -161,12 +186,14 @@ export class VoiceController {
 		this.#candidate = null
 		this.#candidateSpeakers.clear()
 		this.#confirmed.clear()
-		if (session) {
+		this.#audibleTurn = null
+		if (session && !this.#e2eSession) {
 			await this.backend.setDiagnostics(session, false).catch(() => {})
 			await this.backend.stopSession(session).catch((error) => {
 				this.failure = safeMessage(error)
 			})
 		}
+		this.#e2eSession = false
 	}
 
 	async resetInput(): Promise<void> {
@@ -175,7 +202,7 @@ export class VoiceController {
 		this.speaker = null
 		this.#candidate = null
 		this.#candidateSpeakers.clear()
-		if (this.sessionId) {
+		if (this.sessionId && !this.#e2eSession) {
 			await this.backend.resetInput(this.sessionId, 'conversation_cleared').catch((error) => {
 				this.failure = safeMessage(error)
 			})
@@ -243,7 +270,7 @@ export class VoiceController {
 		const turn = this.#turn
 		this.#turn = null
 		if (turn) this.#settlePlayback(turn, new Error('Speech was cancelled.'))
-		if (session) {
+		if (session && !this.#e2eSession) {
 			void this.backend
 				.cancelSpeech({ session_id: session, turn_id: turn ?? undefined, reason })
 				.catch((error) => {
@@ -356,7 +383,8 @@ export class VoiceController {
 				this.hearing = false
 				this.partial = ''
 				this.#candidate = null
-				for (const hooks of this.#inputHooks) hooks.onFinal?.(event.text, finalSpeaker)
+				for (const hooks of this.#inputHooks)
+					hooks.onFinal?.(event.text, finalSpeaker, this.sessionId)
 				break
 			}
 			case 'input.discarded':
@@ -369,9 +397,12 @@ export class VoiceController {
 				for (const hooks of this.#inputHooks) hooks.onDiscarded?.()
 				break
 			case 'playback.started':
+				this.#audibleTurn = event.turn_id
 				this.#setSpeaking(true)
 				break
 			case 'playback.turn_started':
+				this.#turn = event.turn_id
+				break
 			case 'playback.segment_accepted':
 			case 'playback.synthesis_started':
 			case 'playback.synthesis_completed':
@@ -391,11 +422,14 @@ export class VoiceController {
 					event.turn_id,
 					event.type === 'playback.failed' ? new Error(event.error.message) : undefined
 				)
+				if (event.turn_id === this.#audibleTurn) {
+					this.#audibleTurn = null
+					this.#setSpeaking(false)
+				}
 				if (event.turn_id !== this.#turn) break
 				this.#turn = null
 				this.#planner.reset()
 				this.#resetSegmentCapacity()
-				this.#setSpeaking(false)
 				break
 			case 'diagnostics.snapshot':
 				this.#applySnapshot(event.snapshot)
@@ -417,6 +451,7 @@ export class VoiceController {
 		this.partial = snapshot.utterance.partial
 		this.hearing = snapshot.utterance.status !== 'idle'
 		this.#routeGeneration = snapshot.route?.generation ?? null
+		if (!snapshot.playback.speaking) this.#audibleTurn = null
 		this.#setSpeaking(snapshot.playback.speaking)
 	}
 
@@ -454,7 +489,7 @@ export class VoiceController {
 		this.#turn = null
 		this.#setSpeaking(false)
 		if (turn) this.#settlePlayback(turn, new Error(this.failure))
-		if (session) {
+		if (session && !this.#e2eSession) {
 			void this.backend.cancelSpeech({
 				session_id: session,
 				turn_id: turn ?? undefined,

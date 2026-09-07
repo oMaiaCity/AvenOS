@@ -1,0 +1,131 @@
+name: platform-ci
+
+# A required check must be emitted even for documentation-only promotions.
+on:
+  pull_request:
+  push:
+    branches: [main, next, prod]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      checkout-postgres:
+        image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+        env:
+          POSTGRES_PASSWORD: aven-dev
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.PACKAGE_READ_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.93.1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            app/src-tauri -> ../../target/rust
+            services/artifact-store -> ../../target/rust
+          key: platform-linux
+      - uses: ./.github/actions/bun-install
+        with:
+          token: ${{ secrets.PACKAGE_READ_TOKEN }}
+      - uses: ./.github/actions/setup-platform-test-host
+      - uses: ./.github/actions/setup-security-audit
+      - name: Static checks
+        run: |
+          bun test scripts/lib/bun-install-action.test.ts
+          bun run check:secrets
+          bun audit
+          bun run check:rust-advisories
+          bun run check:docs
+          bun run check
+          bun run check:identity
+          bun run check:api
+          bun run check:checkout
+          bun run --cwd libs/aven-identity check
+          bun run --cwd libs/aven-hosting check
+          bun run --cwd services/static-site-host check
+          bun run --cwd libs/aven-customer-contracts check
+          bun run --cwd libs/aven-customer-runtime check
+          bun run --cwd libs/aven-actors check
+          bun run --cwd libs/aven-artifact-store check
+          bun run --cwd libs/aven-document-ingest check
+          bun run --cwd libs/aven-llm-client check
+          bun run --cwd services/platform-provisioner check
+          bun run --cwd services/intent-service check
+          bun run --cwd services/actor-runner check
+      - name: Test app integration
+        run: bun test
+        working-directory: app
+      - name: Unit and infrastructure tests
+        run: |
+          bun run test:identity
+          bun run test:api
+          bun run test:checkout
+          bun run --cwd libs/aven-identity test
+          bun run --cwd libs/aven-hosting test
+          bun run --cwd services/static-site-host test
+          bun run --cwd libs/aven-customer-contracts test
+          bun run --cwd libs/aven-customer-runtime test
+          bun run --cwd libs/aven-actors test
+          bun run --cwd libs/aven-artifact-store test
+          bun run --cwd libs/aven-document-ingest test
+          cargo test --locked --release --manifest-path app/src-tauri/Cargo.toml --lib service_token::tests
+          cargo test --locked --workspace --manifest-path services/artifact-store/Cargo.toml
+          bun run --cwd services/platform-provisioner test
+          bun run --cwd services/intent-service test
+          bun run --cwd services/actor-runner test
+          bun run test:infra
+          bun run test:bootstrap
+      - name: Production builds
+        run: |
+          bun run --cwd app build
+          bun run build:identity
+          bun run build:api
+          bun run build:checkout
+          bun run --cwd services/platform-provisioner build
+          bun run --cwd services/intent-service build
+          bun run --cwd services/actor-runner build
+      - name: Validate shell and Compose sources
+        run: bun run test:deploy
+      - run: bun run test:proxy-boundary
+      - name: Build and drill database recovery image
+        run: bun run test:recovery
+      - name: Full-stack browser E2E
+        run: xvfb-run --auto-servernum bun run test:e2e:platform
+
+  gate:
+    name: Platform release gate
+    needs: verify
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require the complete applicable verification job
+        env:
+          RESULT: ${{ needs.verify.result }}
+        run: test "$RESULT" = success

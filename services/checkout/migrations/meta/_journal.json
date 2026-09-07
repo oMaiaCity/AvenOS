@@ -1,0 +1,27 @@
+{
+	"version": "7",
+	"dialect": "postgresql",
+	"entries": [
+		{
+			"idx": 0,
+			"version": "7",
+			"when": 1787942893441,
+			"tag": "0000_nervous_thunderbolt_ross",
+			"breakpoints": true
+		},
+		{
+			"idx": 1,
+			"version": "7",
+			"when": 1787972400000,
+			"tag": "0001_platform_event_outbox",
+			"breakpoints": true
+		},
+		{
+			"idx": 2,
+			"version": "7",
+			"when": 1787973600000,
+			"tag": "0002_polar_webhook_deliveries",
+			"breakpoints": true
+		}
+	]
+}

@@ -181,7 +181,7 @@ function signArchivedApp(archivedApp: string, profilePath: string, scratchDir: s
 /** Entitlements the shipped iOS binary MUST carry — fail the release if any is missing. */
 const REQUIRED_IPA_ENTITLEMENTS = [
 	'com.apple.developer.associated-domains',
-	'webcredentials:id.next.aven.ceo',
+	'webcredentials:aven.id',
 	'aps-environment'
 ]
 

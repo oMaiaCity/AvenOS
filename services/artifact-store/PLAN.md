@@ -10,7 +10,6 @@ Authority:
 - [Security and recovery contract](artifact-store-spec/SECURITY-AND-RECOVERY.md)
 - [SDK contract](artifact-store-spec/SDK-CONTRACT.md)
 - [Conformance plan](artifact-store-spec/CONFORMANCE.md)
-- [AvenOS alignment paper](artifact-store-spec/ALIGNMENT-PAPER.md)
 
 ## Implementation status
 

@@ -131,12 +131,12 @@ const nodeTypes = { flow: FlowNode }
 				type="button"
 				onclick={() => pickSkill(s.id)}
 				class="border-border/25 border-b px-4 py-2.5 text-left transition-colors {skillId === s.id
-					? 'bg-surface-cream'
+					? 'bg-surface-sunken'
 					: 'hover:bg-surface-card'}"
 			>
 				<div class="flex items-baseline gap-2">
 					<span class="font-semibold text-sm">{s.name}</span>
-					<span class="mono-meta">
+					<span class="text text--mono-meta">
 						{s.workflows.length}
 						{s.workflows.length === 1 ? 'workflow' : 'workflows'}
 					</span>
@@ -169,7 +169,7 @@ const nodeTypes = { flow: FlowNode }
 					</button>
 				{/each}
 			</div>
-			<span class="truncate mono-meta">
+			<span class="truncate text text--mono-meta">
 				{boundary.requires.join(' · ')}
 				→ {boundary.produces.slice(0, 4).join(' · ')}
 			</span>
@@ -177,7 +177,7 @@ const nodeTypes = { flow: FlowNode }
 		<div
 			bind:clientWidth={canvasW}
 			bind:clientHeight={canvasH}
-			class="min-h-0 flex-1 overflow-hidden rounded-2xl border border-border bg-surface-soft/25"
+			class="min-h-0 flex-1 overflow-hidden rounded-2xl border border-border bg-surface-sunken/25"
 		>
 			{#key skillId + workflowId}
 				<SvelteFlow
@@ -213,9 +213,9 @@ const nodeTypes = { flow: FlowNode }
 			<div>
 				<div class="flex items-baseline gap-2">
 					<span class="font-semibold text-sm">{selected.name}</span>
-					<span class="mono-meta">{selected.id}</span>
+					<span class="text text--mono-meta">{selected.id}</span>
 					<span
-						class="ml-auto rounded-md bg-surface-soft px-1.5 py-0.5 font-mono text-[length:var(--fs-micro)]"
+						class="ml-auto rounded-md bg-surface-sunken px-1.5 py-0.5 font-mono text-[length:var(--fs-micro)]"
 					>
 						{selected.type}
 					</span>
@@ -225,13 +225,13 @@ const nodeTypes = { flow: FlowNode }
 			<div class="flex flex-wrap gap-1">
 				{#each selected.requires ?? [] as r (r)}
 					<span
-						class="rounded-md bg-surface-soft px-1.5 py-0.5 font-mono text-[length:var(--fs-micro)]"
+						class="rounded-md bg-surface-sunken px-1.5 py-0.5 font-mono text-[length:var(--fs-micro)]"
 						>→ {r}</span
 					>
 				{/each}
 				{#each selected.provides ?? [] as p (p)}
 					<span
-						class="rounded-md bg-surface-cream px-1.5 py-0.5 font-mono text-[length:var(--fs-micro)]"
+						class="rounded-md bg-surface-sunken px-1.5 py-0.5 font-mono text-[length:var(--fs-micro)]"
 					>
 						{p}
 						→
@@ -248,7 +248,7 @@ const nodeTypes = { flow: FlowNode }
 				<div>
 					<h4 class="pb-1 font-semibold text-xs">Config</h4>
 					<pre
-						class="overflow-x-auto rounded-xl bg-surface-soft p-3 font-mono text-[length:var(--fs-micro)] leading-relaxed"
+						class="overflow-x-auto rounded-xl bg-surface-sunken p-3 font-mono text-[length:var(--fs-micro)] leading-relaxed"
 					>{JSON.stringify(
 							selected.config,
 							null,
@@ -259,7 +259,7 @@ const nodeTypes = { flow: FlowNode }
 			<div>
 				<h4 class="pb-1 font-semibold text-xs">JSON</h4>
 				<pre
-					class="overflow-x-auto rounded-xl bg-surface-soft p-3 font-mono text-[length:var(--fs-micro)] leading-relaxed"
+					class="overflow-x-auto rounded-xl bg-surface-sunken p-3 font-mono text-[length:var(--fs-micro)] leading-relaxed"
 				>{JSON.stringify(
 						{ ...selected, machine: selected.machine ? '…(.pl)' : undefined },
 						null,
@@ -275,14 +275,14 @@ const nodeTypes = { flow: FlowNode }
 				<div class="flex flex-wrap gap-1">
 					{#each boundary.requires as r (r)}
 						<span
-							class="rounded-md bg-surface-soft px-1.5 py-0.5 font-mono text-[length:var(--fs-micro)]"
+							class="rounded-md bg-surface-sunken px-1.5 py-0.5 font-mono text-[length:var(--fs-micro)]"
 						>
 							→ {r}
 						</span>
 					{/each}
 					{#each boundary.produces as p (p)}
 						<span
-							class="rounded-md bg-surface-cream px-1.5 py-0.5 font-mono text-[length:var(--fs-micro)]"
+							class="rounded-md bg-surface-sunken px-1.5 py-0.5 font-mono text-[length:var(--fs-micro)]"
 						>
 							{p}
 							→

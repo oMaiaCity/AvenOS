@@ -71,7 +71,7 @@ $effect(() => {
 					if (activeLocator?.kind === 'page-region' && activeLocator.page === number) {
 						const marker = document.createElement('div')
 						marker.className =
-							'pointer-events-none absolute rounded-sm border-2 border-evidence bg-evidence/30 shadow-[0_0_0_3px_rgba(245,158,11,0.18)]'
+							'pointer-events-none absolute rounded-sm border-2 border-info bg-info/30 shadow-[0_0_0_3px_rgba(245,158,11,0.18)]'
 						marker.style.left = `${activeLocator.x / 10000}%`
 						marker.style.top = `${activeLocator.y / 10000}%`
 						marker.style.width = `${activeLocator.width / 10000}%`
@@ -102,7 +102,7 @@ $effect(() => {
 {#if text !== null}
 	<pre
 		class="min-h-0 flex-1 overflow-auto whitespace-pre-wrap p-4 font-mono text-xs leading-relaxed"
-	>{#if rangedText}{rangedText.before}<mark class="rounded bg-evidence/45 px-0.5 text-inherit ring-1 ring-evidence/60">{rangedText.marked}</mark>{rangedText.after}{:else}{text}{/if}</pre>
+	>{#if rangedText}{rangedText.before}<mark class="rounded bg-info/45 px-0.5 text-inherit ring-1 ring-info/60">{rangedText.marked}</mark>{rangedText.after}{:else}{text}{/if}</pre>
 {:else if imageUrl}
 	<div class="flex min-h-0 flex-1 items-start justify-center overflow-auto p-4">
 		<div class="relative inline-block max-w-full">
@@ -110,7 +110,7 @@ $effect(() => {
 			{#if locator?.kind === 'page-region' && locator.page === 1}
 				<div
 					aria-label="Markierte Fundstelle"
-					class="pointer-events-none absolute rounded-sm border-2 border-evidence bg-evidence/30 shadow-[0_0_0_3px_rgba(245,158,11,0.18)]"
+					class="pointer-events-none absolute rounded-sm border-2 border-info bg-info/30 shadow-[0_0_0_3px_rgba(245,158,11,0.18)]"
 					style={regionStyle}
 				></div>
 			{/if}
@@ -119,7 +119,7 @@ $effect(() => {
 {:else if mediaType === 'application/pdf'}
 	<div class="min-h-0 flex-1 overflow-y-auto p-4">
 		{#if failure}
-			<p class="text-error-strong text-xs">{failure}</p>
+			<p class="text-error-ink text-xs">{failure}</p>
 		{/if}
 		{#if loading}
 			<p class="text-foreground/35 text-xs">PDF wird gerendert …</p>

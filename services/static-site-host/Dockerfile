@@ -1,5 +1,6 @@
 FROM oven/bun:1.3.13-alpine
-RUN apk add --no-cache ca-certificates git \
+RUN apk upgrade --no-cache \
+  && apk add --no-cache ca-certificates git \
   && addgroup -g 10003 -S sitehost \
   && adduser -u 10003 -S -D -H -G sitehost sitehost
 WORKDIR /app

@@ -43,6 +43,7 @@ let verificationUrl = $state('')
 let userCode = $state('')
 let pollTimer: ReturnType<typeof setTimeout> | undefined
 let mounted = false
+const e2e = import.meta.env.VITE_AVEN_E2E === 'true'
 
 async function openInBrowser() {
 	if (!verificationUrl) return
@@ -54,7 +55,8 @@ async function finish() {
 	if (pollTimer) clearTimeout(pollTimer)
 	ready = true
 	busy = false
-	await goto('/dashboard', { replaceState: true })
+	const search = e2e && window.location.pathname === '/dashboard' ? window.location.search : ''
+	await goto(`/dashboard${search}`, { replaceState: true })
 }
 
 function schedulePoll(interval: number) {
@@ -84,7 +86,8 @@ async function beginWeb() {
 		const authorization = await invoke<BeginAuthorization>('auth_begin')
 		verificationUrl = authorization.verificationUriComplete
 		userCode = authorization.userCode.replace(/(.{4})(?=.)/g, '$1-')
-		await openInBrowser()
+		if (e2e) message = 'Schließe die sichere Anmeldung im Browser ab. avenOS kann geöffnet bleiben.'
+		else await openInBrowser()
 		schedulePoll(Math.max(authorization.interval, 1))
 	} catch (cause) {
 		busy = false
@@ -117,7 +120,7 @@ async function begin() {
 		}
 		busy = false
 		message = detail.startsWith('PASSKEY_DOMAIN_NOT_ASSOCIATED:')
-			? 'iOS hat die Passkey-Domain id.next.aven.ceo für diese App noch nicht bestätigt. Das ist kein Fehler deines Passkeys – versuche es erneut oder melde dich vorerst im Browser an.'
+			? 'iOS hat die Passkey-Domain aven.id für diese App noch nicht bestätigt. Das ist kein Fehler deines Passkeys – versuche es erneut oder melde dich vorerst im Browser an.'
 			: detail
 	}
 }
@@ -145,7 +148,7 @@ onMount(() => {
 {#if ready}
 	{@render children()}
 {:else}
-	<main class="fixed inset-0 overflow-hidden bg-surface-cream text-foreground">
+	<main class="fixed inset-0 overflow-hidden bg-surface-sunken text-foreground">
 		<div
 			class="-right-32 -top-40 pointer-events-none absolute size-[34rem] rounded-full bg-progress/15 blur-3xl"
 		></div>
@@ -168,108 +171,63 @@ onMount(() => {
 					<rect x="5" y="10" width="14" height="10" rx="2" />
 					<path d="M8 10V7a4 4 0 0 1 8 0v3" />
 				</svg>
-				<span>id.next.aven.ceo</span>
+				<span>aven.id</span>
 			</div>
 		</header>
 
 		<div class="relative grid min-h-dvh place-items-center px-6 py-24">
-			<section
-				class="w-full max-w-md rounded-[2rem] border border-primary/8 bg-white/25 p-8 text-center shadow-[0_30px_90px_rgba(30,41,59,0.12)] backdrop-blur-xl sm:p-10"
-				aria-live="polite"
-			>
-				<div
-					class="mx-auto mb-7 grid size-16 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/15"
-				>
+			<!-- The `flow-card` actor. This is the fourth screen of its shape in the
+			     estate: avenID's device authorisation, portal.aven.ceo's name check and
+			     its passkey sign-in are the three its description names, and the
+			     desktop app's own sign-in gate is the same crest / eyebrow /
+			     heading / description / code / actions card. -->
+			<section class="flow-card" aria-live="polite">
+				<div class="flow-card-crest">
 					{#if busy}
-						<svg viewBox="0 0 24 24" class="size-7 animate-spin" fill="none">
-							<circle
-								cx="12"
-								cy="12"
-								r="9"
-								stroke="currentColor"
-								stroke-opacity=".25"
-								stroke-width="1.8"
-							/>
-							<path
-								d="M12 3a9 9 0 0 1 9 9"
-								stroke="currentColor"
-								stroke-linecap="round"
-								stroke-width="1.8"
-							/>
+						<svg viewBox="0 0 24 24" width="1.75rem" height="1.75rem" fill="none" class="animate-spin">
+							<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-opacity=".25" stroke-width="1.8" />
+							<path d="M12 3a9 9 0 0 1 9 9" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" />
 						</svg>
 					{:else}
-						<svg
-							viewBox="0 0 24 24"
-							class="size-7"
-							fill="none"
-							stroke="currentColor"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="1.6"
-						>
+						<svg viewBox="0 0 24 24" width="1.75rem" height="1.75rem" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6">
 							<path d="M14.5 5.5a4.5 4.5 0 1 0-3.2 7.7L14 16h2v2h2v2h3v-3l-6.3-6.3" />
 							<circle cx="10" cy="10" r=".7" fill="currentColor" stroke="none" />
 						</svg>
 					{/if}
 				</div>
 
-				<p
-					class="mb-3 font-medium text-primary/50 text-xs uppercase tracking-[var(--tracking-wider)]"
-				>
+				<p class="flow-card-eyebrow">
 					{verificationUrl ? 'Browser-Anmeldung' : 'Sicherer Zugang'}
 				</p>
-				<h1 class="font-display font-semibold text-3xl tracking-tight">
+				<h1 class="flow-card-heading">
 					{verificationUrl ? 'Im Browser fortfahren' : 'Willkommen bei avenOS'}
 				</h1>
-				<p class="mx-auto mt-4 max-w-sm text-foreground/65 text-sm leading-6">{message}</p>
+				<p class="flow-card-description">{message}</p>
 
 				{#if userCode}
-					<div class="mt-7 rounded-2xl border border-primary/8 bg-surface-card/25 px-5 py-4">
-						<p
-							class="mb-1.5 text-foreground/50 text-[length:var(--fs-eyebrow)] uppercase tracking-[var(--tracking-wider)]"
-						>
-							Gerätecode
-						</p>
-						<p
-							class="font-mono font-semibold text-primary text-xl tracking-[var(--tracking-widest)]"
-						>
-							{userCode}
-						</p>
-					</div>
+					<p class="text text--label">Gerätecode</p>
+					<div class="flow-card-code">{userCode}</div>
 				{/if}
 
-				<div class="mt-7 grid gap-3">
+				<div class="flow-card-actions stack">
 					{#if verificationUrl}
-						<button
-							type="button"
-							class="min-h-12 rounded-xl bg-primary px-5 font-medium text-primary-foreground text-sm shadow-lg shadow-primary/10 transition hover:bg-primary/25"
-							onclick={openInBrowser}
-						>
+						<button class="btn btn--primary" type="button" onclick={openInBrowser}>
 							Sichere Anmeldung öffnen
 						</button>
 					{/if}
 					{#if !busy}
-						<button
-							type="button"
-							class="min-h-12 rounded-xl border border-primary/15 bg-white/25 px-5 font-medium text-primary text-sm transition hover:bg-surface-card"
-							onclick={begin}
-						>
+						<button class="btn btn--secondary" type="button" onclick={begin}>
 							Erneut versuchen
 						</button>
 						{#if !verificationUrl}
-							<button
-								type="button"
-								class="min-h-9 rounded-lg px-4 text-foreground/50 text-xs transition hover:text-foreground/65"
-								onclick={beginWeb}
-							>
+							<button class="btn btn--ghost" type="button" onclick={beginWeb}>
 								Stattdessen im Browser anmelden
 							</button>
 						{/if}
 					{/if}
 				</div>
 
-				<p class="mt-7 flex items-center justify-center gap-2 text-foreground/35 text-xs">
-					<span class="size-1.5 rounded-full bg-success"></span>
+				<p class="flow-card-trust">
 					Passkey und Sitzung bleiben durch dein Gerät geschützt
 				</p>
 			</section>

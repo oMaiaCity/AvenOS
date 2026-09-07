@@ -6,11 +6,11 @@ export type SpeakerStatus = 'unavailable' | 'preparing' | 'ready' | 'error'
 
 /** Semantic view of the one native TTS/playback rail. */
 export class Speaker {
-	muted = $state(false)
+	muted = $state(import.meta.env.VITE_AVEN_E2E === 'true')
 	#localFailure = $state<string | null>(null)
 
 	constructor() {
-		if (isTauri()) void voiceController.start()
+		if (isTauri() && import.meta.env.VITE_AVEN_E2E !== 'true') void voiceController.start()
 	}
 
 	get status(): SpeakerStatus {

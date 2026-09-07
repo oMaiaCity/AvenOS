@@ -14,7 +14,7 @@ Stale profiles are a common signing error after toggling capabilities.
 ## 2. Associated domains (source of truth in repo)
 
 Committed template (not under `gen/apple`):  
-[`app/src-tauri/ios-template/aven-os-app_iOS.entitlements`](app/src-tauri/ios-template/aven-os-app_iOS.entitlements)
+[`app/src-tauri/ios-template/aven-os-app_iOS.entitlements`](../../app/src-tauri/ios-template/aven-os-app_iOS.entitlements)
 
 Because **`gen/apple/` is gitignored**, after **`tauri ios init`** copy it into the Xcode tree:
 
@@ -30,13 +30,13 @@ cp app/src-tauri/ios-template/aven-os-app_iOS.entitlements \
 implies (`application-identifier`, `team-identifier`, `beta-reports-active`, `get-task-allow`).
 The entitlements file is silently ignored — the shipped iOS binary had **no**
 `com.apple.developer.associated-domains`, which made native passkeys fail with
-"Application with identifier … is not associated with domain id.next.aven.ceo"
+"Application with identifier … is not associated with domain aven.id"
 (while the macOS pipeline, which codesigns with `--entitlements` explicitly, worked).
 
 `scripts/tauri-ios-asc.ts` therefore codesigns the archived `.app` with the full entitlements
 (template + `application-identifier`/`team-identifier`, `$(AppIdentifierPrefix)` resolved) before
 export, and **fails the release** if the exported `.ipa` does not carry
-`com.apple.developer.associated-domains` / `webcredentials:id.next.aven.ceo` / `aps-environment`.
+`com.apple.developer.associated-domains` / `webcredentials:aven.id` / `aps-environment`.
 To check a build by hand:
 
 ```bash
@@ -46,9 +46,14 @@ unzip -q avenOS.ipa -d /tmp/ipa && codesign -d --entitlements - --xml /tmp/ipa/P
 Defaults:
 
 - **`applinks:aven.ceo`** — Universal Links under `https://aven.ceo/…`
-- **`webcredentials:aven.ceo`** — web credentials host (only if used)
+- **`webcredentials:aven.id`** — the only passkey relying-party domain
 
-Ship **HTTPS** **`https://aven.ceo/.well-known/apple-app-site-association`** (correct content-type / path rules per Apple).
+Ship the appropriate association document over HTTPS on both declared hosts:
+
+- `https://aven.id/.well-known/apple-app-site-association` is served by
+  `aven-identity` and authorizes `2P6VCHVJWB.ceo.aven.os` for web credentials;
+- `https://aven.ceo/.well-known/apple-app-site-association` belongs in the
+  static public-site artifact when Universal Links are enabled.
 
 If Universal Links instead use a dedicated host (for example **`link.aven.ceo`**), edit the plist and host AASA on that subdomain instead.
 
@@ -69,7 +74,7 @@ Production TestFlight uploads should ultimately use **`production`** with App St
 
 ## 4. Background remote notifications
 
-Merged via [`app/src-tauri/Info.ios.plist`](app/src-tauri/Info.ios.plist): **`UIBackgroundModes`** includes **`remote-notification`**.
+Merged via [`app/src-tauri/Info.ios.plist`](../../app/src-tauri/Info.ios.plist): **`UIBackgroundModes`** includes **`remote-notification`**.
 
 Rust/Tauri/Jazz still needs to **call `UIApplication.registerForRemoteNotifications`**, persist the device token to your backend/APNs helpers, etc.—this markdown only satisfies **capability + plist plumbing**. Wire app code when implementing push delivery/handler logic.
 

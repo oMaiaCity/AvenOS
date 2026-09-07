@@ -1,8 +1,9 @@
+import * as dns from 'node:dns/promises'
 import { readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { extname, join, normalize, resolve, sep } from 'node:path'
 import { type DirectoryBinding, validateBinding } from './binding.js'
 import type { SiteHostConfig } from './config.js'
-import { verifyDns } from './dns.js'
+import { type DnsResolver, verifyDns } from './dns.js'
 import { materialize } from './repository.js'
 
 type ActiveSite = { binding: DirectoryBinding; root: string }
@@ -25,13 +26,16 @@ export class StaticSiteHost {
 	private ready = false
 	private reconciling: Promise<void> | null = null
 
-	constructor(private config: SiteHostConfig) {}
+	constructor(
+		private config: SiteHostConfig,
+		private resolver: DnsResolver = dns
+	) {}
 
-	async loadSnapshot(): Promise<void> {
-		const snapshot = JSON.parse(
+	async loadPersistedState(): Promise<void> {
+		const state = JSON.parse(
 			await readFile(join(this.config.dataRoot, 'active-sites.json'), 'utf8')
 		) as { sites: ActiveSite[] }
-		for (const site of snapshot.sites ?? []) {
+		for (const site of state.sites ?? []) {
 			try {
 				validateBinding(site.binding)
 				const expectedRoot = resolve(this.config.dataRoot, 'bindings', site.binding.id, 'releases')
@@ -44,7 +48,7 @@ export class StaticSiteHost {
 			} catch (error) {
 				console.warn(
 					JSON.stringify({
-						message: 'ignored invalid active-site snapshot entry',
+						message: 'ignored invalid persisted active-site entry',
 						error: String(error)
 					})
 				)
@@ -87,11 +91,11 @@ export class StaticSiteHost {
 					.slice(index, index + this.config.maxConcurrentSyncs)
 					.map((binding) => this.reconcileOne(binding))
 			)
-		await this.saveSnapshot()
+		await this.savePersistedState()
 		this.ready = true
 	}
 
-	private async saveSnapshot() {
+	private async savePersistedState() {
 		const target = join(this.config.dataRoot, 'active-sites.json')
 		const staging = `${target}.next`
 		await writeFile(staging, JSON.stringify({ sites: [...this.active.values()] }), { mode: 0o600 })
@@ -106,7 +110,9 @@ export class StaticSiteHost {
 				binding.hostname,
 				binding.verification_token_hash,
 				this.config.allowedIpv4,
-				this.config.allowedIpv6
+				this.config.allowedIpv6,
+				binding.verification_mode,
+				this.resolver
 			)
 			if (!dns.ok) {
 				const verifiedAt = binding.verified_at ? Date.parse(binding.verified_at) : 0
@@ -127,7 +133,16 @@ export class StaticSiteHost {
 				}
 			}
 		} catch (error) {
-			report = { id: binding.id, status: 'failed', error: (error as Error).message }
+			const message = (error as Error).message
+			console.warn(
+				JSON.stringify({
+					message: 'site reconciliation failed',
+					siteId: binding.id,
+					hostname: binding.hostname,
+					error: message
+				})
+			)
+			report = { id: binding.id, status: 'failed', error: message }
 		}
 		await this.report(report)
 	}

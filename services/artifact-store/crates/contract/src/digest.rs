@@ -126,7 +126,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             type_definition_digest(&file).unwrap(),
-            "39effe32d62cdf0ace3ec8f9ac44e00807a6a480892d2f11de90a5b0597d5434"
+            "69a2366aceec8cbebb005218d13c47283ad54d50d42fbbb64b9e545cec8d0c69"
         );
         assert_eq!(
             type_definition_digest(&bundle).unwrap(),

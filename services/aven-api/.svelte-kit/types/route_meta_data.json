@@ -1,0 +1,164 @@
+{
+	"/": [
+		"src/routes/+layout.ts",
+		"src/routes/+layout.ts"
+	],
+	"/.well-known/apple-app-site-association": [
+		"src/routes/.well-known/apple-app-site-association/+server.ts"
+	],
+	"/.well-known/assetlinks.json": [
+		"src/routes/.well-known/assetlinks.json/+server.ts"
+	],
+	"/api/artifacts": [
+		"src/routes/api/artifacts/+server.ts"
+	],
+	"/api/artifacts/client-runs/[publicationId]": [
+		"src/routes/api/artifacts/client-runs/[publicationId]/+server.ts"
+	],
+	"/api/artifacts/files/[publicationId]": [
+		"src/routes/api/artifacts/files/[publicationId]/+server.ts"
+	],
+	"/api/artifacts/[artifactId]": [
+		"src/routes/api/artifacts/[artifactId]/+server.ts"
+	],
+	"/api/artifacts/[artifactId]/content": [
+		"src/routes/api/artifacts/[artifactId]/content/+server.ts"
+	],
+	"/api/artifacts/[artifactId]/evidence": [
+		"src/routes/api/artifacts/[artifactId]/evidence/+server.ts"
+	],
+	"/api/artifacts/[artifactId]/processing": [
+		"src/routes/api/artifacts/[artifactId]/processing/+server.ts"
+	],
+	"/api/billing/cancel": [
+		"src/routes/api/billing/cancel/+server.ts"
+	],
+	"/api/billing/checkout": [
+		"src/routes/api/billing/checkout/+server.ts"
+	],
+	"/api/billing/fake-pay": [
+		"src/routes/api/billing/fake-pay/+server.ts"
+	],
+	"/api/billing/invoices": [
+		"src/routes/api/billing/invoices/+server.ts"
+	],
+	"/api/billing/me": [
+		"src/routes/api/billing/me/+server.ts"
+	],
+	"/api/billing/orders": [
+		"src/routes/api/billing/orders/+server.ts"
+	],
+	"/api/billing/pause": [
+		"src/routes/api/billing/pause/+server.ts"
+	],
+	"/api/billing/resume": [
+		"src/routes/api/billing/resume/+server.ts"
+	],
+	"/api/billing/subscribe": [
+		"src/routes/api/billing/subscribe/+server.ts"
+	],
+	"/api/health/live": [
+		"src/routes/api/health/live/+server.ts"
+	],
+	"/api/health/ready": [
+		"src/routes/api/health/ready/+server.ts"
+	],
+	"/api/health/status": [
+		"src/routes/api/health/status/+server.ts"
+	],
+	"/api/intents": [
+		"src/routes/api/intents/+server.ts"
+	],
+	"/api/intents/[intentId]": [
+		"src/routes/api/intents/[intentId]/+server.ts"
+	],
+	"/api/intents/[intentId]/[action]": [
+		"src/routes/api/intents/[intentId]/[action]/+server.ts"
+	],
+	"/api/llm/completions": [
+		"src/routes/api/llm/completions/+server.ts"
+	],
+	"/api/llm/models": [
+		"src/routes/api/llm/models/+server.ts"
+	],
+	"/api/llm/v1/chat/completions": [
+		"src/routes/api/llm/v1/chat/completions/+server.ts"
+	],
+	"/api/llm/v1/models": [
+		"src/routes/api/llm/v1/models/+server.ts"
+	],
+	"/api/meta": [
+		"src/routes/api/meta/+server.ts"
+	],
+	"/api/names/check": [
+		"src/routes/api/names/check/+server.ts"
+	],
+	"/api/names/claim": [
+		"src/routes/api/names/claim/+server.ts"
+	],
+	"/api/names/hold": [
+		"src/routes/api/names/hold/+server.ts"
+	],
+	"/api/names/mine": [
+		"src/routes/api/names/mine/+server.ts"
+	],
+	"/api/passkeys": [
+		"src/routes/api/passkeys/+server.ts"
+	],
+	"/api/pow/challenge": [
+		"src/routes/api/pow/challenge/+server.ts"
+	],
+	"/api/sites": [
+		"src/routes/api/sites/+server.ts"
+	],
+	"/api/sites/[siteId]": [
+		"src/routes/api/sites/[siteId]/+server.ts"
+	],
+	"/api/webhooks/polar": [
+		"src/routes/api/webhooks/polar/+server.ts"
+	],
+	"/dashboard": [
+		"src/routes/+layout.ts"
+	],
+	"/device": [
+		"src/routes/+layout.ts"
+	],
+	"/internal/v1/artifact-processing/tenants": [
+		"src/routes/internal/v1/artifact-processing/tenants/+server.ts"
+	],
+	"/internal/v1/intents/tenants": [
+		"src/routes/internal/v1/intents/tenants/+server.ts"
+	],
+	"/internal/v1/static-sites/bindings": [
+		"src/routes/internal/v1/static-sites/bindings/+server.ts"
+	],
+	"/internal/v1/static-sites/status": [
+		"src/routes/internal/v1/static-sites/status/+server.ts"
+	],
+	"/login": [
+		"src/routes/+layout.ts"
+	],
+	"/passkey/create": [
+		"src/routes/+layout.ts"
+	],
+	"/purchase/checkout": [
+		"src/routes/purchase/checkout/+page.ts",
+		"src/routes/purchase/checkout/+page.server.ts",
+		"src/routes/+layout.ts"
+	],
+	"/purchase/expired": [
+		"src/routes/+layout.ts"
+	],
+	"/purchase/fake-checkout": [
+		"src/routes/+layout.ts"
+	],
+	"/purchase/success": [
+		"src/routes/+layout.ts"
+	],
+	"/secure": [
+		"src/routes/+layout.ts"
+	],
+	"/sites": [
+		"src/routes/+layout.ts"
+	]
+}

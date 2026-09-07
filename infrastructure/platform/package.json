@@ -1,0 +1,16 @@
+{
+	"name": "@avenos/platform-infrastructure",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"test": "node --test tests/*.test.mjs && bun tests/cloud-init-yaml.mjs"
+	},
+	"dependencies": {
+		"@pulumi/hcloud": "1.41.0",
+		"@pulumi/pulumi": "3.256.0",
+		"@pulumi/random": "4.19.1",
+		"@pulumi/tls": "5.2.1",
+		"yaml": "2.9.0"
+	}
+}

@@ -2,7 +2,7 @@
 # Link the main checkout's local env files into a git worktree.
 #
 # `.env*` is gitignored, so a fresh worktree has none of them and every dev
-# server there starts without PHALA_API_KEY & co. Run from anywhere inside
+# server there starts without developer-local settings. Run from anywhere inside
 # a worktree (Claude Code's SessionStart hook does) and each `.env*` of the
 # main checkout that the worktree lacks becomes a symlink — `.env`,
 # `.env.samuel`, `.env.daniel`, whatever is there. `.env.example` is

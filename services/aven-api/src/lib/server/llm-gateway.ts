@@ -3,6 +3,8 @@ import { z } from 'zod'
 import type { ServerConfig } from './config.js'
 import { AppError } from './errors.js'
 
+type Fetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 const MAX_TEXT_BYTES = 2 * 1024 * 1024
 const MAX_SINGLE_IMAGE_BYTES = 12 * 1024 * 1024
@@ -37,6 +39,16 @@ const modelConfigurationSchema = z
 		upstreamModel: z.string().min(1).max(255).regex(/^\S+$/u),
 		profile: profileSchema,
 		authMode: z.enum(['bearer', 'none']).default('bearer'),
+		requestHeaders: z
+			.record(
+				z.string().regex(/^x-[a-z0-9-]+$/u),
+				z
+					.string()
+					.min(1)
+					.max(256)
+					.regex(/^[^\r\n]+$/u)
+			)
+			.default({}),
 		credentialId: z
 			.string()
 			.min(1)
@@ -73,6 +85,13 @@ const modelConfigurationSchema = z
 				code: 'custom',
 				path: ['credentialId'],
 				message: 'must be absent in unauthenticated provider mode'
+			})
+		}
+		if (Object.keys(model.requestHeaders).length > 16) {
+			context.addIssue({
+				code: 'custom',
+				path: ['requestHeaders'],
+				message: 'must contain at most 16 provider routing headers'
 			})
 		}
 	})
@@ -459,9 +478,9 @@ function resolveEndpoint(baseUrl: string, allowInsecureHttp: boolean): URL {
 export class LlmGatewayService {
 	readonly #models: ResolvedModel[]
 	readonly #modelsById: Map<string, ResolvedModel>
-	readonly #fetch: typeof globalThis.fetch
+	readonly #fetch: Fetch
 
-	private constructor(config: ServerConfig, fetch: typeof globalThis.fetch) {
+	private constructor(config: ServerConfig, fetch: Fetch) {
 		const catalog = parseConfigurationJson(
 			'LLM_GATEWAY_MODELS_JSON',
 			config.LLM_GATEWAY_MODELS_JSON,
@@ -495,7 +514,7 @@ export class LlmGatewayService {
 
 	static fromConfig(
 		config: ServerConfig,
-		fetch: typeof globalThis.fetch = globalThis.fetch
+		fetch: Fetch = globalThis.fetch
 	): LlmGatewayService | null {
 		return config.LLM_GATEWAY_ENABLED ? new LlmGatewayService(config, fetch) : null
 	}
@@ -552,6 +571,7 @@ export class LlmGatewayService {
 			`${model.descriptor.id}\0${model.endpoint.toString()}\0${requestBody}`
 		)
 		const headers: Record<string, string> = {
+			...model.configuration.requestHeaders,
 			accept: request.stream === true ? 'text/event-stream' : 'application/json',
 			'content-type': 'application/json',
 			'idempotency-key': requestKey
@@ -610,7 +630,7 @@ export class LlmGatewayService {
 		return new Response(JSON.stringify(raw), { headers: responseHeaders })
 	}
 
-	async complete(input: LlmCompletionRequest): Promise<LlmGatewayResponse> {
+	async complete(input: unknown): Promise<LlmGatewayResponse> {
 		const request = llmCompletionRequestSchema.parse(input)
 		const model = this.#modelsById.get(request.modelId)
 		if (!model) throw new AppError(404, 'LLM_MODEL_NOT_FOUND', 'The selected model does not exist.')
@@ -686,9 +706,18 @@ export class LlmGatewayService {
 			...(request.maxOutputTokens !== undefined && { max_tokens: request.maxOutputTokens })
 		}
 		if (request.output.format === 'json') {
-			const schema = model.configuration.profile.startsWith('openai-')
-				? strictSchema(request.output.schema)
-				: request.output.schema
+			const schema =
+				model.configuration.profile.startsWith('openai-') ||
+				model.configuration.profile === 'qwen-tools'
+					? strictSchema(request.output.schema)
+					: request.output.schema
+			if (model.configuration.profile === 'qwen-tools') {
+				// Qwen 3 enables its extended thinking lane by default. That lane is useful
+				// for conversational reasoning, but with a forced structured tool it can
+				// consume the entire output budget before emitting the required call.
+				// Keep this compatibility behavior scoped to qwen-tools JSON requests.
+				body.chat_template_kwargs = { enable_thinking: false }
+			}
 			if (
 				model.configuration.profile === 'openai-tools' ||
 				model.configuration.profile === 'qwen-tools'
@@ -725,6 +754,7 @@ export class LlmGatewayService {
 			`${model.descriptor.id}\0${model.endpoint.toString()}\0${requestBody}`
 		)
 		const headers: Record<string, string> = {
+			...model.configuration.requestHeaders,
 			accept: 'application/json',
 			'content-type': 'application/json',
 			'idempotency-key': requestKey

@@ -7,6 +7,12 @@ import speakerMachineSource from '../src/lib/actors/speaker-machine.pl?raw'
 import { unifiable } from '../src/lib/actors/term'
 import { todoConfig } from '../src/lib/actors/todo.config'
 
+const TEST_MANIFEST_IDENTITY = {
+	authority: 'ceo.aven',
+	namespace: 'tests.contracts',
+	version: '1'
+} as const
+
 /**
  * Prolog as SSOT inside AND across actors: one `.pl` per actor declares its
  * state machine (within) and its contracts (requires/produces — the facts
@@ -24,6 +30,7 @@ describe('contracts live in the .pl', () => {
 	test('an Actor with a machine takes its contracts FROM the machine', () => {
 		const chat = new Actor({
 			id: 'chat',
+			...TEST_MANIFEST_IDENTITY,
 			name: 'Chat',
 			description: '',
 			tags: [],

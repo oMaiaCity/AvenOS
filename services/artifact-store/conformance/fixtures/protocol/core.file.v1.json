@@ -10,7 +10,8 @@
     "properties": {
       "originalName": { "type": "string", "minLength": 1, "maxLength": 512 },
       "declaredMediaType": { "type": "string", "minLength": 1, "maxLength": 255 },
-      "sourceKind": { "type": "string", "minLength": 1, "maxLength": 64 }
+      "sourceKind": { "type": "string", "minLength": 1, "maxLength": 64 },
+      "executionEnvironment": { "type": "string", "enum": ["local", "server"] }
     }
   },
   "blobPolicy": "required",

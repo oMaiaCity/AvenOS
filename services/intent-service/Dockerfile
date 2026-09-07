@@ -1,32 +1,20 @@
-FROM rust:1.93.1-bookworm AS build
-
+FROM oven/bun:1.3.13 AS build
 WORKDIR /repo
-COPY .cargo .cargo
-COPY services/artifact-store services/artifact-store
-COPY services/intent-service services/intent-service
-COPY services/tenant-runtime services/tenant-runtime
+COPY . .
+RUN --mount=type=cache,target=/root/.bun/install/cache,sharing=locked \
+  --mount=type=secret,id=npm_token,required=true \
+  printf '@myavenceo:registry=https://npm.pkg.github.com\n//npm.pkg.github.com/:_authToken=%s\n' "$(cat /run/secrets/npm_token)" > "$HOME/.npmrc" \
+  && bun install --frozen-lockfile --filter '!./' --filter @avenos/intent-service \
+  && rm -f "$HOME/.npmrc"
+RUN bun --cwd services/intent-service build
 
-WORKDIR /repo/services/intent-service
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/repo/target/rust \
-    cargo build --locked --release \
-    && cp /repo/target/rust/release/aven-intent-service /tmp/aven-intent-service
-
-FROM debian:bookworm-slim AS runtime
-
-RUN apt-get update \
-    && apt-get install --yes --no-install-recommends ca-certificates curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && useradd --system --uid 10002 --no-create-home intent-service
-
-COPY --from=build /tmp/aven-intent-service /usr/local/bin/aven-intent-service
-
-USER 10002:10002
-EXPOSE 8091 8092
-ENV INTENT_SERVICE_HEALTH_PORT=8091
-HEALTHCHECK --interval=5s --timeout=3s --start-period=5s --retries=30 \
-  CMD curl --fail --silent --show-error "http://127.0.0.1:${INTENT_SERVICE_HEALTH_PORT}/health/ready" >/dev/null || exit 1
-
-ENTRYPOINT ["/usr/local/bin/aven-intent-service"]
-CMD ["serve"]
+FROM oven/bun:1.3.13
+RUN apt-get update && apt-get upgrade --yes --no-install-recommends && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY --from=build /repo/services/intent-service/build ./build
+COPY --from=build /repo/node_modules /repo/node_modules
+ENV NODE_ENV=production
+USER bun
+HEALTHCHECK --interval=5s --timeout=3s --start-period=5s --retries=20 \
+  CMD bun -e "fetch('http://127.0.0.1:3010/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+CMD ["bun", "build/index.js"]

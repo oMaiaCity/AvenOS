@@ -1,46 +1,33 @@
 # Intent Service
 
-The Intent Service is the tenant data-plane owner for durable work streams. It has its
-own executable, container image, restricted PostgreSQL role, schema migration history,
-provisioner, health contract, tenant directory credential, and API credential. It does
-not run inside the Artifact Processor.
+The Intent Service is the durable owner of conversation intents and their ordered
+contributions. It is an independent domain service behind `api.aven.ceo`; it owns no
+passkeys, checkout records, facade routes, or provider credentials.
 
-The service owns `aven_intent_service` in each customer database. It consumes immutable
-Artifact Store publications to discover file-triggered intents and stores intent
-metadata, ordered contributions, artifact membership, merge relations, and the visible
-File-skill projection. It reads Processor presentations through the Processor's
-read-only API using a dedicated credential; the Processor never writes this schema.
+Every request requires the private facade bearer token, the original signed `aven.id`
+JWT, and a short-lived tenant grant. The service independently verifies both signatures
+and binds the subject, role, session, customer environment, database, generation,
+component, and action before deriving its customer-specific `int_api` credential.
 
-```mermaid
-flowchart LR
-    API[Aven API auth boundary] -->|Intent API| I[Intent Service]
-    S[Artifact Store feed] -->|file plus declaration| I
-    P[Artifact Processor read API] -->|latest presentation| I
-    I --> D[(Customer database aven_intent_service)]
-    I -->|artifact IDs only| S
+Intent data only exists in that customer's database, under `aven_intents`. The service
+has no cluster credential, cannot migrate schemas, and cannot access another component's
+tables. The platform provisioner is the sole owner of installation and role grants.
+
+Conversation-created intents preserve the app's existing lifecycle and response
+contract. Artifact and File-skill fields are returned as empty projections until the
+standalone Artifact Store integration publishes them through an explicit service API;
+the Intent Service does not poll or embed an Artifact Processor.
+
+```sh
+bun run --cwd services/intent-service check
+bun run --cwd services/intent-service test
+bun run --cwd services/intent-service build
 ```
 
-Runtime requests require a bearer token, a scope in the URL, and—under multi-tenant
-mode—the exact customer database routing header. The authenticated directory is the
-allowlist binding database names to scopes. A runtime refuses a binding whose schema
-and scope were not installed by the provisioner.
-
-Lifecycle mutations use monotonically increasing intent versions. Update, archive,
-restore, merge, and delete reject stale versions with HTTP 409. Delete is a tombstone,
-not physical erasure. Feed discovery and cursor advancement are transactional and
-idempotent. Processor synchronization changes an intent only when its presentation
-actually changed, avoiding artificial version churn.
-
-Local verification is part of the combined stack:
-
-```bash
-bun run dev:api:artifacts
-bun run test:persistent-intent:smoke
-```
-
-The service itself can be checked with:
-
-```bash
-cargo clippy --manifest-path services/intent-service/Cargo.toml --all-targets -- -D warnings
-cargo test --manifest-path services/intent-service/Cargo.toml
-```
+`bun run test:e2e:platform` performs the database-backed contract check through
+the real `api.aven.ceo` facade. It covers idempotent ordered contributions,
+stale-version conflicts, update, archive/restore, merge, tombstone, and direct
+service authentication failure. The contribution fixture is produced by
+in-memory PCM running through the voice VAD, recognizer, speaker embedder, and
+semantic state machine, so anonymous speaker persistence is verified without
+opening host audio devices.

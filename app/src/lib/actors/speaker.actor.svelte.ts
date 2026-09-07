@@ -16,6 +16,9 @@ export class SpeakerActor extends Actor {
 	constructor() {
 		super({
 			id: 'speaker',
+			authority: 'os.aven',
+			namespace: 'voice',
+			version: '1',
 			name: 'Speaker',
 			description:
 				'The voice: speaks replies sentence by sentence while they are still being ' +

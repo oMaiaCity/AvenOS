@@ -1,7 +1,18 @@
+import type { ExecutionEnvironment } from '@avenos/actors'
 import { invoke } from '@tauri-apps/api/core'
 import { chatActor } from '$lib/actors/chat.actor.svelte'
+import { anonymousSpeakerFromPayload } from '$lib/chat/anonymous-speaker'
 import { intents, type PersistentIntentDetail } from '$lib/intents/intents.svelte'
+import {
+	discoverIntentSources,
+	type ProjectionArtifact
+} from '$lib/intents/persistent-artifact-projection'
 import { shell } from '$lib/intents/talk.svelte'
+import {
+	clientDocumentProcessingStatus,
+	clientDocumentSourceExecutionEnvironment,
+	processClientDocument
+} from './client-document-processing'
 import { type ArtifactProcessingLookup, isTerminalProcessing } from './processing'
 
 /**
@@ -42,6 +53,11 @@ export interface UploadedArtifactReceipt {
 let uploadInFlight = false
 const processingWatchers = new Set<string>()
 
+/** Default placement for the next process. Each upload freezes its own value. */
+export const documentExecutionPreference = $state<{ environment: ExecutionEnvironment }>({
+	environment: 'local'
+})
+
 export function ingestBusy(): boolean {
 	return uploadInFlight
 }
@@ -58,11 +74,14 @@ function persistentTurns(detail: PersistentIntentDetail) {
 	return detail.contributions.flatMap((entry) => {
 		if ((entry.contributorKind !== 'human' && entry.contributorKind !== 'agent') || !entry.text)
 			return []
+		const anonymousSpeaker =
+			entry.contributorKind === 'human' ? anonymousSpeakerFromPayload(entry.payload) : null
 		return [
 			{
 				id: entry.id,
 				role: entry.contributorKind === 'human' ? ('user' as const) : ('assistant' as const),
-				content: entry.text
+				content: entry.text,
+				...(anonymousSpeaker ? { anonymousSpeaker } : {})
 			}
 		]
 	})
@@ -100,7 +119,51 @@ export async function refreshIntent(intentId: string): Promise<PersistentIntentD
 export async function loadPersistentIntents(): Promise<void> {
 	const summaries = await invoke<Array<{ id: string }>>('intent_list')
 	const details = await Promise.all(summaries.map((intent) => refreshIntent(intent.id)))
+	try {
+		const browse = await invoke<{ artifacts: ProjectionArtifact[] }>('artifact_store_list')
+		const sources = await discoverIntentSources(browse.artifacts, (artifactId) =>
+			invoke<{ payload?: Record<string, unknown> }>('artifact_get', { artifactId })
+		)
+		for (const detail of details) {
+			if (
+				!detail ||
+				detail.sourceArtifactId ||
+				detail.artifacts.some((a) => a.relation === 'source')
+			)
+				continue
+			const source = sources.get(detail.id)
+			if (!source) continue
+			intents.attachFileSource(detail.id, source.artifactId, detail.title)
+			chat.adoptArtifact(source.artifactId, detail.title)
+		}
+	} catch {
+		// Intent conversations remain usable if Artifact Store is temporarily unavailable.
+		// The next reload or a fresh processing watch will try the durable projection again.
+	}
 	for (const detail of details) {
+		const source = detail
+			? (detail.artifacts.find((artifact) => artifact.relation === 'source') ??
+				intents.items
+					.find((intent) => intent.id === detail.id)
+					?.artifacts.find((artifact) => artifact.typeKey === 'core.file'))
+			: undefined
+		const executionEnvironment = source?.artifactId
+			? await clientDocumentSourceExecutionEnvironment(source.artifactId)
+			: null
+		if (detail && source?.artifactId && executionEnvironment) {
+			// Restoring history is not a new request to reconcile the entire account
+			// using each historical document's placement. New imports and the review
+			// tool explicitly start reconciliation against the current snapshot.
+			void processClientDocument(
+				source.artifactId,
+				detail.title,
+				undefined,
+				executionEnvironment,
+				false
+			)
+			void watchArtifactProcessing(source.artifactId, detail.id)
+			continue
+		}
 		if (
 			detail?.fileSkill &&
 			detail.sourceArtifactId &&
@@ -122,9 +185,12 @@ export async function watchArtifactProcessing(
 	try {
 		while (chat.hasArtifact(artifactId)) {
 			try {
-				const lookup = await invoke<ArtifactProcessingLookup>('artifact_processing_status', {
-					artifactId
-				})
+				const local = clientDocumentProcessingStatus(artifactId)
+				const lookup =
+					local ??
+					(await invoke<ArtifactProcessingLookup>('artifact_processing_status', {
+						artifactId
+					}))
 				consecutiveFailures = 0
 				if (lookup.pending || !lookup.presentation) {
 					chat.markArtifactProcessingPending(artifactId)
@@ -136,7 +202,7 @@ export async function watchArtifactProcessing(
 						intents.items.find((intent) =>
 							intent.artifacts.some((artifact) => artifact.artifactId === artifactId)
 						)?.id
-					if (owner) await refreshIntent(owner)
+					if (owner && !local) await refreshIntent(owner)
 					if (isTerminalProcessing(lookup.presentation.state)) return
 					delay = 1_500
 				}
@@ -166,7 +232,10 @@ export async function watchArtifactProcessing(
  * failures are reported through the chat and the intent, not thrown, because
  * every caller wants exactly that and none of them want a second error path.
  */
-export async function ingestFile(path: string): Promise<UploadedArtifactReceipt | null> {
+export async function ingestFile(
+	path: string,
+	executionEnvironment: ExecutionEnvironment = documentExecutionPreference.environment
+): Promise<UploadedArtifactReceipt | null> {
 	shell.tab = 'intents'
 	shell.detail = true
 
@@ -184,15 +253,33 @@ export async function ingestFile(path: string): Promise<UploadedArtifactReceipt 
 	chat.beginArtifactUpload(uploadId, publicationId, name)
 	uploadInFlight = true
 	try {
+		await invoke('intent_create', {
+			intent: {
+				id: intentId,
+				title: name,
+				intentType: 'file',
+				sourceLabel: 'Upload · File',
+				deadline: null,
+				routingSummary: `File upload: ${name}`
+			}
+		})
 		const receipt = await invoke<UploadedArtifactReceipt>('artifact_upload', {
 			uploadId,
 			publicationId,
 			intentId,
 			observedAt,
-			path
+			path,
+			executionEnvironment
 		})
 		chat.commitArtifactUpload(uploadId, receipt)
+		intents.attachFileSource(receipt.intentId, receipt.artifactId, receipt.originalName)
 		await refreshIntent(receipt.intentId)
+		void processClientDocument(
+			receipt.artifactId,
+			receipt.originalName,
+			receipt.mediaType,
+			executionEnvironment
+		)
 		void watchArtifactProcessing(receipt.artifactId, receipt.intentId)
 		return receipt
 	} catch (error) {
@@ -215,5 +302,7 @@ export async function ingestDroppedFiles(paths: string[]): Promise<void> {
 		chat.failure = 'Drop exactly one regular file at a time.'
 		return
 	}
-	await ingestFile(paths[0])
+	// Capture the choice before upload begins. Changing the selector while this
+	// run is active affects only a future upload.
+	await ingestFile(paths[0], documentExecutionPreference.environment)
 }

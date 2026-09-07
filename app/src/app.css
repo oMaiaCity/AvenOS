@@ -257,20 +257,5 @@
 }
 
 @layer components {
-	.intent-mock-bar {
-		transform-origin: bottom center;
-		animation: mock-bars 1.05s ease-in-out infinite;
-	}
 
-	.tech-pill {
-		@apply border border-border rounded-full px-4 py-2 flex items-center gap-3 bg-surface-card;
-	}
-
-	.tech-card {
-		@apply border border-border rounded-2xl bg-white/10 transition-all hover:bg-white/20;
-	}
-
-	.tech-label {
-		@apply text-[10px] font-bold tracking-widest uppercase opacity-40;
-	}
 }

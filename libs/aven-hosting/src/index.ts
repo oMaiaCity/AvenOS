@@ -2,7 +2,6 @@ export type SiteRuntimeStatus = 'awaiting_dns' | 'syncing' | 'active' | 'dns_inv
 
 export interface SiteBinding {
 	id: string
-	name: string
 	hostname: string
 	repository: string
 	sourceBranch: string
@@ -13,10 +12,10 @@ export interface SiteBinding {
 	lastError: string | null
 	verifiedAt: string | null
 	lastSyncedAt: string | null
+	systemManaged: boolean
 }
 
 export interface SiteBindingDraft {
-	name: string
 	hostname: string
 	repository: string
 	sourceBranch: string

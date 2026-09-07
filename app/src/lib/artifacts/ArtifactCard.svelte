@@ -109,8 +109,8 @@ $effect(() => {
 	onclick={onselect}
 	{title}
 	class="flex aspect-square flex-col overflow-hidden rounded-3xl border p-1 text-left transition-colors {selected
-		? 'border-primary bg-surface-cream'
-		: 'border-border bg-surface-card hover:bg-surface-cream'}"
+		? 'border-primary bg-surface-sunken'
+		: 'border-border bg-surface-card hover:bg-surface-sunken'}"
 >
 	<div bind:clientWidth={width} class="min-h-0 flex-1 overflow-hidden rounded-[1.25rem] bg-white">
 		{#if imageUrl}
@@ -127,7 +127,7 @@ $effect(() => {
 		<div class="flex items-baseline justify-between gap-2">
 			<span class="truncate font-semibold text-sm">{title}</span>
 			<span
-				class="shrink-0 rounded-md bg-surface-soft px-1.5 py-0.5 font-mono text-[length:var(--fs-micro)]"
+				class="shrink-0 rounded-md bg-surface-sunken px-1.5 py-0.5 font-mono text-[length:var(--fs-micro)]"
 			>
 				{badge}
 			</span>

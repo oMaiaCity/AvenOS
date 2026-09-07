@@ -12,6 +12,7 @@ mod artifacts;
 mod asr;
 mod assets;
 mod auth;
+mod service_token;
 mod tts;
 mod voice;
 
@@ -172,8 +173,13 @@ pub fn run() {
 		.manage(auth::AuthState::default())
 		.manage(artifacts::LlmStreamState::default())
 		.invoke_handler(tauri::generate_handler![
+			artifacts::actor_run_start,
+			artifacts::actor_run_status,
 			artifacts::artifact_upload,
 			artifacts::artifact_processing_status,
+			artifacts::artifact_client_run_publish,
+			artifacts::artifact_client_run_get,
+			artifacts::artifact_query,
 			artifacts::llm_model_list,
 			artifacts::llm_complete,
 			artifacts::llm_openai_complete,
@@ -191,7 +197,11 @@ pub fn run() {
 			artifacts::artifact_evidence_get,
 			artifacts::artifact_store_list,
 			auth::auth_status,
-			auth::auth_names,
+			 auth::auth_names,
+			auth::hosting_list,
+			auth::hosting_create,
+			auth::hosting_update,
+			auth::hosting_remove,
 			auth::billing_me,
 			auth::billing_subscribe,
 			auth::billing_cancel,
@@ -214,7 +224,12 @@ pub fn run() {
 			voice::protocol::voice_speech_cancel,
 			voice::protocol::voice_input_reset,
 			voice::protocol::voice_snapshot,
-			voice::protocol::voice_diagnostics_subscribe
+			voice::protocol::voice_diagnostics_subscribe,
+			voice::protocol::voice_e2e_inject_silent_final,
+			voice::protocol::voice_e2e_duplex_fixture,
+			voice::protocol::voice_e2e_begin_narration,
+			voice::protocol::voice_e2e_inject_interruption,
+			voice::protocol::voice_e2e_inject_second_speaker
 		])
 		.setup(|app| {
 			#[cfg(target_os = "linux")]

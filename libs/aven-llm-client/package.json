@@ -1,0 +1,21 @@
+{
+	"name": "@avenos/llm-client",
+	"private": true,
+	"version": "26.8.28-next.9",
+	"type": "module",
+	"description": "Transport-neutral contracts and client port for the authenticated Aven LLM gateway.",
+	"main": "./src/index.ts",
+	"types": "./src/index.ts",
+	"exports": {
+		".": "./src/index.ts",
+		"./http": "./src/http.ts"
+	},
+	"scripts": {
+		"check": "tsc --noEmit",
+		"test": "vitest run"
+	},
+	"devDependencies": {
+		"typescript": "^6.0.2",
+		"vitest": "^4.1.10"
+	}
+}

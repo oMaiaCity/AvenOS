@@ -9,10 +9,14 @@ import { chatActor } from '$lib/actors/chat.actor.svelte'
 import { hitlQueue } from '$lib/actors/hitl.svelte'
 import { listenerActor } from '$lib/actors/listener.actor.svelte'
 import { speakerActor } from '$lib/actors/speaker.actor.svelte'
+import { anonymousSpeakerPayload } from '$lib/chat/anonymous-speaker'
+import { voiceController } from '$lib/voice/controller.svelte'
 import '$lib/actors/windows'
 import ArtifactsPage from '$lib/artifacts/ArtifactsPage.svelte'
 import {
+	documentExecutionPreference,
 	ingestDroppedFiles,
+	ingestFile,
 	loadPersistentIntents,
 	refreshIntent
 } from '$lib/artifacts/ingest.svelte'
@@ -84,6 +88,51 @@ const mockPhase = $derived.by(() => {
 	return v !== null && v in MOCK_PHASES ? (v as keyof typeof MOCK_PHASES) : null
 })
 const voiceUi = $derived(isTauri() || mockPhase !== null)
+const e2eFixture = $derived(
+	import.meta.env.VITE_AVEN_E2E === 'true' ? page.url.searchParams.get('e2eFixture') : null
+)
+const e2ePlacement = $derived(
+	page.url.searchParams.get('e2ePlacement') === 'server' ? 'server' : 'local'
+)
+
+async function importE2eFixture() {
+	if (e2eFixture) await ingestFile(e2eFixture, e2ePlacement)
+}
+
+let e2eDuplexSession: string | null = null
+
+async function beginE2eNarration() {
+	if (!e2eFixture) return
+	try {
+		speaker.muted = true
+		const fixture = await invoke<{ session_id: string }>('voice_e2e_duplex_fixture')
+		e2eDuplexSession = fixture.session_id
+		await voiceController.attachE2eSession(fixture.session_id)
+		await invoke('voice_e2e_begin_narration', { sessionId: fixture.session_id })
+	} catch (error) {
+		chat.failure = `Could not begin the silent duplex proof: ${String(error)}`
+	}
+}
+
+async function interruptE2eNarration() {
+	if (!e2eFixture) return
+	try {
+		if (!e2eDuplexSession) throw new Error('The duplex proof has no active session.')
+		await invoke('voice_e2e_inject_interruption', { sessionId: e2eDuplexSession })
+	} catch (error) {
+		chat.failure = `Could not inject the silent interruption: ${String(error)}`
+	}
+}
+
+async function injectE2eSecondSpeaker() {
+	if (!e2eFixture) return
+	try {
+		if (!e2eDuplexSession) throw new Error('The duplex proof has no active session.')
+		await invoke('voice_e2e_inject_second_speaker', { sessionId: e2eDuplexSession })
+	} catch (error) {
+		chat.failure = `Could not inject the second silent speaker: ${String(error)}`
+	}
+}
 
 /**
  * Whether the conversation is running at all — on by default, because
@@ -94,7 +143,7 @@ const voiceUi = $derived(isTauri() || mockPhase !== null)
  * to the logo — one tap to come back. Writing still works while ended; the
  * reply is then read, not heard.
  */
-let conversing = $state(isTauri())
+let conversing = $state(isTauri() && import.meta.env.VITE_AVEN_E2E !== 'true')
 
 // The mock enters the conversation without opening anything.
 $effect.pre(() => {
@@ -119,30 +168,36 @@ onMount(() => {
 	let disposed = false
 	let stopDrop: (() => void) | undefined
 	let stopProgress: (() => void) | undefined
+	let contributionPersistence = Promise.resolve()
 	const webview = getCurrentWebview()
 	void loadPersistentIntents().catch((error) => {
 		chat.failure = `Could not load persistent intents: ${String(error)}`
 	})
 	chat.onExchange = (session, user, assistant) => {
 		if (!intents.items.find((intent) => intent.id === session)?.persistent) return
-		void (async () => {
-			for (const turn of [user, assistant]) {
-				if (turn.content === '') continue
-				await invoke('intent_append_contribution', {
-					intentId: session,
-					contribution: {
-						id: turn.id,
-						contributorKind: turn.role === 'user' ? 'human' : 'agent',
-						kind: 'message',
-						text: turn.content,
-						payload: {}
-					}
-				})
-			}
-			await refreshIntent(session)
-		})().catch((error) => {
-			chat.failure = `Could not persist the conversation: ${String(error)}`
-		})
+		// Exchange callbacks can overlap when a barge-in aborts one response and
+		// immediately submits the final utterance. Preserve the chat's settled
+		// order at the Intent boundary instead of racing two append pairs.
+		contributionPersistence = contributionPersistence
+			.then(async () => {
+				for (const turn of [user, assistant]) {
+					if (turn.content === '') continue
+					await invoke('intent_append_contribution', {
+						intentId: session,
+						contribution: {
+							id: turn.id,
+							contributorKind: turn.role === 'user' ? 'human' : 'agent',
+							kind: 'message',
+							text: turn.content,
+							payload: anonymousSpeakerPayload(turn.anonymousSpeaker)
+						}
+					})
+				}
+				await refreshIntent(session)
+			})
+			.catch((error) => {
+				chat.failure = `Could not persist the conversation: ${String(error)}`
+			})
 	}
 
 	void webview
@@ -287,7 +342,7 @@ const loadPct = $derived(
 const ORB: Record<string, { orb: string; halo?: string; icon: string }> = {
 	// lucide:mic
 	idle: {
-		orb: 'bg-surface-cream text-primary',
+		orb: 'bg-surface-sunken text-primary',
 		icon: '<path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/>'
 	},
 	// lucide:ear
@@ -309,12 +364,12 @@ const ORB: Record<string, { orb: string; halo?: string; icon: string }> = {
 	},
 	// lucide:download
 	loading: {
-		orb: 'bg-surface-cream text-progress',
+		orb: 'bg-surface-sunken text-progress',
 		icon: '<path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/>'
 	},
 	// lucide:loader (the ring is the halo here)
 	starting: {
-		orb: 'bg-surface-cream text-progress',
+		orb: 'bg-surface-sunken text-progress',
 		halo: 'bg-progress',
 		icon: '<path d="M12 2v4"/><path d="m16.2 7.8 2.9-2.9"/><path d="M18 12h4"/><path d="m16.2 16.2 2.9 2.9"/><path d="M12 18v4"/><path d="m4.9 19.1 2.9-2.9"/><path d="M2 12h4"/><path d="m4.9 4.9 2.9 2.9"/>'
 	},
@@ -335,7 +390,7 @@ const ORB: Record<string, { orb: string; halo?: string; icon: string }> = {
 	},
 	// lucide:keyboard — no recognizer; text is the whole interface
 	text: {
-		orb: 'bg-surface-cream text-primary',
+		orb: 'bg-surface-sunken text-primary',
 		icon: '<rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M7 10h.01M11 10h.01M15 10h.01M17.5 10h.01M7.5 14h9"/>'
 	}
 }
@@ -434,6 +489,50 @@ function onGlobalKeydown(event: KeyboardEvent) {
 
 <svelte:window onkeydown={onGlobalKeydown} />
 
+{#if e2eFixture}
+	<div class="fixed right-2 bottom-2 z-[200] flex gap-2">
+		<button
+			type="button"
+			data-testid="e2e-import-fixture"
+			class="rounded bg-primary px-2 py-1 text-primary-foreground text-xs"
+			onclick={importE2eFixture}
+		>
+			Import E2E fixture on {e2ePlacement}
+		</button>
+		<button
+			type="button"
+			data-testid="e2e-begin-narration"
+			class="rounded bg-primary px-2 py-1 text-primary-foreground text-xs"
+			onclick={beginE2eNarration}
+		>
+			Begin narration
+		</button>
+		<button
+			type="button"
+			data-testid="e2e-interrupt-narration"
+			class="rounded bg-primary px-2 py-1 text-primary-foreground text-xs"
+			onclick={interruptE2eNarration}
+		>
+			Interrupt narration
+		</button>
+		<button
+			type="button"
+			data-testid="e2e-second-speaker"
+			class="rounded bg-primary px-2 py-1 text-primary-foreground text-xs"
+			onclick={injectE2eSecondSpeaker}
+		>
+			Second speaker
+		</button>
+		<output
+			data-testid="e2e-voice-state"
+			data-speaking={voiceController.speaking ? 'true' : 'false'}
+			data-hearing={voiceController.hearing ? 'true' : 'false'}
+			class="hidden"
+			aria-label="E2E voice state"
+		></output>
+	</div>
+{/if}
+
 <svelte:head>
 	<title>Dashboard · avenOS</title>
 </svelte:head>
@@ -497,7 +596,7 @@ function onGlobalKeydown(event: KeyboardEvent) {
 	     the next successful turn clears it. -->
 		{#if chat.failure || speaker.failure || listener.failure}
 			<div
-				class="pointer-events-auto mx-auto mb-2 flex w-full max-w-2xl items-start gap-3 rounded-2xl border border-error/25 bg-error-muted px-4 py-2.5 text-error-strong shadow-[0_4px_16px_rgba(30,41,59,0.08)]"
+				class="pointer-events-auto mx-auto mb-2 flex w-full max-w-2xl items-start gap-3 rounded-2xl border border-error/25 bg-error-surface px-4 py-2.5 text-error-ink shadow-[0_4px_16px_rgba(30,41,59,0.08)]"
 			>
 				<span class="shrink-0 pt-0.5 font-mono text-sm">✗</span>
 				<p class="min-w-0 flex-1 text-sm leading-snug">
@@ -531,6 +630,31 @@ function onGlobalKeydown(event: KeyboardEvent) {
 		     overhangs it (6px each way) without pushing anything — so switching
 		     voice ↔ text never makes the notch jump. -->
 		<div class="relative flex items-center justify-center gap-2">
+			{#if shell.tab === 'intents'}
+				<div
+					class="pointer-events-auto absolute bottom-full left-0 mb-2 flex items-center gap-1 rounded-full border border-border bg-surface-card p-1 text-foreground shadow-sm"
+					role="group"
+					aria-label="Run new document processes on"
+					title="Placement is fixed when an upload starts"
+				>
+					<span class="pl-2 text-[11px] opacity-60">Process on</span>
+					{#each [['local', 'Device'], ['server', 'Server']] as [environment, label]}
+						<button
+							type="button"
+							onclick={() => {
+								documentExecutionPreference.environment = environment as 'local' | 'server'
+							}}
+							aria-pressed={documentExecutionPreference.environment === environment}
+							class="rounded-full px-2.5 py-1 text-xs transition-colors {documentExecutionPreference.environment ===
+							environment
+								? 'bg-primary text-primary-foreground'
+								: 'hover:bg-surface-selected'}"
+						>
+							{label}
+						</button>
+					{/each}
+				</div>
+			{/if}
 			<!-- Back and the drawer toggle hug the screen edges, not the notch:
 			     the pill stays centered on its own, and in text mode both step
 			     aside so the input gets the whole width. -->
@@ -543,7 +667,7 @@ function onGlobalKeydown(event: KeyboardEvent) {
 				}}
 					title="Zurück zu den Intents"
 					aria-label="Zurück zu den Intents"
-					class="-translate-y-1/2 pointer-events-auto absolute top-1/2 left-0 flex size-11 items-center justify-center rounded-full border border-border bg-surface-card text-foreground shadow-[0_4px_16px_rgba(30,41,59,0.12)] transition-colors hover:bg-surface-card-selected lg:hidden"
+					class="-translate-y-1/2 pointer-events-auto absolute top-1/2 left-0 flex size-11 items-center justify-center rounded-full border border-border bg-surface-card text-foreground shadow-[0_4px_16px_rgba(30,41,59,0.12)] transition-colors hover:bg-surface-selected lg:hidden"
 				>
 					<svg
 						viewBox="0 0 24 24"
@@ -613,13 +737,13 @@ function onGlobalKeydown(event: KeyboardEvent) {
 					     and the decision being asked outranks the invitation. -->
 							{#if hitlQueue.items.length === 0}
 								<span
-									class="-translate-x-1/2 pointer-events-none absolute bottom-full left-1/2 mb-2.5 whitespace-nowrap rounded-full border border-border bg-surface-cream px-3 py-1 font-medium text-foreground text-xs shadow-sm"
+									class="-translate-x-1/2 pointer-events-none absolute bottom-full left-1/2 mb-2.5 whitespace-nowrap rounded-full border border-border bg-surface-sunken px-3 py-1 font-medium text-foreground text-xs shadow-sm"
 								>
 									Start conversation
 									<!-- The arrow: an eggshell diamond, its two lower sides bordered, so
 						     it reads as the tail of the chip pointing at the button. -->
 									<span
-										class="-bottom-[5px] -translate-x-1/2 absolute left-1/2 size-2 rotate-45 border-border border-r border-b bg-surface-cream"
+										class="-bottom-[5px] -translate-x-1/2 absolute left-1/2 size-2 rotate-45 border-border border-r border-b bg-surface-sunken"
 									></span>
 								</span>
 							{/if}
@@ -627,7 +751,7 @@ function onGlobalKeydown(event: KeyboardEvent) {
 					     Hover deepens the cream a touch — the border stays exactly as it
 					     is; the whole gesture is a whisper, not a repaint. -->
 							<span
-								class="block size-full rounded-full border border-border bg-surface-cream p-1.5 transition-colors group-hover:bg-surface-card-selected"
+								class="block size-full rounded-full border border-border bg-surface-sunken p-1.5 transition-colors group-hover:bg-surface-selected"
 							>
 								<img src="/aven-logo.svg" alt="" class="size-full rounded-full object-cover">
 							</span>
@@ -639,11 +763,11 @@ function onGlobalKeydown(event: KeyboardEvent) {
 						     wordless. -->
 						{#if TOLD.has(phase.key)}
 							<span
-								class="-translate-x-1/2 pointer-events-none absolute bottom-full left-1/2 mb-5 whitespace-nowrap rounded-full border border-border bg-surface-cream px-3 py-1 font-medium text-foreground text-xs shadow-sm"
+								class="-translate-x-1/2 pointer-events-none absolute bottom-full left-1/2 mb-5 whitespace-nowrap rounded-full border border-border bg-surface-sunken px-3 py-1 font-medium text-foreground text-xs shadow-sm"
 							>
 								{phase.label}
 								<span
-									class="-bottom-[5px] -translate-x-1/2 absolute left-1/2 size-2 rotate-45 border-border border-r border-b bg-surface-cream"
+									class="-bottom-[5px] -translate-x-1/2 absolute left-1/2 size-2 rotate-45 border-border border-r border-b bg-surface-sunken"
 								></span>
 							</span>
 						{/if}
@@ -737,7 +861,7 @@ function onGlobalKeydown(event: KeyboardEvent) {
 					title="Skills & Artefakte"
 					aria-label="Skills & Artefakte"
 					aria-expanded={shell.rightOpen}
-					class="-translate-y-1/2 pointer-events-auto absolute top-1/2 right-0 flex size-11 items-center justify-center rounded-full border border-border bg-surface-card text-foreground shadow-[0_4px_16px_rgba(30,41,59,0.12)] transition-colors hover:bg-surface-card-selected lg:hidden"
+					class="-translate-y-1/2 pointer-events-auto absolute top-1/2 right-0 flex size-11 items-center justify-center rounded-full border border-border bg-surface-card text-foreground shadow-[0_4px_16px_rgba(30,41,59,0.12)] transition-colors hover:bg-surface-selected lg:hidden"
 				>
 					<svg
 						viewBox="0 0 24 24"

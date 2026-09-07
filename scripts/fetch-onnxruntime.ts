@@ -170,7 +170,10 @@ export function ensureOnnxruntimeDylib(): string {
 		}
 		fs.copyFileSync(source, bundledPath)
 		fs.chmodSync(bundledPath, 0o755)
-		fs.copyFileSync(path.join(tempDir, dist.name, 'LICENSE'), path.join(outDir, 'ONNXRuntime-LICENSE'))
+		fs.copyFileSync(
+			path.join(tempDir, dist.name, 'LICENSE'),
+			path.join(outDir, 'ONNXRuntime-LICENSE')
+		)
 		fs.copyFileSync(
 			path.join(tempDir, dist.name, 'ThirdPartyNotices.txt'),
 			path.join(outDir, 'ONNXRuntime-ThirdPartyNotices.txt')

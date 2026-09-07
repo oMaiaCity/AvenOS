@@ -1,0 +1,89 @@
+name: actor-runtime-ci
+
+on:
+  pull_request:
+    paths:
+      - app/**
+      - libs/aven-actors/**
+      - libs/aven-artifact-store/**
+      - libs/aven-document-ingest/**
+      - libs/aven-llm-client/**
+      - services/actor-runner/**
+      - services/artifact-store/**
+      - .dockerignore
+      - bun.lock
+      - package.json
+      - .github/actions/bun-install/action.yml
+      - .github/workflows/actor-runtime-ci.yml
+  push:
+    branches: [main, next]
+    paths:
+      - app/**
+      - libs/aven-actors/**
+      - libs/aven-artifact-store/**
+      - libs/aven-document-ingest/**
+      - libs/aven-llm-client/**
+      - services/actor-runner/**
+      - services/artifact-store/**
+      - .dockerignore
+      - bun.lock
+      - package.json
+      - .github/actions/bun-install/action.yml
+      - .github/workflows/actor-runtime-ci.yml
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.PACKAGE_READ_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.93.1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: services/artifact-store -> ../../target/rust
+          key: actor-runtime-linux
+      - uses: ./.github/actions/bun-install
+        with:
+          token: ${{ secrets.PACKAGE_READ_TOKEN }}
+      - name: Check actor runner formatting and contracts
+        run: |
+          bunx biome check services/actor-runner/src services/actor-runner/tests services/actor-runner/package.json services/actor-runner/tsconfig.json
+          bun run check:runner
+          bun run --cwd libs/aven-actors check
+          bun run --cwd libs/aven-artifact-store check
+          bun run --cwd libs/aven-document-ingest check
+          bun run --cwd libs/aven-llm-client check
+      - name: Test actor runtime and artifact contracts
+        run: |
+          bun run test:runner
+          bun run --cwd libs/aven-actors test
+          bun run --cwd libs/aven-artifact-store test
+      - name: Test app actor integration
+        run: bun test
+        working-directory: app
+      - name: Test Artifact Store Rust workspace
+        run: cargo test --locked --workspace
+        working-directory: services/artifact-store
+      - name: Build actor runner
+        run: bun run build:runner
+      - name: Build actor runner image
+        run: docker build --secret id=npm_token,env=NODE_AUTH_TOKEN --file services/actor-runner/Dockerfile --tag aven-actor-runner:${{ github.sha }} .
+      - name: Verify non-root runner image
+        run: |
+          test "$(docker image inspect aven-actor-runner:${{ github.sha }} --format '{{.Config.User}}')" = "bun"
+          docker run --rm aven-actor-runner:${{ github.sha }} bun -e "const { DOMMatrix } = require('@napi-rs/canvas'); new DOMMatrix()"

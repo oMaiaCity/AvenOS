@@ -52,6 +52,23 @@ export async function loadPdf(bytes: Uint8Array): Promise<PDFDocumentProxy> {
 	return pdfjs.getDocument({ data: bytes.slice() }).promise
 }
 
+/** Open a PDF for bounded one-shot processing and retain ownership of its worker. */
+export async function loadOwnedPdf(bytes: Uint8Array): Promise<{
+	document: PDFDocumentProxy
+	destroy: () => Promise<void>
+}> {
+	const task = pdfjs.getDocument({ data: bytes.slice() })
+	try {
+		return {
+			document: await task.promise,
+			destroy: () => task.destroy()
+		}
+	} catch (error) {
+		await task.destroy().catch(() => undefined)
+		throw error
+	}
+}
+
 /** Render one page into a canvas sized to `width` CSS pixels — crisp on
  * retina: the backing store scales with the device pixel ratio. */
 export async function renderPageToCanvas(

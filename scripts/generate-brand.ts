@@ -51,19 +51,22 @@ const favicon = faviconSvg(logo)
 const outputs: Array<[string, string]> = [
 	['app/src/brand-theme.css', themeCss('app')],
 	['app/src/brand-components.css', componentCss()],
-	/* The id service runs no Tailwind, so it takes the plain `:root` variant.
-	   It hand-maintained its own copy of the palette under a third set of
-	   names until now, and the copy had gone stale — a retired moss green, a
-	   retired violet in the body gradient, and a linen from before the
-	   background moved. */
-	['services/aven-api/src/brand-theme.css', themeCss('plain')],
-	['services/aven-api/src/brand-components.css', componentCss()],
-	/* Element defaults, for a surface that styles bare tags rather than classes. */
-	['services/aven-api/src/brand-elements.css', elementCss()],
+	/* The browser services run no Tailwind, so both take the plain `:root`
+	   variant and the same generated structural and element styles. Keeping
+	   identity and checkout as separate outputs preserves the service boundary
+	   while making visual drift mechanically detectable. */
+	['services/identity/src/brand-theme.css', themeCss('plain')],
+	['services/identity/src/brand-components.css', componentCss()],
+	['services/identity/src/brand-elements.css', elementCss()],
+	['services/checkout/src/brand-theme.css', themeCss('plain')],
+	['services/checkout/src/brand-components.css', componentCss()],
+	['services/checkout/src/brand-elements.css', elementCss()],
 	['app/static/aven-logo.svg', logo],
 	['app/static/favicon.svg', favicon],
-	['services/aven-api/static/aven-logo.svg', logo],
-	['services/aven-api/static/favicon.svg', favicon],
+	['services/identity/static/aven-logo.svg', logo],
+	['services/identity/static/favicon.svg', favicon],
+	['services/checkout/static/aven-logo.svg', logo],
+	['services/checkout/static/favicon.svg', favicon],
 	/* The seed `bun run icons` rasterises — the mark on its rounded brand plate. */
 	['app/src-tauri/icons/app-icon-source.svg', appIconSvg(logo)]
 ]

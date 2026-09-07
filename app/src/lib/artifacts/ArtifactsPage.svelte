@@ -378,7 +378,7 @@ onMount(() => {
 	<header class="flex items-center gap-3 px-1">
 		<h1 class="font-semibold text-sm">Artefakte</h1>
 		{#if result}
-			<span class="mono-meta">
+			<span class="text text--mono-meta">
 				{roots.length}
 				{roots.length === 1 ? 'Datei' : 'Dateien'}
 				· {result.artifacts.length} Artefakte · Epoch
@@ -391,7 +391,7 @@ onMount(() => {
 		<button
 			type="button"
 			onclick={() => void refresh()}
-			class="ml-auto rounded-full border border-border px-3 py-1 text-foreground/50 text-xs hover:bg-surface-soft hover:text-foreground"
+			class="ml-auto rounded-full border border-border px-3 py-1 text-foreground/50 text-xs hover:bg-surface-sunken hover:text-foreground"
 		>
 			Aktualisieren
 		</button>
@@ -403,7 +403,7 @@ onMount(() => {
 			{#if loading}
 				<p class="px-1 text-foreground/35 text-sm">Artifact Store wird gelesen …</p>
 			{:else if failure}
-				<p class="px-1 text-error-strong text-sm">{failure}</p>
+				<p class="px-1 text-error-ink text-sm">{failure}</p>
 			{:else if roots.length === 0}
 				<p class="px-1 text-foreground/35 text-sm">
 					Noch keine Dateien. Zieh eine Datei ins Fenster — sie wird als Intent aufgenommen.
@@ -471,7 +471,7 @@ onMount(() => {
 					{#if contentLoading}
 						<p class="m-auto text-foreground/35 text-sm">Datei wird geladen …</p>
 					{:else if contentFailure}
-						<p class="m-auto px-4 text-error-strong text-sm">{contentFailure}</p>
+						<p class="m-auto px-4 text-error-ink text-sm">{contentFailure}</p>
 					{:else if content}
 						<div class="min-h-0 flex-1 overflow-auto">
 							<ArtifactContentViewer mediaType={content.mediaType} base64={content.base64} />
@@ -489,13 +489,13 @@ onMount(() => {
 							<input
 								bind:value={query}
 								placeholder="Typ, ID, Run, Input oder Local Key filtern"
-								class="min-w-0 flex-1 rounded-xl border border-border bg-surface-soft px-3 py-2 text-xs outline-none focus:border-primary/25"
+								class="min-w-0 flex-1 rounded-xl border border-border bg-surface-sunken px-3 py-2 text-xs outline-none focus:border-primary/25"
 							>
 							<div class="flex rounded-xl border border-border p-0.5 text-[length:var(--fs-micro)]">
 								<button
 									type="button"
 									onclick={expandAll}
-									class="rounded-lg px-2 py-1.5 text-foreground/50 hover:bg-surface-soft hover:text-foreground"
+									class="rounded-lg px-2 py-1.5 text-foreground/50 hover:bg-surface-sunken hover:text-foreground"
 								>
 									Alle öffnen
 								</button>
@@ -503,7 +503,7 @@ onMount(() => {
 									type="button"
 									onclick={collapseAll}
 									disabled={branchCount === 0}
-									class="rounded-lg px-2 py-1.5 text-foreground/50 hover:bg-surface-soft hover:text-foreground disabled:opacity-35"
+									class="rounded-lg px-2 py-1.5 text-foreground/50 hover:bg-surface-sunken hover:text-foreground disabled:opacity-35"
 								>
 									Zuklappen
 								</button>
@@ -511,7 +511,7 @@ onMount(() => {
 							<button
 								type="button"
 								onclick={() => void refresh()}
-								class="rounded-xl border border-border px-3 py-2 text-xs hover:bg-surface-soft"
+								class="rounded-xl border border-border px-3 py-2 text-xs hover:bg-surface-sunken"
 							>
 								Aktualisieren
 							</button>
@@ -519,7 +519,7 @@ onMount(() => {
 						{#if loading}
 							<p class="p-4 text-foreground/35 text-sm">Artifact Store wird gelesen …</p>
 						{:else if failure}
-							<p class="p-4 text-error-strong text-sm">{failure}</p>
+							<p class="p-4 text-error-ink text-sm">{failure}</p>
 						{:else if treeRows.length === 0}
 							<p class="p-4 text-foreground/35 text-sm">Keine Artefakte gefunden.</p>
 						{:else}
@@ -533,8 +533,8 @@ onMount(() => {
 										aria-expanded={row.hasChildren ? !collapsedIds.has(artifact.artifactId) : undefined}
 										class="flex min-w-0 items-center border-border/25 border-b transition-colors {selectedId ===
 								artifact.artifactId
-									? 'bg-surface-card-selected'
-									: 'hover:bg-surface-soft/25'}"
+									? 'bg-surface-selected'
+									: 'hover:bg-surface-sunken/25'}"
 										style:padding-left={`${row.depth * 14 + 4}px`}
 									>
 										{#if row.hasChildren}
@@ -544,7 +544,7 @@ onMount(() => {
 												aria-label={collapsedIds.has(artifact.artifactId)
 											? 'Zweig öffnen'
 											: 'Zweig schließen'}
-												class="grid size-6 shrink-0 place-items-center rounded text-foreground/50 hover:bg-surface-soft hover:text-foreground"
+												class="grid size-6 shrink-0 place-items-center rounded text-foreground/50 hover:bg-surface-sunken hover:text-foreground"
 											>
 												<span
 													class="transition-transform {collapsedIds.has(artifact.artifactId)
@@ -602,7 +602,7 @@ onMount(() => {
 							<header class="border-border border-b px-4 py-3">
 								<div class="flex items-baseline gap-2">
 									<h2 class="min-w-0 flex-1 truncate font-semibold text-sm">{selected.typeKey}</h2>
-									<span class="mono-meta">v{selected.typeVersion}</span>
+									<span class="text text--mono-meta">v{selected.typeVersion}</span>
 								</div>
 								<div class="mt-1 flex items-center gap-2">
 									<button
@@ -615,7 +615,7 @@ onMount(() => {
 									</button>
 									{#if selected.inputs.length > 0}
 										<span
-											class="ml-auto rounded-md bg-surface-soft px-2 py-0.5 text-[length:var(--fs-micro)] text-foreground/50"
+											class="ml-auto rounded-md bg-surface-sunken px-2 py-0.5 text-[length:var(--fs-micro)] text-foreground/50"
 											title={selected.inputs.map((input) => `${input.role}:${input.ordinal} → ${input.artifactId}`).join('\n')}
 										>
 											{selected.inputs.length} {selected.inputs.length === 1 ? 'Input' : 'Inputs'}
@@ -630,14 +630,14 @@ onMount(() => {
 									<button
 										type="button"
 										onclick={() => (viewMode = 'view')}
-										class="rounded-lg px-2.5 py-1 text-xs {viewMode === 'view' ? 'bg-primary text-primary-foreground' : 'text-foreground/50 hover:bg-surface-soft'}"
+										class="rounded-lg px-2.5 py-1 text-xs {viewMode === 'view' ? 'bg-primary text-primary-foreground' : 'text-foreground/50 hover:bg-surface-sunken'}"
 									>
 										Ansicht
 									</button>
 									<button
 										type="button"
 										onclick={() => (viewMode = 'raw')}
-										class="rounded-lg px-2.5 py-1 text-xs {viewMode === 'raw' ? 'bg-primary text-primary-foreground' : 'text-foreground/50 hover:bg-surface-soft'}"
+										class="rounded-lg px-2.5 py-1 text-xs {viewMode === 'raw' ? 'bg-primary text-primary-foreground' : 'text-foreground/50 hover:bg-surface-sunken'}"
 									>
 										Raw
 									</button>
@@ -647,7 +647,7 @@ onMount(() => {
 										>
 									{:else if evidence.length > 0}
 										<span
-											class="ml-auto rounded-full bg-evidence-soft px-2 py-0.5 text-evidence-ink text-[length:var(--fs-micro)]"
+											class="ml-auto rounded-full bg-info-surface px-2 py-0.5 text-info-ink text-[length:var(--fs-micro)]"
 											>▣ {evidence.length} Fundstellen</span
 										>
 									{/if}
@@ -656,7 +656,7 @@ onMount(() => {
 							{#if envelopeLoading}
 								<p class="p-4 text-foreground/35 text-sm">Envelope wird geladen …</p>
 							{:else if envelopeFailure}
-								<p class="p-4 text-error-strong text-sm">{envelopeFailure}</p>
+								<p class="p-4 text-error-ink text-sm">{envelopeFailure}</p>
 							{:else if envelope}
 								{#if viewMode === 'raw'}
 									<div class="flex min-h-0 flex-1 flex-col">
@@ -690,7 +690,7 @@ onMount(() => {
 											/>
 										</div>
 										{#if sourceContent || content || sourceLoading || contentLoading || sourceFailure || contentFailure}
-											<div class="flex min-h-[22rem] min-w-0 flex-1 flex-col bg-surface-soft/25">
+											<div class="flex min-h-[22rem] min-w-0 flex-1 flex-col bg-surface-sunken/25">
 												<div
 													class="flex items-center justify-between border-border border-b bg-surface-raised px-4 py-2"
 												>
@@ -711,7 +711,7 @@ onMount(() => {
 													</div>
 													{#if activeEvidence?.outputLocator.kind === 'json-pointer'}
 														<span
-															class="rounded-md bg-evidence-soft px-2 py-1 font-mono text-evidence-ink text-[length:var(--fs-nano)]"
+															class="rounded-md bg-info-surface px-2 py-1 font-mono text-info-ink text-[length:var(--fs-nano)]"
 															>{activeEvidence.outputLocator.pointer}</span
 														>
 													{/if}
@@ -719,7 +719,7 @@ onMount(() => {
 												{#if sourceLoading || (!sourceContent && contentLoading)}
 													<p class="p-4 text-foreground/35 text-xs">Dokument wird gerendert …</p>
 												{:else if sourceFailure || (!sourceContent && contentFailure)}
-													<p class="p-4 text-error-strong text-xs">
+													<p class="p-4 text-error-ink text-xs">
 														{sourceFailure ?? contentFailure}
 													</p>
 												{:else if sourceContent && activeEvidence}

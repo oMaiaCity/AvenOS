@@ -119,6 +119,6 @@ class AndroidPasskeyPlugin(private val activity: Activity) : Plugin(activity) {
     }
 
     private companion object {
-        const val RELYING_PARTY_ID = "id.next.aven.ceo"
+        const val RELYING_PARTY_ID = "aven.id"
     }
 }

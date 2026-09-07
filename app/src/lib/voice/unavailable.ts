@@ -1,16 +1,4 @@
 import type {
-	EnqueueResult,
-	InputResetReason,
-	PreparationSnapshot,
-	SpeechTurnStarted,
-	TurnId,
-	SessionId,
-	VoiceEventEnvelope,
-	VoiceFeature,
-	VoiceSessionStarted,
-	VoiceSnapshot
-} from './protocol'
-import type {
 	BeginSpeech,
 	CancelSpeech,
 	SpeechSegment,
@@ -18,6 +6,18 @@ import type {
 	VoiceBackend,
 	VoiceSessionOptions
 } from './backend'
+import type {
+	EnqueueResult,
+	InputResetReason,
+	PreparationSnapshot,
+	SessionId,
+	SpeechTurnStarted,
+	TurnId,
+	VoiceEventEnvelope,
+	VoiceFeature,
+	VoiceSessionStarted,
+	VoiceSnapshot
+} from './protocol'
 
 const UNAVAILABLE = new Error('Native voice is unavailable in this browser.')
 

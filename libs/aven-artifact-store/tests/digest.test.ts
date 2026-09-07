@@ -34,7 +34,7 @@ test('matches the shared publication digest vector', async () => {
 
 test('freezes both built-in type-definition digests', async () => {
 	for (const [file, expected] of [
-		['core.file.v1.json', '39effe32d62cdf0ace3ec8f9ac44e00807a6a480892d2f11de90a5b0597d5434'],
+		['core.file.v1.json', '69a2366aceec8cbebb005218d13c47283ad54d50d42fbbb64b9e545cec8d0c69'],
 		['core.bundle.v1.json', '6c47e92a394cc3c7db983556379c9b3cf0c3a7e8f5f94d28fe1cf3abcec3f7c3']
 	] as const) {
 		const value = parseArtifactJson(

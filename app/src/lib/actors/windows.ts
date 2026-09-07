@@ -1,4 +1,4 @@
-import AvenUiView from './AvenUiView.svelte'
+import AvenVibeEngine from './AvenVibeEngine.svelte'
 import { Actor } from './actor'
 import { bus } from './bus'
 import { registryTick } from './reactivity.svelte'
@@ -19,7 +19,7 @@ import { isWindow, WindowActor } from './window.actor.svelte'
 export const listWindow = singleton(
 	'aven.window.list',
 	() =>
-		new WindowActor(todoActor, AvenUiView, {
+		new WindowActor(todoActor, AvenVibeEngine, {
 			key: 'list',
 			name: 'Todos',
 			// Closed until asked for: a window renders inline in the conversation
@@ -30,7 +30,7 @@ export const listWindow = singleton(
 export const boardWindow = singleton(
 	'aven.window.board',
 	() =>
-		new WindowActor(todoActor, AvenUiView, {
+		new WindowActor(todoActor, AvenVibeEngine, {
 			key: 'board',
 			name: 'Kanban Board',
 			props: { view: todoActor.manifest.views?.[0]?.view },
@@ -47,6 +47,9 @@ class StreamActor extends Actor {
 	constructor() {
 		super({
 			id: 'stream',
+			authority: 'ceo.aven',
+			namespace: 'ui.activity',
+			version: '1',
 			name: 'Aktivität',
 			description:
 				"The activity stream: the intent's log and conversation, the default tier " +

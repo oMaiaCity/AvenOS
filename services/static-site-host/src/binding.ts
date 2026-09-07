@@ -6,10 +6,10 @@ export interface DirectoryBinding {
 	source_ref: string
 	artifact_ref: string
 	artifact_path: string
+	verification_mode: 'txt' | 'operator'
 	verification_token_hash: string
 	verified_at: string | null
-	/** Missing only on pre-role snapshots; it is fail-closed for aven.ceo names. */
-	owner_is_admin?: boolean
+	owner_is_admin: boolean
 }
 
 const githubRepository = /^[a-z0-9_.-]{1,100}\/[-a-z0-9_.]{1,100}$/
@@ -32,8 +32,7 @@ export function validateBinding(binding: DirectoryBinding): void {
 			binding.owner_is_admin !== true)
 	)
 		throw new Error('invalid or reserved hostname')
-	if (binding.owner_is_admin !== undefined && typeof binding.owner_is_admin !== 'boolean')
-		throw new Error('invalid account authorization')
+	if (typeof binding.owner_is_admin !== 'boolean') throw new Error('invalid account authorization')
 	if (
 		!githubRepository.test(binding.repository_full_name) ||
 		binding.repository_full_name.includes('..')
@@ -45,6 +44,14 @@ export function validateBinding(binding: DirectoryBinding): void {
 	if (!validGitRef(binding.artifact_ref) || !binding.artifact_ref.startsWith('refs/heads/deploy/'))
 		throw new Error('invalid deployment ref')
 	if (binding.artifact_path !== 'dist') throw new Error('only the dist artifact path is supported')
+	if (!['txt', 'operator'].includes(binding.verification_mode))
+		throw new Error('invalid verification mode')
+	if (
+		binding.verification_mode === 'operator' &&
+		(binding.owner_is_admin !== true ||
+			!(binding.hostname === 'aven.ceo' || binding.hostname.endsWith('.aven.ceo')))
+	)
+		throw new Error('operator verification is restricted to platform-managed aven.ceo sites')
 	if (!/^[0-9a-f]{64}$/.test(binding.verification_token_hash))
 		throw new Error('invalid verification token hash')
 }

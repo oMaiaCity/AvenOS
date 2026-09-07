@@ -26,7 +26,6 @@ than permission for implementations to choose different semantics.
 - [Reviewed minimal-core design record](ARTIFACT-STORE-MINIMAL-CORE.md)
 - [Rationale and condensed application backtests](RATIONALE-AND-BACKTESTS.md)
 - [Extension seams](EXTENSION-SEAMS.md)
-- [Current AvenOS repository alignment paper](ALIGNMENT-PAPER.md)
 
 ## Earlier source material
 

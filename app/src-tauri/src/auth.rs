@@ -11,11 +11,21 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const DEVICE_CLIENT_ID: &str = "ceo.aven.os";
 const DEVICE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
-const PASSKEY_RP_ID: &str = "id.next.aven.ceo";
-const PASSKEY_ORIGIN: &str = "https://id.next.aven.ceo";
+const PASSKEY_RP_ID: &str = match option_env!("AVEN_PASSKEY_RP_ID") {
+	Some(rp_id) => rp_id,
+	None => "aven.id",
+};
+const PASSKEY_ORIGIN: &str = match option_env!("AVEN_PASSKEY_ORIGIN") {
+	Some(origin) => origin,
+	None => "https://aven.id",
+};
 const IDENTITY_BASE_URL: &str = match option_env!("AVEN_IDENTITY_BASE_URL") {
 	Some(url) => url,
-	None => "https://id.next.aven.ceo",
+	None => "https://aven.id",
+};
+const API_BASE_URL: &str = match option_env!("AVEN_API_BASE_URL") {
+	Some(url) => url,
+	None => "https://api.aven.ceo",
 };
 
 #[derive(Default)]
@@ -130,6 +140,11 @@ struct TokenResponse {
 }
 
 #[derive(Deserialize)]
+struct ServiceTokenResponse {
+	token: String,
+}
+
+#[derive(Deserialize)]
 struct SessionResponse {
 	user: AuthUser,
 }
@@ -163,8 +178,12 @@ fn endpoint(path: &str) -> String {
 	format!("{}/api/auth{path}", IDENTITY_BASE_URL.trim_end_matches('/'))
 }
 
-pub(crate) fn api_endpoint(path: &str) -> String {
+fn identity_endpoint(path: &str) -> String {
 	format!("{}{path}", IDENTITY_BASE_URL.trim_end_matches('/'))
+}
+
+pub(crate) fn api_endpoint(path: &str) -> String {
+	format!("{}{path}", API_BASE_URL.trim_end_matches('/'))
 }
 
 #[cfg(target_os = "macos")]
@@ -432,7 +451,7 @@ fn solve_proof_of_work(challenge: &ProofOfWorkChallenge) -> Result<String, Strin
 
 fn proof_of_work() -> Result<String, String> {
 	let response = agent()
-		.get(&api_endpoint("/api/pow/challenge?purpose=sign-in"))
+		.get(&identity_endpoint("/api/pow/challenge?purpose=sign-in"))
 		.call()
 		.map_err(|error| match error {
 			ureq::Error::Status(_, response) => {
@@ -644,15 +663,43 @@ pub(crate) fn session_token(state: &tauri::State<'_, AuthState>) -> Result<Strin
 		.ok_or_else(|| "No session is signed in.".to_string())
 }
 
-/// One authenticated round-trip to the identity API. Every billing command
+/// Exchange the long-lived, revocable Better Auth session for a short-lived,
+/// audience-bound JWT before crossing the identity boundary. Product services
+/// never receive the session credential and can verify the JWT from public JWKS.
+static SERVICE_TOKENS: crate::service_token::ServiceTokenCache = crate::service_token::ServiceTokenCache::new();
+
+pub(crate) fn service_access_token(session_token: &str) -> Result<String, String> {
+	SERVICE_TOKENS.get(session_token, || exchange_service_access_token(session_token))
+}
+
+fn exchange_service_access_token(session_token: &str) -> Result<String, String> {
+	let response = agent()
+		.get(&endpoint("/token"))
+		.set("authorization", &format!("Bearer {session_token}"))
+		.call()
+		.map_err(|error| match error {
+			ureq::Error::Status(_, response) => {
+				error_message(response, "Could not authorize the product request.").1
+			}
+			ureq::Error::Transport(error) => format!("Identity service unavailable: {error}"),
+		})?;
+	let token = parse_json::<ServiceTokenResponse>(response)?.token;
+	if token.split('.').count() != 3 {
+		return Err("The identity service returned an invalid service token.".to_string());
+	}
+	Ok(token)
+}
+
+/// One authenticated round-trip to the product API. Every billing command
 /// goes through here with a HARDCODED path — the webview never chooses URLs,
-/// and the Polar key never leaves the id service at all.
-fn identity_api_call(
-	token: String,
+/// and the Polar key never leaves the checkout service at all.
+fn application_api_call(
+	session_token: String,
 	method: &'static str,
-	path: &'static str,
+	path: &str,
 	body: Option<serde_json::Value>,
 ) -> Result<serde_json::Value, String> {
+	let token = service_access_token(&session_token)?;
 	let request = agent()
 		.request(method, &api_endpoint(path))
 		.set("authorization", &format!("Bearer {token}"));
@@ -664,9 +711,101 @@ fn identity_api_call(
 	}
 	.map_err(|error| match error {
 		ureq::Error::Status(_, response) => error_message(response, "The request failed.").1,
-		ureq::Error::Transport(error) => format!("Identity service unavailable: {error}"),
+		ureq::Error::Transport(error) => format!("Product API unavailable: {error}"),
 	})?;
 	parse_json::<serde_json::Value>(response)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HostingDraft {
+	hostname: String,
+	repository: String,
+	source_branch: String,
+	deployment_branch: String,
+}
+
+fn hosting_body(input: HostingDraft) -> serde_json::Value {
+	serde_json::json!({
+		"hostname": input.hostname,
+		"repository": input.repository,
+		"sourceBranch": input.source_branch,
+		"deploymentBranch": input.deployment_branch,
+	})
+}
+
+fn valid_uuid(value: &str) -> bool {
+	let bytes = value.as_bytes();
+	bytes.len() == 36
+		&& [8, 13, 18, 23]
+			.into_iter()
+			.all(|index| bytes[index] == b'-')
+		&& bytes.iter().enumerate().all(|(index, byte)| {
+			[8, 13, 18, 23].contains(&index) || byte.is_ascii_hexdigit()
+		})
+}
+
+/// Static hosting is managed from the installed aven.ceo application. The
+/// webview can choose field values, but it cannot choose an origin or API
+/// route: every call below is pinned to the product facade.
+#[tauri::command]
+pub async fn hosting_list(
+	state: tauri::State<'_, AuthState>,
+) -> Result<serde_json::Value, String> {
+	let token = session_token(&state)?;
+	tauri::async_runtime::spawn_blocking(move || {
+		application_api_call(token, "GET", "/api/sites", None)
+	})
+	.await
+	.map_err(|error| format!("Could not load static sites: {error}"))?
+}
+
+#[tauri::command]
+pub async fn hosting_create(
+	input: HostingDraft,
+	state: tauri::State<'_, AuthState>,
+) -> Result<serde_json::Value, String> {
+	let token = session_token(&state)?;
+	tauri::async_runtime::spawn_blocking(move || {
+		application_api_call(token, "POST", "/api/sites", Some(hosting_body(input)))
+	})
+	.await
+	.map_err(|error| format!("Could not create the static site: {error}"))?
+}
+
+#[tauri::command]
+pub async fn hosting_update(
+	site_id: String,
+	input: HostingDraft,
+	state: tauri::State<'_, AuthState>,
+) -> Result<serde_json::Value, String> {
+	if !valid_uuid(&site_id) {
+		return Err("The site id is invalid.".to_string());
+	}
+	let token = session_token(&state)?;
+	let path = format!("/api/sites/{site_id}");
+	tauri::async_runtime::spawn_blocking(move || {
+		application_api_call(token, "PUT", &path, Some(hosting_body(input)))
+	})
+	.await
+	.map_err(|error| format!("Could not update the static site: {error}"))?
+}
+
+#[tauri::command]
+pub async fn hosting_remove(
+	site_id: String,
+	state: tauri::State<'_, AuthState>,
+) -> Result<serde_json::Value, String> {
+	if !valid_uuid(&site_id) {
+		return Err("The site id is invalid.".to_string());
+	}
+	let token = session_token(&state)?;
+	let path = format!("/api/sites/{site_id}");
+	tauri::async_runtime::spawn_blocking(move || {
+		application_api_call(token, "DELETE", &path, None)
+	})
+	.await
+	.map_err(|error| format!("Could not remove the static site: {error}"))?
 }
 
 /// The signed-in member's standing per tier (an array — the tiers are
@@ -675,7 +814,7 @@ fn identity_api_call(
 pub async fn billing_me(state: tauri::State<'_, AuthState>) -> Result<serde_json::Value, String> {
 	let token = session_token(&state)?;
 	tauri::async_runtime::spawn_blocking(move || {
-		identity_api_call(token, "GET", "/api/billing/me", None)
+		application_api_call(token, "GET", "/api/billing/me", None)
 	})
 	.await
 	.map_err(|error| format!("Could not load your subscription: {error}"))?
@@ -692,7 +831,7 @@ pub async fn billing_subscribe(
 ) -> Result<serde_json::Value, String> {
 	let token = session_token(&state)?;
 	tauri::async_runtime::spawn_blocking(move || {
-		identity_api_call(
+		application_api_call(
 			token,
 			"POST",
 			"/api/billing/subscribe",
@@ -715,7 +854,7 @@ pub async fn billing_cancel(
 ) -> Result<serde_json::Value, String> {
 	let token = session_token(&state)?;
 	tauri::async_runtime::spawn_blocking(move || {
-		identity_api_call(
+		application_api_call(
 			token,
 			"POST",
 			"/api/billing/cancel",
@@ -734,7 +873,7 @@ pub async fn billing_resume(
 ) -> Result<serde_json::Value, String> {
 	let token = session_token(&state)?;
 	tauri::async_runtime::spawn_blocking(move || {
-		identity_api_call(
+		application_api_call(
 			token,
 			"POST",
 			"/api/billing/resume",
@@ -778,7 +917,7 @@ pub async fn billing_orders(
 ) -> Result<serde_json::Value, String> {
 	let token = session_token(&state)?;
 	tauri::async_runtime::spawn_blocking(move || {
-		identity_api_call(token, "GET", "/api/billing/orders", None)
+		application_api_call(token, "GET", "/api/billing/orders", None)
 	})
 	.await
 	.map_err(|error| format!("Could not load your orders: {error}"))?
@@ -792,7 +931,7 @@ pub async fn billing_checkout(
 ) -> Result<serde_json::Value, String> {
 	let token = session_token(&state)?;
 	tauri::async_runtime::spawn_blocking(move || {
-		identity_api_call(token, "GET", "/api/billing/checkout", None)
+		application_api_call(token, "GET", "/api/billing/checkout", None)
 	})
 	.await
 	.map_err(|error| format!("Could not read the checkout status: {error}"))?
@@ -830,7 +969,7 @@ pub async fn billing_invoice_download(
 	let token = session_token(&state)?;
 	let dir = artifacts_dir(&app)?;
 	tauri::async_runtime::spawn_blocking(move || {
-		let answer = identity_api_call(
+		let answer = application_api_call(
 			token,
 			"POST",
 			"/api/billing/invoices",
@@ -883,27 +1022,13 @@ pub async fn billing_invoice_download(
 /// alone answers "who", not "which aven".
 #[tauri::command]
 pub async fn auth_names(state: tauri::State<'_, AuthState>) -> Result<Vec<String>, String> {
-	let token = state
-		.0
-		.lock()
-		.map_err(|_| "Authentication state is unavailable.".to_string())?
-		.session
-		.as_ref()
-		.map(|session| session.token.clone())
-		.ok_or_else(|| "No session is signed in.".to_string())?;
+	let token = session_token(&state)?;
 	tauri::async_runtime::spawn_blocking(move || {
-		let response = agent()
-			.get(&api_endpoint("/api/names/mine"))
-			.set("authorization", &format!("Bearer {token}"))
-			.call()
-			.map_err(|error| match error {
-				ureq::Error::Status(_, response) => {
-					error_message(response, "Your reserved names could not be loaded.").1
-				}
-				ureq::Error::Transport(error) => format!("Identity service unavailable: {error}"),
-			})?;
+		let response = application_api_call(token, "GET", "/api/names/mine", None)?;
+		let names: NamesResponse = serde_json::from_value(response)
+			.map_err(|_| "The product API returned invalid reserved names.".to_string())?;
 		Ok::<Vec<String>, String>(
-			parse_json::<NamesResponse>(response)?
+			names
 				.names
 				.into_iter()
 				.map(|owned| owned.name)
@@ -939,6 +1064,7 @@ pub async fn auth_passkey_begin(
 		expires_at: Instant::now() + Duration::from_secs(300),
 	});
 	inner.session = None;
+	SERVICE_TOKENS.clear();
 	Ok(BeginPasskeyAuthentication {
 		command: if cfg!(target_os = "android") {
 			"plugin:android-passkey|login".to_string()
@@ -1003,6 +1129,7 @@ pub async fn auth_begin(state: tauri::State<'_, AuthState>) -> Result<BeginAutho
 	inner.pending = Some(pending);
 	inner.pending_passkey = None;
 	inner.session = None;
+	SERVICE_TOKENS.clear();
 	Ok(response)
 }
 
@@ -1052,6 +1179,7 @@ pub async fn auth_logout(state: tauri::State<'_, AuthState>) -> Result<(), Strin
 		inner.pending_passkey = None;
 		inner.session.take().map(|session| session.token)
 	};
+	SERVICE_TOKENS.clear();
 	if let Some(token) = token {
 		tauri::async_runtime::spawn_blocking(move || {
 			let _ = agent()
@@ -1160,5 +1288,12 @@ mod tests {
 	fn proof_of_work_bit_check_handles_partial_bytes() {
 		assert!(has_leading_zero_bits(&[0, 0b0000_1111], 12));
 		assert!(!has_leading_zero_bits(&[0, 0b0001_0000], 12));
+	}
+
+	#[test]
+	fn hosting_route_ids_cannot_choose_an_api_path() {
+		assert!(valid_uuid("00000000-0000-4000-8000-000000000001"));
+		assert!(!valid_uuid("../../billing/me"));
+		assert!(!valid_uuid("00000000-0000-4000-8000-000000000001/sites"));
 	}
 }

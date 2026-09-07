@@ -3,7 +3,7 @@
     {
       "name": "core.file@1",
       "fixture": "../protocol/core.file.v1.json",
-      "sha256": "39effe32d62cdf0ace3ec8f9ac44e00807a6a480892d2f11de90a5b0597d5434"
+      "sha256": "69a2366aceec8cbebb005218d13c47283ad54d50d42fbbb64b9e545cec8d0c69"
     },
     {
       "name": "core.bundle@1",
@@ -15,7 +15,7 @@
     "preimage": {
       "typeKey": "core.file",
       "typeVersion": 1,
-      "typeDefinitionSha256": "39effe32d62cdf0ace3ec8f9ac44e00807a6a480892d2f11de90a5b0597d5434",
+      "typeDefinitionSha256": "69a2366aceec8cbebb005218d13c47283ad54d50d42fbbb64b9e545cec8d0c69",
       "payload": {
         "originalName": "hello.txt",
         "declaredMediaType": "text/plain",
@@ -27,7 +27,7 @@
       },
       "references": []
     },
-    "sha256": "b360b357c611b0cd903e2c24619256a6b2e88ab9057c64fdea7eea1da428a0b7"
+    "sha256": "f95803c8861349397e7716e01700d9cbf18144af24917e9804e2343ccd7e750e"
   },
   "publication": {
     "publisher": {

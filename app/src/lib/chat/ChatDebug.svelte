@@ -55,7 +55,7 @@ function toolCallsOf(message: ChatMessage) {
 					system · prompt + live context
 				</p>
 				<pre
-					class="border-border border-foreground/8 overflow-hidden whitespace-pre-wrap break-words rounded-lg bg-surface-soft px-4 py-3 font-mono text-[length:var(--fs-eyebrow)] leading-relaxed text-foreground/80"
+					class="border-border border-foreground/8 overflow-hidden whitespace-pre-wrap break-words rounded-lg bg-surface-sunken px-4 py-3 font-mono text-[length:var(--fs-eyebrow)] leading-relaxed text-foreground/80"
 				>{system.content}</pre>
 			</section>
 		{/if}
@@ -69,7 +69,7 @@ function toolCallsOf(message: ChatMessage) {
 			</p>
 			<div class="flex flex-col gap-2">
 				{#each request.messages.slice(1) as message (`${message.role}:${message.content?.slice(0, 32)}:${message.tool_call_id ?? ''}`)}
-					<div class="border-border border-foreground/8 rounded-lg bg-surface-soft px-4 py-3">
+					<div class="surface surface--sunken">
 						<div class="flex flex-wrap items-center gap-2">
 							<span
 								class="rounded-full px-2 py-0.5 font-mono text-[length:var(--fs-nano)] {ROLE_TONE[message.role] ?? 'bg-foreground/8 text-foreground'}"
@@ -114,7 +114,7 @@ function toolCallsOf(message: ChatMessage) {
 			</p>
 			<div class="flex flex-col gap-2">
 				{#each request.tools as tool (tool.name)}
-					<div class="border-border border-foreground/8 rounded-lg bg-surface-soft px-4 py-3">
+					<div class="surface surface--sunken">
 						<p class="font-mono text-[length:var(--fs-eyebrow)] text-foreground">{tool.name}</p>
 						<p class="pt-1 text-foreground/65 text-xs">{tool.description}</p>
 						<pre

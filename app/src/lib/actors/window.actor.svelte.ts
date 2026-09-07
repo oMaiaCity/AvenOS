@@ -37,6 +37,9 @@ export class WindowActor extends Actor {
 		const name = view.name ?? `${subject.manifest.name} Window`
 		super({
 			id,
+			authority: 'ceo.aven',
+			namespace: 'ui.windows',
+			version: '1',
 			name,
 			description:
 				`The "${name}" window of ${subject.manifest.name}: renders its state as an ` +

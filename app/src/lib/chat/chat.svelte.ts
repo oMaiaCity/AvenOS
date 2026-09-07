@@ -2,6 +2,7 @@ import type {
 	ArtifactProcessingPresentation,
 	ArtifactProcessingView
 } from '$lib/artifacts/processing'
+import type { AnonymousSpeaker } from './anonymous-speaker'
 import { type ChatMessage, repairCall, streamChat, type ToolSpec } from './redpill'
 
 /**
@@ -134,6 +135,8 @@ export interface Turn {
 	id: string
 	role: 'user' | 'assistant'
 	content: string
+	/** Local, anonymous diarization metadata; never added to the model prompt. */
+	anonymousSpeaker?: AnonymousSpeaker
 	attachment?: ArtifactAttachment
 	/** Every tool call this turn ran, with its result, for the transcript. */
 	calls?: { name: string; result: string }[]
@@ -272,15 +275,20 @@ export class Chat {
 	// of whatever was compiled in when the instance was born.
 	#wire: ChatMessage[] = []
 	#abort: AbortController | null = null
+	#sendTail: Promise<void> = Promise.resolve()
+	#sendEpoch = 0
 	#sink: ChatSink
 	#tools: ChatTools
+	#stream: typeof streamChat
 
 	constructor(
 		sink: ChatSink = {},
-		tools: ChatTools = { specs: [], run: () => ({ record: '', wire: '' }) }
+		tools: ChatTools = { specs: [], run: () => ({ record: '', wire: '' }) },
+		stream: typeof streamChat = streamChat
 	) {
 		this.#sink = sink
 		this.#tools = tools
+		this.#stream = stream
 	}
 
 	get canSend(): boolean {
@@ -501,10 +509,28 @@ export class Chat {
 		this.#sink.onTurn?.()
 	}
 
-	async send(text: string): Promise<void> {
+	/**
+	 * Serialize user turns across an asynchronous barge-in.
+	 *
+	 * Aborting a native/model stream is not instantaneous. The confirmed voice
+	 * candidate can become a final utterance while the old request is still
+	 * unwinding; dropping sends while `streaming` loses exactly that utterance.
+	 * Stop the old request and queue the new turn behind it instead.
+	 */
+	send(text: string, anonymousSpeaker?: AnonymousSpeaker): Promise<void> {
 		const prompt = text.trim()
-		if (prompt === '' || this.streaming) return
+		if (prompt === '') return Promise.resolve()
+		if (this.streaming) this.stop()
+		const epoch = this.#sendEpoch
+		const operation = this.#sendTail.then(async () => {
+			if (epoch !== this.#sendEpoch) return
+			await this.#send(prompt, anonymousSpeaker)
+		})
+		this.#sendTail = operation.catch(() => {})
+		return operation
+	}
 
+	async #send(prompt: string, anonymousSpeaker?: AnonymousSpeaker): Promise<void> {
 		this.failure = null
 		// Pinned for the whole turn: `use()` may swap the visible session while
 		// the reply streams, and the reply must land where it was asked — unless
@@ -531,7 +557,7 @@ export class Chat {
 		// the proxied copy the array hands back — writes through the original
 		// literal would update the data and tell no one.
 		this.#pending = {
-			user: { id: id(), role: 'user', content: prompt },
+			user: { id: id(), role: 'user', content: prompt, anonymousSpeaker },
 			reply: { id: replyId, role: 'assistant', content: '', calls: [] }
 		}
 		this.#reply = this.#pending.reply
@@ -682,7 +708,7 @@ export class Chat {
 			messages,
 			tools: this.#tools.specs
 		}
-		for await (const event of streamChat(
+		for await (const event of this.#stream(
 			messages,
 			this.#tools.specs,
 			this.#abort?.signal ?? undefined
@@ -804,6 +830,7 @@ export class Chat {
 	}
 
 	clear(): void {
+		this.#sendEpoch++
 		this.stop()
 		for (const [uploadId, upload] of this.#uploads) {
 			if (upload.session === this.session) this.#uploads.delete(uploadId)

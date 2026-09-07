@@ -1,6 +1,6 @@
 import { isTauri } from '@tauri-apps/api/core'
 import { voiceController } from '$lib/voice/controller.svelte'
-import type { SpeakerAttribution } from '$lib/voice/protocol'
+import type { SessionId, SpeakerAttribution } from '$lib/voice/protocol'
 
 export type ListenerStatus = 'unavailable' | 'preparing' | 'listening' | 'denied' | 'error'
 
@@ -9,7 +9,11 @@ export interface ListenerHooks {
 	onSpeechStart?: () => void
 	onPartial?: (text: string) => void
 	onSpeaker?: (speaker: SpeakerAttribution) => void
-	onUtterance?: (text: string, speaker: SpeakerAttribution | null) => void
+	onUtterance?: (
+		text: string,
+		speaker: SpeakerAttribution | null,
+		sessionId: SessionId | null
+	) => void
 }
 
 /**

@@ -1,0 +1,35 @@
+{
+	"name": "@avenos/actor-runner-service",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "bun --watch src/index.ts",
+		"start": "bun src/index.ts",
+		"build": "bun build src/index.ts --target=bun --outdir=build",
+		"check": "tsc --noEmit",
+		"test": "vitest run",
+		"test:e2e:persistence": "vitest run tests/sql-runner.persistence.e2e.test.ts tests/split-architecture.e2e.test.ts tests/artifact-store-port.persistence.e2e.test.ts tests/reconciliation.persistence.e2e.test.ts"
+	},
+	"dependencies": {
+		"@avenos/http-boundary": "workspace:*",
+		"@avenos/actors": "workspace:*",
+		"@avenos/artifact-store": "workspace:*",
+		"@avenos/document-ingest": "workspace:*",
+		"@avenos/llm-client": "workspace:*",
+		"@avenos/aven-customer-contracts": "workspace:*",
+		"@avenos/aven-customer-runtime": "workspace:*",
+		"@avenos/aven-identity": "workspace:*",
+		"jose": "6.2.9",
+		"pg": "8.16.3",
+		"zod": "4.4.3"
+	},
+	"devDependencies": {
+		"@avenos/aven-api": "workspace:*",
+		"@types/bun": "1.3.13",
+		"@types/node": "24.10.13",
+		"@types/pg": "8.15.6",
+		"typescript": "6.0.3",
+		"vitest": "4.1.10"
+	}
+}

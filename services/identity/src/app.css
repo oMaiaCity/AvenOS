@@ -1,0 +1,44 @@
+/*
+ * The app shell, and nothing else.
+ *
+ * Everything this file used to hold — the panel, the passkey list, the header,
+ * the nav, the footer, and a `:root` block aliasing brand tokens back to the
+ * short names an older stylesheet used — is now either an actor or gone. What
+ * a shell legitimately owns is the page ground, the box model, and the one
+ * place a viewport unit is allowed to appear.
+ */
+@import "./brand-theme.css";
+@import "./brand-components.css";
+@import "./brand-elements.css";
+
+* {
+	box-sizing: border-box;
+}
+
+body {
+	margin: 0;
+	min-inline-size: 20rem;
+	/* The shell IS the viewport, which is the one place this is not a component
+	   reaching for the window. */
+	min-block-size: 100dvh;
+	font-family: var(--font-sans);
+	color: var(--color-foreground);
+	background:
+		radial-gradient(
+			circle at 90% 5%,
+			color-mix(in srgb, var(--color-anchor) 10%, transparent),
+			transparent 28rem
+		),
+		radial-gradient(
+			circle at 5% 95%,
+			color-mix(in srgb, var(--color-sunflower) 10%, transparent),
+			transparent 30rem
+		),
+		var(--color-surface-page);
+	font-synthesis: none;
+	-webkit-font-smoothing: antialiased;
+}
+
+a {
+	color: inherit;
+}

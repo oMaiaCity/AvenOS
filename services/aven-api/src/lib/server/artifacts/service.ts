@@ -2,10 +2,24 @@ import { createHash, randomUUID } from 'node:crypto'
 import {
 	type ArtifactJson,
 	ArtifactStoreClient,
-	ArtifactStoreProblem
+	ArtifactStoreProblem,
+	canonicalArtifactJsonText,
+	clientRunIdentity
 } from '@avenos/artifact-store'
+import { CSV_DETECTOR_VERSION, detectCsvStatement, isCsvSource } from '@avenos/document-ingest/csv'
+import { csvConfirmationIdentity } from '@avenos/document-ingest/csv-confirmation'
 import type { ArtifactStoreConfig } from '../config.js'
 import { AppError } from '../errors.js'
+
+type Fetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+
+function sameJson(left: unknown, right: unknown): boolean {
+	if (left === undefined || right === undefined) return false
+	return (
+		canonicalArtifactJsonText(left as ArtifactJson) ===
+		canonicalArtifactJsonText(right as ArtifactJson)
+	)
+}
 
 export const MAX_ARTIFACT_FILE_BYTES = 25 * 1024 * 1024
 
@@ -13,6 +27,7 @@ export interface PublishFileInput {
 	userId: string
 	databaseName: string
 	scopeId: string
+	routingGeneration?: number
 	publicationId: string
 	intentId: string
 	observedAt: string
@@ -22,6 +37,7 @@ export interface PublishFileInput {
 	length: number
 	body: BodyInit
 	sourceKind: 'desktop-drop' | 'client-actor-ingest'
+	executionEnvironment?: 'local' | 'server'
 }
 
 export interface PublishedFile {
@@ -40,7 +56,7 @@ export interface PublishedFile {
 export interface ClientRunArtifact {
 	localKey: string
 	typeKey: string
-	typeVersion: 1
+	typeVersion: number
 	payload: ArtifactJson
 	output: { role: string; ordinal: number }
 	blob?: { mediaType: string; base64: string }
@@ -59,6 +75,7 @@ export interface PublishClientRunInput {
 	userId: string
 	databaseName: string
 	scopeId: string
+	routingGeneration?: number
 	publicationId: string
 	procedureKey: string
 	procedureVersion: 'client-v1'
@@ -88,6 +105,7 @@ interface ExpectedClientArtifact {
 	role: string
 	ordinal: number
 	blob: 'required' | 'forbidden'
+	typeVersion?: number
 }
 
 function invalidClientContract(message: string): never {
@@ -181,6 +199,7 @@ function expectArtifacts(input: PublishClientRunInput, expected: ExpectedClientA
 		if (
 			!artifact ||
 			artifact.typeKey !== slot.typeKey ||
+			artifact.typeVersion !== (slot.typeVersion ?? 1) ||
 			artifact.output.role !== slot.role ||
 			artifact.output.ordinal !== slot.ordinal ||
 			(slot.blob === 'required') !== Boolean(artifact.blob)
@@ -189,8 +208,12 @@ function expectArtifacts(input: PublishClientRunInput, expected: ExpectedClientA
 		}
 		if (
 			artifact.blob &&
-			(artifact.typeKey !== 'docs.extracted-text' ||
-				artifact.blob.mediaType !== 'text/plain; charset=utf-8')
+			!(
+				(artifact.typeKey === 'docs.extracted-text' &&
+					artifact.blob.mediaType === 'text/plain; charset=utf-8') ||
+				(artifact.typeKey === 'core.file-inspection' &&
+					artifact.blob.mediaType === 'application/json')
+			)
 		) {
 			invalidClientContract(`${input.procedureKey} output ${slot.localKey} has an invalid blob.`)
 		}
@@ -276,9 +299,10 @@ function validateCommonClientContract(input: PublishClientRunInput): void {
 const inspectionOutput: ExpectedClientArtifact = {
 	localKey: 'inspection',
 	typeKey: 'core.file-inspection',
+	typeVersion: 2,
 	role: 'inspection',
 	ordinal: 0,
-	blob: 'forbidden'
+	blob: 'required'
 }
 const textOutput: ExpectedClientArtifact = {
 	localKey: 'text',
@@ -318,6 +342,7 @@ const documentClassificationOutput: ExpectedClientArtifact = {
 const invoiceOutput: ExpectedClientArtifact = {
 	localKey: 'invoice',
 	typeKey: 'bookkeeping.invoice-candidate',
+	typeVersion: 2,
 	role: 'candidate',
 	ordinal: 0,
 	blob: 'forbidden'
@@ -327,14 +352,16 @@ const invoiceDetailsOutput: ExpectedClientArtifact = {
 	typeKey: 'bookkeeping.invoice-details',
 	role: 'details',
 	ordinal: 0,
-	blob: 'forbidden'
+	blob: 'forbidden',
+	typeVersion: 2
 }
 const statementOutput: ExpectedClientArtifact = {
 	localKey: 'statement',
 	typeKey: 'banking.account-statement-candidate',
 	role: 'candidate',
 	ordinal: 0,
-	blob: 'forbidden'
+	blob: 'forbidden',
+	typeVersion: 2
 }
 const invoiceValidationOutput: ExpectedClientArtifact = {
 	localKey: 'validation',
@@ -350,8 +377,170 @@ const statementValidationOutput: ExpectedClientArtifact = {
 	ordinal: 0,
 	blob: 'forbidden'
 }
+const openItemOutput: ExpectedClientArtifact = {
+	localKey: 'open-item',
+	typeKey: 'bookkeeping.open-item',
+	role: 'open-item',
+	ordinal: 0,
+	blob: 'forbidden'
+}
+
+const normalizedStatementOutput: ExpectedClientArtifact = {
+	localKey: 'normalized-statement',
+	typeKey: 'banking.statement',
+	role: 'statement',
+	ordinal: 0,
+	blob: 'forbidden'
+}
+
+function statementBatchOffset(input: PublishClientRunInput): number {
+	const parameters = clientRecord(input.parameters, `${input.procedureKey} parameters`)
+	const offset = parameters.offset
+	if (
+		Object.keys(parameters).length !== 1 ||
+		typeof offset !== 'number' ||
+		!Number.isInteger(offset) ||
+		offset < 0 ||
+		offset > 127 ||
+		offset % 64 !== 0
+	) {
+		invalidClientContract(`${input.procedureKey} requires an offset of 0 or 64.`)
+	}
+	return offset
+}
+
+function expectStatementTransactionBatch(input: PublishClientRunInput, offset: number): void {
+	if (input.artifacts.length < 1 || input.artifacts.length > 64) {
+		invalidClientContract('client.fanout-statement-transactions must publish 1-64 transactions.')
+	}
+	const transactions = [...input.artifacts].sort(
+		(left, right) => left.output.ordinal - right.output.ordinal
+	)
+	for (const [ordinal, transaction] of transactions.entries()) {
+		const localKey = `transaction-${String(offset + ordinal + 1).padStart(3, '0')}`
+		const payload = clientRecord(transaction.payload, `${localKey} payload`)
+		if (
+			transaction.localKey !== localKey ||
+			transaction.typeKey !== 'banking.transaction' ||
+			transaction.typeVersion !== 1 ||
+			transaction.output.role !== 'transaction' ||
+			transaction.output.ordinal !== ordinal ||
+			payload.sourceOrdinal !== offset + ordinal ||
+			transaction.blob
+		) {
+			invalidClientContract(`client.fanout-statement-transactions output ${localKey} is invalid.`)
+		}
+	}
+}
+
+function expectReconciliationMatches(input: PublishClientRunInput): void {
+	if (input.artifacts.length < 1 || input.artifacts.length > 64) {
+		invalidClientContract('client.rank-invoice-transactions must publish 1-64 match candidates.')
+	}
+	const matches = [...input.artifacts].sort(
+		(left, right) => left.output.ordinal - right.output.ordinal
+	)
+	for (const [ordinal, match] of matches.entries()) {
+		const localKey = `match-${String(ordinal + 1).padStart(3, '0')}`
+		const payload = clientRecord(match.payload, `${localKey} payload`)
+		if (
+			match.localKey !== localKey ||
+			match.typeKey !== 'reconciliation.match-candidate' ||
+			match.typeVersion !== 2 ||
+			match.output.role !== 'match-candidate' ||
+			match.output.ordinal !== ordinal ||
+			payload.matcherVersion !== 'invoice-transaction-v2' ||
+			!Number.isSafeInteger(payload.transactionInputOrdinal) ||
+			!input.inputs.some(
+				(item) => item.role === 'transaction' && item.ordinal === payload.transactionInputOrdinal
+			) ||
+			payload.rank !== ordinal + 1 ||
+			match.blob
+		) {
+			invalidClientContract(`client.rank-invoice-transactions output ${localKey} is invalid.`)
+		}
+	}
+}
 
 const CLIENT_PROCEDURES: Record<string, ClientProcedureDescriptor> = {
+	'client.detect-csv-statement': {
+		actor: 'csv-statement-detector',
+		validate: (input) => {
+			expectInputs(input, { source: { min: 1, max: 1 } })
+			expectParameters(input, false)
+			expectArtifacts(input, [
+				{
+					localKey: 'detection',
+					typeKey: 'banking.csv-statement-detection',
+					role: 'detection',
+					ordinal: 0,
+					blob: 'forbidden'
+				}
+			])
+		}
+	},
+	'client.confirm-csv-statement': {
+		actor: 'csv-document-review',
+		validate: (input) => {
+			expectInputs(input, { source: { min: 1, max: 1 }, detection: { min: 1, max: 1 } })
+			expectParameters(input, false)
+			expectArtifacts(input, [
+				{
+					localKey: 'confirmation',
+					typeKey: 'banking.csv-statement-confirmation',
+					role: 'confirmation',
+					ordinal: 0,
+					blob: 'forbidden'
+				}
+			])
+		}
+	},
+	'client.admit-csv-statement': {
+		actor: 'csv-statement-admitter',
+		validate: (input) => {
+			expectInputs(input, {
+				source: { min: 1, max: 1 },
+				detection: { min: 1, max: 1 },
+				confirmation: { min: 1, max: 1 }
+			})
+			expectParameters(input, false)
+			expectArtifacts(input, [statementOutput])
+		}
+	},
+	'client.review-reconciliation': {
+		actor: 'reconciliation-review',
+		validate: (input) => {
+			expectInputs(input, {
+				'match-candidate': { min: 1, max: 1 },
+				'open-item': { min: 1, max: 1 },
+				transaction: { min: 1, max: 1 }
+			})
+			expectParameters(input, false)
+			expectArtifacts(input, [
+				{
+					localKey: 'decision',
+					typeKey: 'reconciliation.decision',
+					role: 'decision',
+					ordinal: 0,
+					blob: 'forbidden'
+				}
+			])
+			const payload = clientRecord(input.artifacts[0]!.payload, 'reconciliation decision')
+			if (
+				!['accepted', 'rejected'].includes(String(payload.decision)) ||
+				payload.relation !== 'supports-booking'
+			)
+				invalidClientContract('Invalid reconciliation decision.')
+			for (const [field, role] of [
+				['candidateArtifactId', 'match-candidate'],
+				['openItemArtifactId', 'open-item'],
+				['transactionArtifactId', 'transaction']
+			]) {
+				if (payload[field!] !== input.inputs.find((item) => item.role === role)?.artifactId)
+					invalidClientContract('Decision identity differs from its production inputs.')
+			}
+		}
+	},
 	'client.inspect-file': {
 		actor: 'document-inspector',
 		validate: (input) => {
@@ -517,6 +706,52 @@ const CLIENT_PROCEDURES: Record<string, ClientProcedureDescriptor> = {
 			expectParameters(input, false)
 			expectArtifacts(input, [statementValidationOutput])
 		}
+	},
+	'client.normalize-invoice-open-item': {
+		actor: 'open-item-normalizer',
+		validate: (input) => {
+			expectInputs(input, {
+				candidate: { min: 1, max: 1 },
+				details: { min: 1, max: 1 },
+				validation: { min: 1, max: 1 }
+			})
+			expectParameters(input, false)
+			expectArtifacts(input, [openItemOutput])
+		}
+	},
+	'client.normalize-statement': {
+		actor: 'statement-normalizer',
+		validate: (input) => {
+			expectInputs(input, {
+				candidate: { min: 1, max: 1 },
+				validation: { min: 1, max: 1 }
+			})
+			expectParameters(input, false)
+			expectArtifacts(input, [normalizedStatementOutput])
+		}
+	},
+	'client.fanout-statement-transactions': {
+		actor: 'statement-transaction-fanout',
+		validate: (input) => {
+			expectInputs(input, {
+				candidate: { min: 1, max: 1 },
+				validation: { min: 1, max: 1 },
+				statement: { min: 1, max: 1 }
+			})
+			const offset = statementBatchOffset(input)
+			expectStatementTransactionBatch(input, offset)
+		}
+	},
+	'client.rank-invoice-transactions': {
+		actor: 'reconciliation-ranker',
+		validate: (input) => {
+			expectInputs(input, {
+				'open-item': { min: 1, max: 1 },
+				transaction: { min: 1, max: 64 }
+			})
+			expectParameters(input, false)
+			expectReconciliationMatches(input)
+		}
 	}
 }
 
@@ -666,18 +901,15 @@ async function inChunks<T>(values: T[], size: number, work: (value: T) => Promis
 export class ArtifactFileService {
 	readonly #baseUrl: string
 	readonly #bearerToken: string
-	readonly #fetch?: typeof globalThis.fetch
+	readonly #fetch?: Fetch
 
-	private constructor(baseUrl: string, bearerToken: string, fetch?: typeof globalThis.fetch) {
+	private constructor(baseUrl: string, bearerToken: string, fetch?: Fetch) {
 		this.#baseUrl = baseUrl
 		this.#bearerToken = bearerToken
 		this.#fetch = fetch
 	}
 
-	static fromConfig(
-		config: ArtifactStoreConfig,
-		fetch?: typeof globalThis.fetch
-	): ArtifactFileService | null {
+	static fromConfig(config: ArtifactStoreConfig, fetch?: Fetch): ArtifactFileService | null {
 		if (!config.ARTIFACT_STORE_BASE_URL || !config.ARTIFACT_STORE_BEARER_TOKEN) {
 			return null
 		}
@@ -688,30 +920,69 @@ export class ArtifactFileService {
 		)
 	}
 
-	#client(databaseName: string): ArtifactStoreClient {
+	#client(databaseName: string, scopeId: string, routingGeneration: number): ArtifactStoreClient {
 		return new ArtifactStoreClient({
 			baseUrl: this.#baseUrl,
 			bearerToken: () => this.#bearerToken,
-			requestHeaders: () => ({ 'x-aven-artifact-database': databaseName }),
+			requestHeaders: () => ({
+				'x-aven-artifact-database': databaseName,
+				'x-aven-environment': scopeId,
+				'x-aven-routing-generation': String(routingGeneration)
+			}),
 			fetch: this.#fetch
 		})
 	}
 
-	async artifact(databaseName: string, scopeId: string, artifactId: string): Promise<ArtifactJson> {
-		return this.#client(databaseName).artifact(scopeId, artifactId)
+	async artifact(
+		databaseName: string,
+		scopeId: string,
+		artifactId: string,
+		routingGeneration = 1
+	): Promise<ArtifactJson> {
+		return this.#client(databaseName, scopeId, routingGeneration).artifact(scopeId, artifactId)
 	}
 
-	async content(databaseName: string, scopeId: string, artifactId: string): Promise<Uint8Array> {
-		return this.#client(databaseName).content(scopeId, artifactId)
+	async clientRun(
+		databaseName: string,
+		scopeId: string,
+		publicationId: string,
+		routingGeneration = 1
+	) {
+		return this.#client(databaseName, scopeId, routingGeneration).committedClientRun(
+			scopeId,
+			publicationId
+		)
+	}
+
+	async queryArtifacts(
+		databaseName: string,
+		scopeId: string,
+		query: { typeKey: string; snapshotSequence?: number; after?: string; limit?: number },
+		routingGeneration = 1
+	) {
+		return this.#client(databaseName, scopeId, routingGeneration).queryArtifacts(scopeId, query)
+	}
+
+	async content(
+		databaseName: string,
+		scopeId: string,
+		artifactId: string,
+		routingGeneration = 1
+	): Promise<Uint8Array> {
+		return this.#client(databaseName, scopeId, routingGeneration).content(scopeId, artifactId)
 	}
 
 	async evidence(
 		databaseName: string,
 		scopeId: string,
-		artifactId: string
+		artifactId: string,
+		routingGeneration = 1
 	): Promise<ArtifactEvidence[]> {
 		const resource = record(
-			await this.#client(databaseName).supportingEvidence(scopeId, artifactId),
+			await this.#client(databaseName, scopeId, routingGeneration).supportingEvidence(
+				scopeId,
+				artifactId
+			),
 			'supporting evidence'
 		)
 		if (stringField(resource, 'artifactId', 'supporting evidence') !== artifactId) {
@@ -728,9 +999,13 @@ export class ArtifactFileService {
 	 * Debug-oriented scope browser. The store feed is forward-only, so walk it
 	 * in large pages and retain a bounded tail of the newest artifacts.
 	 */
-	async browse(databaseName: string, scopeId: string): Promise<ArtifactBrowseResult> {
+	async browse(
+		databaseName: string,
+		scopeId: string,
+		routingGeneration = 1
+	): Promise<ArtifactBrowseResult> {
 		try {
-			return await this.#browse(databaseName, scopeId)
+			return await this.#browse(databaseName, scopeId, routingGeneration)
 		} catch (error) {
 			if (error instanceof AppError) throw error
 			if (error instanceof ArtifactStoreProblem) {
@@ -740,8 +1015,12 @@ export class ArtifactFileService {
 		}
 	}
 
-	async #browse(databaseName: string, scopeId: string): Promise<ArtifactBrowseResult> {
-		const client = this.#client(databaseName)
+	async #browse(
+		databaseName: string,
+		scopeId: string,
+		routingGeneration: number
+	): Promise<ArtifactBrowseResult> {
+		const client = this.#client(databaseName, scopeId, routingGeneration)
 		const context = record(await client.context(), 'context')
 		const storeEpoch = stringField(context, 'storeEpoch', 'context')
 		const artifacts: BrowsedArtifact[] = []
@@ -847,7 +1126,119 @@ export class ArtifactFileService {
 			}
 			validateCommonClientContract(input)
 			descriptor.validate(input)
-			const client = this.#client(input.databaseName)
+			const client = this.#client(input.databaseName, input.scopeId, input.routingGeneration ?? 1)
+			if (
+				[
+					'client.detect-csv-statement',
+					'client.confirm-csv-statement',
+					'client.admit-csv-statement'
+				].includes(input.procedureKey)
+			) {
+				const sourceId = input.inputs.find((i) => i.role === 'source')!.artifactId
+				const sourceEnvelope = record(await client.artifact(input.scopeId, sourceId), 'CSV source')
+				const sourcePayload = record(sourceEnvelope.payload ?? null, 'CSV source payload')
+				const source = {
+					artifactId: sourceId,
+					originalName: String(sourcePayload.originalName ?? ''),
+					declaredMediaType: String(sourcePayload.declaredMediaType ?? ''),
+					base64: Buffer.from(await client.content(input.scopeId, sourceId)).toString('base64')
+				}
+				if (sourceEnvelope.typeKey !== 'core.file' || !isCsvSource(source))
+					invalidClientContract('CSV procedure requires a committed CSV source.')
+				const verified = await detectCsvStatement(source)
+				if (input.procedureKey === 'client.detect-csv-statement') {
+					if (!sameJson(input.artifacts[0]!.payload, verified))
+						invalidClientContract('CSV detection differs from the committed source bytes.')
+				} else {
+					const detectionId = input.inputs.find((i) => i.role === 'detection')!.artifactId
+					const detection = record(
+						await client.artifact(input.scopeId, detectionId),
+						'CSV detection'
+					)
+					if (
+						!verified.eligible ||
+						detection.typeKey !== 'banking.csv-statement-detection' ||
+						detection.typeVersion !== 1 ||
+						!sameJson(detection.payload, verified)
+					)
+						invalidClientContract('CSV detection is not eligible or differs from this source.')
+					const expected = {
+						sourceArtifactId: sourceId,
+						sourceSha256: verified.sourceSha256,
+						detectorVersion: CSV_DETECTOR_VERSION,
+						detectionArtifactId: detectionId
+					}
+					const confirmationId = await csvConfirmationIdentity(sourceId, verified.sourceSha256)
+					if (input.procedureKey === 'client.confirm-csv-statement') {
+						const decision = record(input.artifacts[0]!.payload, 'CSV decision')
+						if (
+							input.publicationId !== confirmationId ||
+							!['accepted', 'rejected'].includes(String(decision.decision)) ||
+							!sameJson(decision, { ...expected, decision: decision.decision })
+						)
+							invalidClientContract('CSV confirmation differs from the exact detection revision.')
+					} else {
+						const confirmed = await client.committedClientRun(input.scopeId, confirmationId)
+						if (
+							confirmed?.procedureKey !== 'client.confirm-csv-statement' ||
+							confirmed.procedureVersion !== 'client-v1' ||
+							!sameJson(confirmed.artifacts[0]?.payload, { ...expected, decision: 'accepted' }) ||
+							confirmed.receipt.artifacts[0]?.artifactId !==
+								input.inputs.find((i) => i.role === 'confirmation')!.artifactId ||
+							!sameJson(input.artifacts[0]!.payload, verified.statement)
+						)
+							invalidClientContract('CSV statement requires its exact stored human confirmation.')
+					}
+				}
+			}
+			if (
+				input.procedureKey === 'client.extract-statement-model' ||
+				input.procedureKey === 'client.extract-invoice-model'
+			) {
+				const sourceId = input.inputs.find((i) => i.role === 'source')!.artifactId
+				const source = record(await client.artifact(input.scopeId, sourceId), 'financial source')
+				const payload = record(source.payload ?? null, 'financial source payload')
+				if (
+					isCsvSource({
+						originalName: String(payload.originalName ?? ''),
+						declaredMediaType: String(payload.declaredMediaType ?? '')
+					})
+				)
+					invalidClientContract('CSV finance extraction must use the human-confirmed CSV lane.')
+			}
+			if (input.procedureKey === 'client.review-reconciliation') {
+				const candidateId = input.inputs.find((item) => item.role === 'match-candidate')!.artifactId
+				const candidate = record(
+					await client.artifact(input.scopeId, candidateId),
+					'match candidate'
+				)
+				if (candidate.typeKey !== 'reconciliation.match-candidate')
+					invalidClientContract('Review input is not a match candidate.')
+				const payload = record(candidate.payload ?? null, 'match candidate payload')
+				const producer = record(
+					await client.producerInputs(input.scopeId, candidateId),
+					'match candidate inputs'
+				)
+				const inputs = lineageInputs(producer.inputs)
+				const invoiceId = inputs.find(
+					(item) => item.role === 'open-item' && item.ordinal === 0
+				)?.artifactId
+				const transactionId = inputs.find(
+					(item) => item.role === 'transaction' && item.ordinal === payload.transactionInputOrdinal
+				)?.artifactId
+				if (
+					!invoiceId ||
+					!transactionId ||
+					invoiceId !== input.inputs.find((item) => item.role === 'open-item')!.artifactId ||
+					transactionId !== input.inputs.find((item) => item.role === 'transaction')!.artifactId
+				)
+					invalidClientContract('Review artifacts do not match the ranked evidence.')
+				const expectedId = await clientRunIdentity(
+					JSON.stringify(['reconciliation-decision-v2', invoiceId, transactionId])
+				)
+				if (input.publicationId !== expectedId)
+					invalidClientContract('Review publication must use its exact pair identity.')
+			}
 			const context = record(await client.context(), 'context')
 			const storeEpoch = stringField(context, 'storeEpoch', 'context')
 			const blobAuthorities: Record<string, ArtifactJson> = {}
@@ -865,8 +1256,14 @@ export class ArtifactFileService {
 						)
 					}
 					totalBlobBytes += bytes.length
-					if (totalBlobBytes > 4 * 1024 * 1024) {
-						throw new AppError(413, 'CLIENT_BLOB_TOO_LARGE', 'Client run blobs exceed 4 MiB.')
+					const maximumBlobBytes =
+						input.procedureKey === 'client.inspect-file' ? MAX_ARTIFACT_FILE_BYTES : 4 * 1024 * 1024
+					if (totalBlobBytes > maximumBlobBytes) {
+						throw new AppError(
+							413,
+							'CLIENT_BLOB_TOO_LARGE',
+							'Client run blobs exceed their procedure limit.'
+						)
 					}
 					const sha256 = createHash('sha256').update(bytes).digest('hex')
 					const claimId = randomUUID()
@@ -958,7 +1355,7 @@ export class ArtifactFileService {
 
 	async publishFile(input: PublishFileInput): Promise<PublishedFile> {
 		try {
-			const client = this.#client(input.databaseName)
+			const client = this.#client(input.databaseName, input.scopeId, input.routingGeneration ?? 1)
 			const context = await client.context()
 			const storeEpoch = stringField(context, 'storeEpoch', 'context')
 			const claimId = randomUUID()
@@ -998,7 +1395,10 @@ export class ArtifactFileService {
 							payload: {
 								originalName: input.originalName,
 								declaredMediaType: input.mediaType,
-								sourceKind: input.sourceKind
+								sourceKind: input.sourceKind,
+								...(input.executionEnvironment && {
+									executionEnvironment: input.executionEnvironment
+								})
 							},
 							blob: { sha256: input.sha256, length: input.length },
 							references: [],
