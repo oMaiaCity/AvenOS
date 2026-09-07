@@ -36,7 +36,7 @@
 		"@avenos/artifact-store": "workspace:*",
 		"@avenos/document-ingest": "workspace:*",
 		"@avenos/llm-client": "workspace:*",
-		"@myavenceo/aven-ceo": "^0.12.2",
+		"@myavenceo/aven-ceo": "0.13.2",
 		"@tauri-apps/api": "^2",
 		"@tauri-apps/plugin-opener": "^2.5.4",
 		"@xyflow/svelte": "^1.6.2",

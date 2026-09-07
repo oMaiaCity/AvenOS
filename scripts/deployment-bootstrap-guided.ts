@@ -1836,7 +1836,7 @@ function wizardSteps(selectedTargets: readonly Target[]): WizardStep[] {
 						title: 'Client download',
 						path: ['defaults', 'downloadUrl'],
 						label: 'Download URL',
-						defaultValue: 'https://github.com/MyAvenCEO/avenOS/releases/latest',
+						defaultValue: 'https://github.com/MyAvenCEO/avenOS/releases',
 						validate: (value: string) =>
 							value.startsWith('https://') ? undefined : 'The download URL must use HTTPS.',
 						description:

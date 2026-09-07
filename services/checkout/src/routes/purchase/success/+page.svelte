@@ -16,8 +16,10 @@ const name = $derived(page.url.searchParams.get('name') ?? '')
 	<h1 class="flow-card-heading">Zahlung abgeschlossen</h1>
 	<p class="flow-card-description">Danke — der Kauf ist bei uns angekommen.</p>
 	{#if name}
-		<p class="text text--label">Gekaufter Name</p>
-		<div class="flow-card-code">{name}</div>
+		<div class="flow-card-code">
+			<span class="flow-card-code-label">Gekaufter Name</span>
+			<strong class="flow-card-code-value">{name}</strong>
+		</div>
 	{/if}
 	<div class="steps" aria-hidden="true">
 		<span class="step" aria-selected="true"></span>

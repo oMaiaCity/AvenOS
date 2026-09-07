@@ -36,8 +36,10 @@ async function pay() {
 		<img src="/aven-logo.svg" alt="" width="56" height="56">
 	</div>
 	<h1 class="flow-card-heading">Checkout</h1>
-	<p class="text text--label">Kauf für</p>
-	<div class="flow-card-code">{params.name}</div>
+	<div class="flow-card-code">
+		<span class="flow-card-code-label">Kauf für</span>
+		<strong class="flow-card-code-value">{params.name}</strong>
+	</div>
 	<p class="flow-card-description">{params.email}</p>
 	{#if error}
 		<div class="flow-card-alert">{error}</div>

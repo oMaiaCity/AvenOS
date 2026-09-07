@@ -8,7 +8,7 @@
         "@biomejs/biome": "^2.4.14",
         "@commitlint/cli": "^21.0.2",
         "@commitlint/config-conventional": "^21.0.2",
-        "@myavenceo/aven-ceo": "^0.12.2",
+        "@myavenceo/aven-ceo": "0.13.2",
         "@myavenceo/aven-vibes": "^0.9.5",
         "@playwright/test": "^1.62.1",
         "@polar-sh/sdk": "0.49.0",
@@ -30,7 +30,7 @@
         "@avenos/artifact-store": "workspace:*",
         "@avenos/document-ingest": "workspace:*",
         "@avenos/llm-client": "workspace:*",
-        "@myavenceo/aven-ceo": "^0.12.2",
+        "@myavenceo/aven-ceo": "0.13.2",
         "@tauri-apps/api": "^2",
         "@tauri-apps/plugin-opener": "^2.5.4",
         "@xyflow/svelte": "^1.6.2",
@@ -222,8 +222,8 @@
         "@avenos/aven-customer-contracts": "workspace:*",
         "@avenos/aven-hosting": "workspace:*",
         "@avenos/aven-identity": "workspace:*",
-        "@avenos/http-boundary": "workspace:*",
         "@avenos/document-ingest": "workspace:*",
+        "@avenos/http-boundary": "workspace:*",
         "jose": "6.2.9",
         "pg": "8.16.3",
         "pino": "10.3.1",
@@ -243,7 +243,7 @@
       "dependencies": {
         "@avenos/aven-identity": "workspace:*",
         "@avenos/http-boundary": "workspace:*",
-        "@myavenceo/aven-ceo": "^0.12.2",
+        "@myavenceo/aven-ceo": "0.13.2",
         "@polar-sh/sdk": "^0.49.0",
         "dotenv": "17.3.1",
         "drizzle-orm": "0.45.2",
@@ -280,7 +280,7 @@
         "@avenos/aven-identity": "workspace:*",
         "@avenos/http-boundary": "workspace:*",
         "@better-auth/passkey": "1.6.23",
-        "@myavenceo/aven-ceo": "^0.12.2",
+        "@myavenceo/aven-ceo": "0.13.2",
         "better-auth": "1.6.23",
         "dotenv": "17.3.1",
         "drizzle-orm": "0.45.2",
@@ -680,7 +680,7 @@
 
     "@mdit-vue/types": ["@mdit-vue/types@3.0.2", "", {}, "sha512-00aAZ0F0NLik6I6Yba2emGbHLxv+QYrPH00qQ5dFKXlAo1Ll2RHDXwY7nN2WAfrx2pP+WrvSRFTGFCNGdzBDHw=="],
 
-    "@myavenceo/aven-ceo": ["@myavenceo/aven-ceo@0.12.2", "https://npm.pkg.github.com/download/@myavenceo/aven-ceo/0.12.2/86b228c246501ee432d131aa8cc58a3ee5299ff6", { "dependencies": { "@myavenceo/aven-vibes": "^0.9.5" } }, "sha512-KRaxcbofYgGsLRCoawqXH27XUap3EiA2p8hazQyEze/dE77c5l+aiE0J+2Lk/NMY5nYxeoKkm4pYf5gwP5M/1A=="],
+    "@myavenceo/aven-ceo": ["@myavenceo/aven-ceo@0.13.2", "https://npm.pkg.github.com/download/@myavenceo/aven-ceo/0.13.2/545b5bc07dae12c0e59774fa129a575d50c1938a", { "dependencies": { "@myavenceo/aven-vibes": "^0.9.5" } }, "sha512-ZdaPer3GplqDAuI/P2Huhrz1ZBPyZ/L67tT5vTdOpOp7ATrZTYRIjmGvuPgEqcIhD7jBI7nDaZsf4qsjWSOGew=="],
 
     "@myavenceo/aven-vibes": ["@myavenceo/aven-vibes@0.9.5", "https://npm.pkg.github.com/download/@myavenceo/aven-vibes/0.9.5/89abe72a8a11cba6f80f03445391563633a4b54c", { "dependencies": { "dompurify": "^3.3.3", "marked": "^15.0.12" } }, "sha512-dS0k+3J4+huqgjCjfcVpexmcIL83KIjMBLC0Tl0LK8woGHFHDvq37YSKkLmlve1/EIxUos+5f8GZfj8ikFNQMA=="],
 
