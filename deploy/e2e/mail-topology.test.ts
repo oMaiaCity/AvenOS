@@ -1,5 +1,15 @@
 import { expect, test } from 'bun:test'
 
+test('production SMTP credentials belong only to the email worker, not checkout HTTP', async () => {
+	const compose = Bun.YAML.parse(
+		await Bun.file(new URL('../platform/docker-compose.yml', import.meta.url)).text()
+	)
+	expect(compose.services.checkout.environment.SMTP_URL).toBeUndefined()
+	expect(compose.services.checkout.environment.SMTP_FROM).toBeUndefined()
+	expect(compose.services['email-worker'].environment.SMTP_URL).toBe('${SMTP_URL:?required}')
+	expect(compose.services['email-worker'].environment.SMTP_FROM).toBe('${SMTP_FROM:?required}')
+})
+
 test('identity mail channels point at the actual E2E checkout listener', async () => {
 	const compose = Bun.YAML.parse(
 		await Bun.file(new URL('./docker-compose.yml', import.meta.url)).text()
