@@ -64,7 +64,22 @@ async function waitUntilReady(origin: string, process: ChildProcess): Promise<vo
 }
 
 async function terminate(process: ChildProcess): Promise<void> {
-	if (process.exitCode !== null || process.signalCode !== null) return
+	// AppImage's launcher can exit before its application. The detached driver
+	// owns one process group, so cleanup also reaches those adopted descendants.
+	const groupSignal = (signal: NodeJS.Signals) => {
+		if (process.pid && process.pid > 1) {
+			try {
+				globalThis.process.kill(-process.pid, signal)
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+			}
+		}
+	}
+	groupSignal('SIGTERM')
+	if (process.exitCode !== null || process.signalCode !== null) {
+		groupSignal('SIGKILL')
+		return
+	}
 
 	let resolveExit: (() => void) | undefined
 	const exited = new Promise<void>((resolve) => {
@@ -78,6 +93,7 @@ async function terminate(process: ChildProcess): Promise<void> {
 		await exited
 	}
 	if (resolveExit) process.off('exit', resolveExit)
+	groupSignal('SIGKILL')
 }
 
 async function removeStateDirectory(stateDirectory: string): Promise<void> {
@@ -112,6 +128,7 @@ export class TauriSession {
 				'/usr/bin/WebKitWebDriver'
 			],
 			{
+				detached: true,
 				stdio: ['ignore', 'pipe', 'pipe'],
 				env: {
 					...process.env,

@@ -60,7 +60,7 @@
 		"platformVolumeSizeGb": 80,
 		"sshAllowedCidrs": "0.0.0.0/0,::/0",
 		"acmeEmail": "ops@aven.ceo",
-		"downloadUrl": "https://github.com/MyAvenCEO/avenOS/releases/latest"
+		"downloadUrl": "https://github.com/MyAvenCEO/avenOS/releases"
 	},
 	"providers": {
 		"dnsProjectId": "4567890",

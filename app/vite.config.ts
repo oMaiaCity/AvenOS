@@ -56,7 +56,8 @@ function loadPersonalEnv(): Record<string, string> {
 }
 
 export default defineConfig(({ mode }) => {
-	const loaded = { ...loadPersonalEnv(), ...loadEnv(mode, repoRoot, '') }
+	const clientRelease = process.env.AVENOS_CLIENT_RELEASE_BUILD === 'true'
+	const loaded = clientRelease ? {} : { ...loadPersonalEnv(), ...loadEnv(mode, repoRoot, '') }
 	for (const key of Object.keys(loaded)) {
 		if (process.env[key] === undefined) process.env[key] = loaded[key]
 	}
@@ -76,7 +77,7 @@ export default defineConfig(({ mode }) => {
 		// Bake the package.json version (incl. the -next.N build suffix) for the Profile "App version" row.
 		define: { __APP_VERSION__: JSON.stringify(appVersion) },
 		// App-local env only — repo-root `.env` is Tauri/P2P; loadEnv below still merges it at startup.
-		envDir: __dirname,
+		envDir: clientRelease ? false : __dirname,
 		envPrefix: ['VITE_', 'PUBLIC_', 'TAURI_ENV_'],
 		cacheDir,
 		clearScreen: false,
