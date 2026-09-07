@@ -77,7 +77,7 @@ export function createAuth(
 			}),
 			passkey({
 				rpID: config.WEBAUTHN_RP_ID,
-				rpName: 'Aven',
+				rpName: 'aven.id',
 				origin: origins,
 				authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
 				registration: {
