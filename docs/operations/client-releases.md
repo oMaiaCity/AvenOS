@@ -78,7 +78,11 @@ AVEN_API_BASE_URL=https://api.next.aven.ceo \
 bun scripts/build-client-release.ts linux-x64
 ```
 
-Use `macos-arm64` on an Apple Silicon Mac. For `android-arm64`, use Linux x64 with
+Use `macos-arm64` on an Apple Silicon Mac with Xcode 16.4 selected. The native
+passkey bridge requires Swift tools 6.1; Xcode 15.4's Swift 5.10 cannot build it.
+CI uses `macos-15` and explicitly selects Xcode 16.4 before Rust compilation,
+rather than relying on the runner's default Xcode.
+For `android-arm64`, use Linux x64 with
 JDK 17, Android SDK 36, NDK `27.2.12479018`, and the `aarch64-linux-android` Rust target.
 Set `JAVA_HOME`, `ANDROID_HOME`, and `NDK_HOME` to those installations. Output is
 `dist/client-release/`. The build removes only its platform's previous bundle output
