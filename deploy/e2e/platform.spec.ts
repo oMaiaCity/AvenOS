@@ -1014,11 +1014,33 @@ test('fresh split stack: checkout, identity, facade, and managed hosting', async
 	const secondContext = await browser.newContext({ storageState: await context.storageState() })
 	await secondContext.credentials.install()
 	const secondPage = await secondContext.newPage()
-	await secondPage.goto(`${identityBrowser}/dashboard`)
-	await expect(
-		secondPage.getByRole('list', { name: 'Passkeys' }).getByRole('listitem')
-	).toHaveCount(1)
-	await secondPage.getByLabel('Name for your new passkey').fill('')
+	// Account and passkey-list fetches finish independently. A late account must
+	// never replace a name the user has already typed or intentionally cleared.
+	for (const earlyName of ['My early choice', '']) {
+		let releaseAccount = () => {}
+		const accountGate = new Promise<void>((resolve) => {
+			releaseAccount = resolve
+		})
+		await secondPage.route('**/api/auth/get-session**', async (route) => {
+			await accountGate
+			await route.continue()
+		})
+		try {
+			await secondPage.goto(`${identityBrowser}/dashboard`)
+			await expect(
+				secondPage.getByRole('list', { name: 'Passkeys' }).getByRole('listitem')
+			).toHaveCount(1)
+			await expect(secondPage.locator('.flow-card-description')).toHaveText('Loading…')
+			await secondPage.getByLabel('Name for your new passkey').fill('Temporary input')
+			await secondPage.getByLabel('Name for your new passkey').fill(earlyName)
+			releaseAccount()
+			await expect(secondPage.locator('.flow-card-description')).toHaveText(email)
+			await expect(secondPage.getByLabel('Name for your new passkey')).toHaveValue(earlyName)
+		} finally {
+			releaseAccount()
+			await secondPage.unroute('**/api/auth/get-session**')
+		}
+	}
 	await expect(secondPage.getByRole('button', { name: 'Add another passkey' })).toBeDisabled()
 	await secondPage.getByLabel('Name for your new passkey').fill('Spare security key')
 	await recordPasskeyCreation(secondPage)
