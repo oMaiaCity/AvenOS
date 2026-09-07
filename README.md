@@ -35,7 +35,7 @@ targets behind one shared identity service.
 The current application brings these parts into one flow:
 
 - Passkeys establish the account identity, and another passkey can be added from the
-  identity dashboard.
+  identity dashboard. Each passkey has an editable name.
 - Checkout records purchases, subscriptions, invoices, and every verified Polar
   webhook, including event types the product does not act on yet.
 - Documents can be imported, processed, stored as artifacts, and discussed in the

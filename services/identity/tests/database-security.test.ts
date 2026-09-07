@@ -21,6 +21,7 @@ describe.skipIf(!adminUrl)('identity database security boundaries', () => {
 	let admin: pg.Pool
 	let database: DatabaseContext
 	let passkeys: PasskeyService
+	let auth: ReturnType<typeof createAuth>
 	let adapter: ReturnType<ReturnType<typeof enrollmentAdapter>>
 	beforeAll(async () => {
 		admin = new pg.Pool({ connectionString: adminUrl })
@@ -39,7 +40,7 @@ describe.skipIf(!adminUrl)('identity database security boundaries', () => {
 		database = openDatabase(url.href)
 		await migrate(database, resolve('migrations'))
 		passkeys = new PasskeyService(database.pool, false)
-		const auth = createAuth(
+		auth = createAuth(
 			identityConfigSchema.parse({
 				DATABASE_URL: url.href,
 				BETTER_AUTH_SECRET: 'identity-security-test-secret-32-bytes',
@@ -208,6 +209,48 @@ describe.skipIf(!adminUrl)('identity database security boundaries', () => {
 		await enroll(userId, session.id)
 		expect(await passkeys.list(userId)).toHaveLength(2)
 		expect(await passkeys.issueSetupLink(userId)).toBeNull()
+	})
+	test('passkey rename persists only for its owner and does not change credential material', async () => {
+		const owner = await account()
+		const token = await passkeys.issueSetupLink(owner)
+		if (!token) throw new Error('The fresh account did not receive a setup link.')
+		const bootstrap = await setupSession(owner, token)
+		await enroll(owner, bootstrap.id)
+		const [key] = await passkeys.list(owner)
+		const before = (await database.pool.query('SELECT * FROM passkey WHERE id=$1', [key.id]))
+			.rows[0]
+		async function rename(userId: string | null, name: string) {
+			const token = randomUUID()
+			if (userId)
+				await adapter.create({
+					model: 'session',
+					data: {
+						userId,
+						token,
+						expiresAt: new Date(Date.now() + 1800_000),
+						createdAt: new Date(),
+						updatedAt: new Date()
+					}
+				})
+			return auth.handler(
+				new Request('http://localhost:3100/api/auth/passkey/update-passkey', {
+					method: 'POST',
+					headers: {
+						'content-type': 'application/json',
+						origin: 'http://localhost:3100',
+						...(userId ? { authorization: `Bearer ${token}` } : {})
+					},
+					body: JSON.stringify({ id: key.id, name })
+				})
+			)
+		}
+		expect((await rename(null, 'Anonymous')).status).toBe(401)
+		expect((await rename(await account(), 'Other account')).status).toBe(401)
+		expect((await rename(owner, '   ')).status).toBe(400)
+		expect((await rename(owner, '  My everyday passkey  ')).status).toBe(200)
+		expect((await passkeys.list(owner))[0].name).toBe('My everyday passkey')
+		const after = (await database.pool.query('SELECT * FROM passkey WHERE id=$1', [key.id])).rows[0]
+		expect(after).toEqual({ ...before, name: 'My everyday passkey' })
 	})
 	test('cleanup deletes one bounded batch without removing unexpired replay markers', async () => {
 		const service = new ProofOfWorkService(
