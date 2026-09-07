@@ -205,8 +205,10 @@ onMount(() => {
 				<p class="flow-card-description">{message}</p>
 
 				{#if userCode}
-					<p class="text text--label">Gerätecode</p>
-					<div class="flow-card-code">{userCode}</div>
+					<div class="flow-card-code">
+						<span class="flow-card-code-label">Gerätecode</span>
+						<strong class="flow-card-code-value">{userCode}</strong>
+					</div>
 				{/if}
 
 				<div class="flow-card-actions stack">

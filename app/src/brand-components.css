@@ -1238,59 +1238,77 @@
 	.flow-card {
 		display: grid;
 		justify-items: center;
-		gap: var(--space-tight);
+		gap: 0;
 		margin-inline: auto;
-		max-inline-size: 26rem;
-		padding: var(--space-section) var(--space-loose);
-		border-radius: var(--radius-xl);
-		border: 1px solid var(--color-border);
-		background: var(--color-surface-raised);
-		box-shadow: var(--shadow-raised);
+		max-inline-size: 32rem;
+		padding: clamp(2rem, 6cqi, 3.25rem);
+		border-radius: var(--radius-2xl);
+		border: 1px solid var(--color-border-soft);
+		background: color-mix(in srgb, var(--color-surface-raised) 82%, transparent);
+		box-shadow: var(--shadow-ambient);
 		text-align: center;
 		container-type: inline-size;
-		container-name: flow-card;
 		inline-size: 100%;
+		backdrop-filter: blur(var(--blur-glass));
+		container-name: flow-card;
 		min-inline-size: 0;
 	}
 
 	.flow-card-eyebrow {
-		margin: 0;
+		margin: 0 0 var(--space-snug);
 		color: var(--color-foreground-quiet);
+		font-size: 0.7rem;
+		letter-spacing: 0.16em;
+		font-weight: 700;
+		text-transform: uppercase;
 	}
 
 	.flow-card-heading {
-		margin: 0;
-		font-size: var(--fs-title);
-		font-weight: 600;
-		line-height: 1.25;
+		margin: 0.67em 0;
+		font-size: clamp(var(--fs-display), 9.1cqi, var(--fs-display-lg));
+		font-weight: 700;
+		line-height: 1.12;
+		letter-spacing: var(--tracking-tighter, -0.035em);
+		max-inline-size: 25rem;
 		text-wrap: balance;
 		color: var(--color-foreground);
 	}
 
 	.flow-card-description {
-		margin: 0;
-		max-inline-size: 40ch;
-		font-size: var(--fs-meta);
-		line-height: 1.55;
+		margin: var(--space-comfortable) 0 0;
+		max-inline-size: 25rem;
+		font-size: 0.95rem;
+		line-height: 1.65;
 		color: var(--color-foreground-soft);
 	}
 
 	.flow-card-code {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--space-tight);
-		margin-block: var(--space-tight);
-		padding: var(--space-tight) var(--space-comfortable);
-		border-radius: var(--radius-sm);
+		display: grid;
+		gap: var(--space-hairline);
+		inline-size: 100%;
+		margin-block-start: 1.75rem;
+		padding: var(--space-comfortable) var(--space-loose);
+		border-radius: 1rem;
 		border: 1px solid var(--color-border-soft);
-		background: var(--color-surface-sunken);
-		font-family: var(--font-mono);
-		font-size: var(--fs-lead);
-		font-weight: 600;
-		letter-spacing: var(--tracking-wider);
-		font-variant-numeric: tabular-nums;
+		background: color-mix(in srgb, var(--color-surface-sunken) 78%, transparent);
 		user-select: all;
-		color: var(--color-foreground);
+	}
+
+	.flow-card-code-label {
+		font-size: 0.65rem;
+		font-weight: 650;
+		letter-spacing: 0.15em;
+		text-transform: uppercase;
+		color: var(--color-foreground-quiet);
+	}
+
+	.flow-card-code-value {
+		font-family: var(--font-mono);
+		font-size: var(--fs-hero);
+		font-weight: 700;
+		letter-spacing: 0.17em;
+		font-variant-numeric: tabular-nums;
+		color: var(--color-primary);
 	}
 
 	.flow-card-alert {
@@ -1301,34 +1319,53 @@
 		background: var(--color-error-surface);
 		font-size: var(--fs-meta);
 		color: var(--color-error-ink);
+		margin-block-start: var(--space-comfortable);
 	}
 
 	.flow-card-actions {
 		display: flex;
 		flex-wrap: wrap;
+		align-items: center;
 		justify-content: center;
-		gap: var(--space-tight);
-		margin-block-start: var(--space-tight);
+		gap: var(--space-comfortable);
 		inline-size: 100%;
+		margin-block-start: var(--space-comfortable);
+
+		& > .btn {
+			min-block-size: 3.25rem;
+		}
+		& > .btn:only-child {
+			flex: 1;
+		}
 	}
 
 	.flow-card-trust {
-		margin: var(--space-tight) 0 0;
-		font-size: var(--fs-micro);
+		margin: 1.6rem 0 0;
+		font-size: 0.72rem;
 		color: var(--color-foreground-quiet);
 	}
 
 	.flow-card-crest {
 		display: grid;
 		place-items: center;
-		inline-size: 3rem;
-		block-size: 3rem;
-		margin-block-end: var(--space-tight);
-		border-radius: var(--radius-full);
-		border: 1px solid var(--color-border-soft);
-		background: var(--color-muted);
-		color: var(--color-foreground-soft);
+		inline-size: 4rem;
+		block-size: 4rem;
+		margin-block-end: var(--space-loose);
+		border-radius: 1rem;
+		background: var(--color-primary);
+		color: var(--color-primary-foreground);
+		box-shadow: var(--shadow-floating);
 		overflow: hidden;
+
+		& svg {
+			inline-size: 1.75rem;
+			block-size: 1.75rem;
+			stroke-width: 1.7;
+		}
+		& img {
+			inline-size: 1.75rem;
+			block-size: 1.75rem;
+		}
 	}
 
 	.flow-card-status {
@@ -1343,27 +1380,27 @@
 	.flow-card--status-success {
 
 		& .flow-card-crest {
-			background: var(--color-success-surface);
-			border-color: var(--color-success-border);
-			color: var(--color-success-ink);
+			background: var(--color-success);
+			border-color: transparent;
+			color: var(--color-success-foreground);
 		}
 	}
 
 	.flow-card--status-error {
 
 		& .flow-card-crest {
-			background: var(--color-error-surface);
-			border-color: var(--color-error-border);
-			color: var(--color-error-ink);
+			background: var(--color-error);
+			border-color: transparent;
+			color: var(--color-error-foreground);
 		}
 	}
 
 	.flow-card--status-waiting {
 
 		& .flow-card-crest {
-			background: var(--color-progress-surface);
-			border-color: var(--color-progress-border);
-			color: var(--color-progress-ink);
+			background: var(--color-progress);
+			border-color: transparent;
+			color: var(--color-progress-foreground);
 		}
 	}
 
@@ -4493,6 +4530,27 @@
 	.site-footer--ground-page {
 		background: var(--color-surface-raised);
 		color: var(--color-foreground);
+	}
+
+	.site-footer--layout-inline {
+		padding-block: var(--space-loose);
+		padding-inline: var(--space-comfortable);
+		background: transparent;
+		color: inherit;
+		border-block-start: 1px solid var(--color-border-soft);
+
+		& .site-footer-inner {
+			display: flex;
+			flex-wrap: wrap;
+			justify-content: center;
+			gap: var(--space-tight) var(--space-loose);
+			padding-block: 0;
+			text-align: center;
+			font-size: var(--fs-micro);
+		}
+		& .site-footer-link {
+			color: var(--color-foreground-soft);
+		}
 	}
 
 	.rule-label {
