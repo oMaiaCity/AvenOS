@@ -1,12 +1,13 @@
 import type pg from 'pg'
 import { describe, expect, test, vi } from 'vitest'
-import { CheckoutCapabilities, queueCapability } from '../src/lib/server/capabilities.js'
+import {
+	CheckoutCapabilities,
+	mailProviderCapability,
+	queueCapability
+} from '../src/lib/server/capabilities.js'
 import type { ServerConfig } from '../src/lib/server/config.js'
 
 const provider = vi.hoisted(() => ({ enabled: true, calls: 0 }))
-vi.mock('../src/lib/server/email/provider-health.js', () => ({
-	observeMailProvider: async () => ({ healthy: true, code: 'OK' })
-}))
 vi.mock('@polar-sh/sdk', () => ({
 	Polar: class {
 		webhooks = {
@@ -36,12 +37,16 @@ vi.mock('@polar-sh/sdk', () => ({
 	}
 }))
 
+const metadata = () => ({
+	smtpVerifiedAt: Date.now(),
+	providerHealth: { healthy: true, code: 'OK', checkedAt: Date.now() }
+})
 const monitor = () => {
 	const query = vi.fn(async (sql: string) => ({
 		rows: sql.includes('email_queue')
 			? [{ dead: 0, oldest: null, sent: true }]
 			: sql.includes('worker_heartbeats')
-				? [{ fresh: true, metadata: { smtpVerifiedAt: Date.now() } }]
+				? [{ fresh: true, metadata: metadata() }]
 				: [{ dead: 0, oldest: null }]
 	}))
 	return {
@@ -99,7 +104,7 @@ describe('checkout capability health', () => {
 			rows: sql.includes('email_queue')
 				? [{ dead: 0, oldest: null, sent: false }]
 				: sql.includes('worker_heartbeats')
-					? [{ fresh: true, metadata: { smtpVerifiedAt: Date.now() } }]
+					? [{ fresh: true, metadata: metadata() }]
 					: [{ dead: 0, oldest: null }]
 		}))
 		await capability.refresh()
@@ -107,5 +112,33 @@ describe('checkout capability health', () => {
 		expect(result.status).toBe('healthy')
 		expect(result.observations.smtp_acceptance.code).toBe('RECENT_SMTP_ACCEPTANCE_UNPROVEN')
 		expect(result.observations.inbox_delivery.status).toBe('unverified')
+	})
+	test('worker observations are required, fresh and safe to publish without SMTP credentials', () => {
+		const now = 200_000
+		for (const value of [
+			undefined,
+			{},
+			{ healthy: true, code: 'OK', checkedAt: 20_000 },
+			{ healthy: true, code: 'OK', checkedAt: now + 1 },
+			{ checkedAt: Number.NaN }
+		])
+			expect(mailProviderCapability(value, true, now).status).toBe('degraded')
+		const healthy = { healthy: true, code: 'OK', checkedAt: now }
+		expect(mailProviderCapability(healthy, false, now).status).toBe('degraded')
+		expect(mailProviderCapability(healthy, true, now).status).toBe('healthy')
+		expect(
+			mailProviderCapability(
+				{ healthy: false, code: 'private provider detail', checkedAt: now },
+				true,
+				now
+			).code
+		).toBe('SMTP_PROVIDER_OBSERVATION_FAILED')
+		expect(
+			mailProviderCapability(
+				{ healthy: false, code: 'SMTP_SENDING_CAPACITY_UNAVAILABLE', checkedAt: now },
+				true,
+				now
+			).code
+		).toBe('SMTP_SENDING_CAPACITY_UNAVAILABLE')
 	})
 })
