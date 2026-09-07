@@ -1,8 +1,13 @@
 # Aven email templates
 
 The emails in this directory are ordinary Maizzle Vue templates. They compile
-to email-safe HTML with inline CSS and a plaintext alternative, while the Aven
-API keeps its existing typed, synchronous rendering contract.
+to email-safe HTML with inline CSS and a plaintext alternative, while checkout
+keeps its typed, synchronous rendering contract.
+
+`identity-security-email` uses the same branded frame for setup-link use, first-passkey
+registration and replacement-link delivery. Security-event producers choose a fixed
+message and an identity-origin action URL; they cannot supply arbitrary HTML. Purchase
+setup copy states the seven-day expiry. These messages do not introduce another login method.
 
 ## Quick start
 
@@ -32,7 +37,9 @@ email-templates/
 ├── purchase-link-email.vue        purchase-link email source
 ├── purchase-link-email.json       subject and preview fixture
 ├── purchase-completed-email.vue   purchase-completed email source
-└── purchase-completed-email.json  subject and preview fixture
+├── purchase-completed-email.json  subject and preview fixture
+├── identity-security-email.vue    setup and passkey security messages
+└── identity-security-email.json   subject and preview fixture
 ```
 
 The JSON files are development metadata. They contain a subject and realistic
@@ -70,7 +77,7 @@ JSON, and templates that Maizzle cannot render.
 ## Commands
 
 All commands work at the repository root. They also work from
-`services/aven-api`.
+`services/checkout`.
 
 | Command | Purpose |
 | --- | --- |
@@ -79,7 +86,7 @@ All commands work at the repository root. They also work from
 | `bun run email:compile` | Regenerate the production template artifact |
 | `bun run email:check` | Fail if the generated artifact is stale |
 
-`bun run test:api` and `bun run build:api` include the freshness check.
+`bun run test:checkout` and `bun run build:checkout` include the freshness check.
 
 ## How production rendering works
 
@@ -107,7 +114,7 @@ design:
 4. Define additional compiled variants there if the template has conditional
    visible states.
 5. Add the new template to the runtime variant selection and tests.
-6. Run `bun run email:compile`, then `bun run test:api`.
+6. Run `bun run email:compile`, then `bun run test:checkout` from the repository root.
 
 Keeping the catalog explicit prevents the local editor from reading or writing
 arbitrary files.

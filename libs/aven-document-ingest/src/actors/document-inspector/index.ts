@@ -2,6 +2,7 @@ import { Actor } from '@avenos/actors'
 import type { DocumentDecoder, DocumentSource } from '../../shared'
 import {
 	artifact,
+	bytesToBase64,
 	failure,
 	MAX_DOCUMENT_PAGES,
 	manifest,
@@ -51,7 +52,12 @@ export function createDocumentInspectorActor(decoder: DocumentDecoder): Actor {
 										pageCount: document.pages.length,
 										encrypted: document.encrypted
 									},
-									'inspection'
+									'inspection',
+									0,
+									{
+										mediaType: 'application/json',
+										base64: bytesToBase64(new TextEncoder().encode(JSON.stringify(document)))
+									}
 								)
 							],
 							evidence: [

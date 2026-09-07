@@ -28,6 +28,7 @@ export const session = pgTable('session', {
 	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
 	ipAddress: text('ip_address'),
 	userAgent: text('user_agent'),
+	setupTokenHash: text('setup_token_hash'),
 	userId: text('user_id')
 		.notNull()
 		.references(() => user.id, { onDelete: 'cascade' })
@@ -89,6 +90,7 @@ export const setupLinks = pgTable('setup_links', {
 		.primaryKey()
 		.references(() => user.id, { onDelete: 'cascade' }),
 	tokenHash: text('token_hash').notNull().unique(),
+	expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
 	lastUsedAt: timestamp('last_used_at', { withTimezone: true })
 })
@@ -113,14 +115,9 @@ export const deviceCode = pgTable(
 	]
 )
 
-export const proofOfWorkChallenges = pgTable('proof_of_work_challenges', {
+export const proofOfWorkRedemptions = pgTable('proof_of_work_redemptions', {
 	id: text('id').primaryKey(),
-	nonce: text('nonce').notNull(),
-	purpose: text('purpose').notNull(),
-	difficultyBits: integer('difficulty_bits').notNull(),
-	expiresAt: bigint('expires_at', { mode: 'number' }).notNull(),
-	usedAt: bigint('used_at', { mode: 'number' }),
-	createdAt: bigint('created_at', { mode: 'number' }).notNull()
+	expiresAt: bigint('expires_at', { mode: 'number' }).notNull()
 })
 
 export const jwks = pgTable('jwks', {
@@ -139,6 +136,6 @@ export const schema = {
 	passkey,
 	setupLinks,
 	deviceCode,
-	proofOfWorkChallenges,
+	proofOfWorkRedemptions,
 	jwks
 }

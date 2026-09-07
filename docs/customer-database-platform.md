@@ -140,6 +140,24 @@ with the environment over time.
 
 ## Non-negotiable invariants
 
+### Customer membership permissions
+
+The facade reads current membership for every admitted operation. Identity-wide admin
+status does not replace customer membership. Signed grants carry `membershipRole`, and
+signing and verification both enforce this default-deny component/action matrix:
+
+| Component | Owner and admin | Member |
+| --- | --- | --- |
+| Artifacts | Read and write | Read and write |
+| Intents | Read, write, delete and merge | Read and write |
+| Actor runs | Read and write | Read and write |
+
+Unknown roles, components and actions fail closed. Adding a service or action requires
+an explicit matrix decision. Membership changes affect new facade requests immediately;
+an already-issued downstream grant remains bounded by its short expiry and route fencing.
+
+### Platform invariants
+
 1. **One customer environment maps to one physical customer database at a time.** A
    migration may prepare a replacement, but only one routing generation is writable.
 2. **Customer-owned durable state is never stored in a shared product database.**

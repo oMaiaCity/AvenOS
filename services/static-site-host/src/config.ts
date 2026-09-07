@@ -57,7 +57,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): SiteHostConfig
 		dataRoot: env.SITE_HOST_DATA_ROOT ?? '/var/lib/aven/static-sites',
 		maxFiles: positive(env.SITE_HOST_MAX_FILES, 10000),
 		maxBytes: positive(env.SITE_HOST_MAX_BYTES, 268435456),
-		maxConcurrentSyncs: positive(env.SITE_HOST_MAX_CONCURRENT_SYNCS, 4)
+		maxConcurrentSyncs: positive(env.SITE_HOST_MAX_CONCURRENT_SYNCS, 2)
 	}
 	const token = required(env, 'SITE_HOST_DIRECTORY_BEARER_TOKEN')
 	if (!/^[A-Za-z0-9_-]{32,128}$/.test(token)) throw new Error('invalid site host bearer token')

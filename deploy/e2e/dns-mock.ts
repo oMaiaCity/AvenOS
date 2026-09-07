@@ -51,4 +51,7 @@ server.on('message', (message, remote) => {
 		// Malformed fixture traffic gets no response.
 	}
 })
-server.bind(5353, '127.0.0.1')
+export const ready = new Promise<void>((resolve, reject) => {
+	server.once('error', reject)
+	server.bind(5353, '127.0.0.1', () => resolve())
+})

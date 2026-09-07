@@ -11,7 +11,7 @@ describe('site host configuration', () => {
 	test('derives a same-origin status endpoint and bounded concurrency', () => {
 		const config = loadConfig(validEnvironment)
 		expect(config.statusUrl).toBe('http://app:3000/internal/v1/static-sites/status')
-		expect(config.maxConcurrentSyncs).toBe(4)
+		expect(config.maxConcurrentSyncs).toBe(2)
 		expect(config.dnsServers).toEqual([])
 	})
 

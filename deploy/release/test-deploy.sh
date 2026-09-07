@@ -93,6 +93,8 @@ run_target() (
   export GHCR_USER=test
   export GHCR_TOKEN=test
   export OPERATIONS_IMAGE=operations:test
+  export DATABASE_IMAGE=database:test
+  export PROXY_IMAGE=proxy:test
   export BACKUP_REPOSITORY_BASE=s3:https://example.test/backup
   export BACKUP_S3_ACCESS_KEY_ID=test
   export BACKUP_S3_SECRET_ACCESS_KEY=test

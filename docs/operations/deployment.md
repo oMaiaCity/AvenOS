@@ -2,12 +2,15 @@
 
 Status: authoritative
 
-The deployment system operates three protected targets through two GitHub workflows.
-Both accept `all`, which processes `identity`, `next`, and production in that fixed
-order without repeating the release proof or image build per target. `identity` owns the shared account and passkey service. `next` and
-production own separate platform hosts, databases, credentials, backups, and public
-origins. A release branch is only a candidate ref; choosing a deployment target is a
-separate protected action.
+Build once in protected `next`, test there, and deploy the same image digests to
+production. Development on `main` never receives deployment or recovery credentials.
+Shared identity follows production trust because both platforms depend on it.
+
+Three workflows own separate operations: `platform-infrastructure` manages hosts,
+`platform-release` verifies and publishes images without deployment credentials, and
+`platform-deploy` installs a verified release manifest without rebuilding application
+source. Infrastructure and deployment accept `all` and process identity, next, production
+in that order. Selecting a branch does not itself deploy anything.
 
 ## Deployment targets
 
@@ -38,7 +41,7 @@ the running installation. The procedures below are the independently runnable op
 used by that setup and by later repair work.
 
 Prove the candidate through [Build and test](build-and-test.md). The deployment
-workflow repeats the release-critical gate before publishing images.
+release workflow repeats the release-critical gate before publishing images.
 
 ## Provision fresh infrastructure
 
@@ -46,7 +49,7 @@ The workflows select physical Environments through `DEPLOYMENT_ENVIRONMENT_PREFI
 reject targets absent from `DEPLOYMENT_TARGETS_JSON`; do not type or reuse a physical
 Environment name.
 
-Open **Actions → platform-infrastructure → Run workflow**. Select `target: all` and
+Open **Actions → platform-infrastructure → Run workflow** on branch `prod`. Select `target: all` and
 `command: preview`. The workflow previews `identity`, `next`, and production serially.
 Review three replaceable servers, three protected volumes, their firewalls, generated
 SSH identities, and each target's DNS behavior. Reject an unexplained replacement, wider
@@ -108,10 +111,22 @@ Do not copy addresses from an earlier run or point `aven.id` at either platform 
 
 ## Deploy the software
 
-Open **Actions → platform-deploy → Run workflow** once. Select `target: all`, supply an
-exact verified commit as `ref`, and keep `recover_from_backup: false`. The workflow runs
-the complete release gate and publishes each immutable image once. It then installs
-`identity`, `next`, and production serially.
+First promote the reviewed source using [Promote release branches](deployment.md#promote-release-branches).
+Run **platform-release** on `next`. Record the successful run ID; its `aven-release`
+artifact contains the source SHA and all eleven image digests. No infrastructure,
+database, SMTP, Polar, backup, or identity credential is available to this build.
+
+Run **platform-deploy** on `prod`, select `target: all`, enter that `release_run_id`,
+and keep `recover_from_backup: false`. The protected coordinator verifies the run's
+repository, workflow, branch, successful status, source ancestry and exact image set
+before selecting any Environment. It installs identity, next, production serially;
+production cannot run after a failed next deployment. There is no free-form `ref` input.
+
+For a next-only deployment, run the coordinator on `next` with `target: next`; the
+release SHA must match the current `next` SHA. For production-only promotion, run on
+`prod`, supply the same `release_run_id` and a successful `next_proof_run_id` from
+`platform-deploy`. The proof must reference exactly the same release. Identity-only
+deployment also runs on `prod`.
 
 `target: all` refuses recovery mode. Restore one target at a time through the recovery
 procedure so an accidental bulk restore cannot blur the boundary between shared identity
@@ -126,7 +141,7 @@ Each platform deployment selects its own generated identity credential, domains,
 static-site branches, tenant-grant issuer, backup label, and backup prefix from the target. The
 workflow does not accept those security-sensitive values as free-form inputs.
 
-Every deployment:
+The release pipeline and deployment together:
 
 1. repeats static, unit, Rust, infrastructure, recovery, and full-stack E2E checks;
 2. resolves the live Phala-hosted RedPill chat catalog and rejects invalid metadata;
@@ -159,7 +174,9 @@ curl --fail https://next.aven.ceo/
 
 Complete a sandbox checkout, email, passkey, native-device, customer-data, document,
 chat, Intent, and Actor smoke test in `next` before deploying the same verified ref to
-production.
+production. Local E2E uses isolated provider fixtures; it is not evidence of live
+inbox delivery or Polar availability. Capability health distinguishes these failures
+from process availability; see [health semantics](startup-and-readiness.md#capability-health).
 
 The distributed client defaults to production. For a workstation-only `next` smoke
 build, compile the Rust shell against the staging API while retaining the shared
@@ -185,10 +202,10 @@ commerce, customer, Intent, Artifact, or Actor record exists in `next`.
 
 ## Deploy an update
 
-Run `platform-deploy` for one affected target with an exact verified ref and
-`recover_from_backup: false`. Deploy identity changes first when a release changes a
-shared identity contract. Deploy and smoke-test `next` before production for platform
-changes.
+Promote source into `next`, run `platform-release` there, and deploy its successful
+`release_run_id` to next. Promote the reviewed source into `prod`, then deploy the
+same release with its `next_proof_run_id`. Keep `recover_from_backup: false`.
+Deploy shared identity contract changes from `prod` before dependent platform changes.
 
 The same role initialization, migrations, reconciliation, health checks, and backup
 checks run on every update. A production deployment never promotes or copies the
@@ -196,9 +213,11 @@ checks run on every update. A production deployment never promotes or copies the
 
 ## Roll back application code
 
-Redeploy a previously verified ref whose schema contract is still supported. The
-workflow rebuilds immutable images for that ref. It does not roll database state
-backward.
+Select a previously successful release and matching next proof whose schema contract
+is still supported. Production consumes those same digests without rebuilding source.
+It does not roll database state backward. GitHub release/proof artifacts are retained
+for 90 days; beyond that window, this workflow cannot establish their proof and refuses
+deployment. Keep a supported release available rather than relying on an expired artifact.
 
 If migration or reconciliation fails, traffic stays closed. Inspect fixed-scope logs,
 correct forward, and redeploy. Never run reverse migration SQL as an improvised
@@ -206,7 +225,22 @@ rollback.
 
 ## Promote release branches
 
-The `promote` workflow fast-forwards `main` to `next` or `next` to `prod`. Promotion
-changes a Git reference only. It does not provision or deploy infrastructure. A human
-still chooses `target: production` and supplies the intended ref to
-`platform-deploy`.
+From an authenticated administrator workstation:
+
+```sh
+bun run release:promote next
+# After the next release has been exercised:
+bun run release:promote prod
+```
+
+The command creates or finds the corresponding `main → next` or `next → prod` PR.
+Review its diff and successful checks, then use the exact-head merge command it prints.
+Use a merge commit, not squash, so release ancestry remains verifiable. Rules require
+the `Platform release gate` and resolved threads; one administrator can operate this
+without another account. Changes to workflows, infrastructure, authentication and
+secret handling require particular attention during that review.
+
+The old automatic `promote` workflow and repository deploy-key bypass are removed.
+Promotion changes Git state only. Initial guided provisioning requires the workstation
+to match protected `prod` and requires next and prod to contain the same source tree;
+it then dispatches the release build from next and the all-target coordinator from prod.

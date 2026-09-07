@@ -115,6 +115,75 @@ function normalizedTransaction(
 }
 
 describe('reconciliation normalization', () => {
+	test('does not derive an invoice identity from blank or punctuation-only identifiers', () => {
+		for (const [supplier, invoiceNumber] of [
+			[null, 'RE-42'],
+			['ACME', null],
+			['---', 'RE-42'],
+			['ACME', ' / ']
+		]) {
+			expect(() =>
+				normalizeInvoiceOpenItem(
+					{
+						supplier,
+						invoiceNumber,
+						currency: 'EUR',
+						grossMinor: 1200,
+						summary: 'Not an identity'
+					},
+					{ documentKind: 'invoice', supplier: null },
+					{ status: 'consistent' }
+				)
+			).toThrow()
+		}
+	})
+	test('namespaces domestic account numbers by institution', async () => {
+		const first = statementCandidate([transaction()])
+		const second = { ...first, accountIban: null, accountNumber: '12345' }
+		const a = await normalizeStatement(second, VALIDATION)
+		const b = await normalizeStatement(
+			{ ...second, institution: { name: 'Another Bank', city: 'Berlin' } },
+			VALIDATION
+		)
+		expect(a.statement.accountRef).not.toBe(b.statement.accountRef)
+		expect(a.transactions[0]!.dedupKey).not.toBe(b.transactions[0]!.dedupKey)
+	})
+
+	test('matches historical gross value even after a partial payment and retains Unicode supplier identity', () => {
+		const paid = {
+			...OPEN_ITEM,
+			amountDueMinor: 300,
+			amountPaidMinor: 900,
+			supplierName: '株式会社山田'
+		}
+		const match = rankInvoiceTransactions(paid, [
+			normalizedTransaction({ counterpartyName: '株式会社山田' })
+		])[0]!
+		expect(match.amountDistanceMinor).toBe(0)
+		expect(match.counterpartyMatch).toBe('exact')
+	})
+
+	test('does not treat a reused mandate as invoice-specific proof or normalize invalid dates', () => {
+		const item = { ...OPEN_ITEM, issueDate: '2026-02-31', references: ['CUSTOMER-100000'] }
+		const match = rankInvoiceTransactions(item, [
+			normalizedTransaction({ description: 'CUSTOMER-100000' })
+		])[0]!
+		expect(match.referenceMatch).toBe('exact') // Useful ranking evidence, not invoice identity.
+		expect(match.issueDateDistanceDays).toBeNull()
+		expect(match.blockers).toContain('invoice-specific-evidence-missing')
+	})
+
+	test('amount distance sorts ahead of stronger text evidence', () => {
+		const matches = rankInvoiceTransactions(OPEN_ITEM, [
+			normalizedTransaction({ dedupKey: 'far', amountMinor: -2000 }),
+			normalizedTransaction({
+				dedupKey: 'near',
+				description: 'Unidentified purchase',
+				counterpartyName: 'Unknown'
+			})
+		])
+		expect(matches[0]!.transactionDedupKey).toBe('near')
+	})
 	test('turns extracted invoice details into a stable open item and retains matching evidence', () => {
 		const openItem = normalizeInvoiceOpenItem(
 			{

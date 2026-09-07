@@ -53,11 +53,11 @@ test('creates one target pair of private non-destructive buckets', () => {
 	}
 })
 
-test('versions state and applies a policy to every bucket', () => {
+test('versions state and backup and applies a policy to every bucket', () => {
 	assert.equal(
 		resources.filter(({ type }) => type === 'minio:index/s3BucketVersioning:S3BucketVersioning')
 			.length,
-		1,
+		2,
 		JSON.stringify([...new Set(resources.map(({ type }) => type))])
 	)
 	const policies = resources.filter(

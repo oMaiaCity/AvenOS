@@ -1,5 +1,7 @@
 import type pg from 'pg'
 import { withTransaction } from './db.js'
+import { SETUP_LINK_SECONDS } from './enrollment.js'
+import { encryptSetupToken } from './security-mail.js'
 import { isToken, randomToken, sha256Hex } from './tokens.js'
 
 export interface PasskeySummary {
@@ -26,28 +28,63 @@ export class PasskeyService {
 		).rows
 	}
 
-	async issueSetupLink(userId: string): Promise<string | null> {
-		const predicate = this.requirePrf ? 'AND prf_enabled=true' : ''
-		const enrolled = await this.pool.query(
-			`SELECT 1 FROM passkey WHERE user_id=$1 ${predicate} LIMIT 1`,
-			[userId]
-		)
-		if (enrolled.rows[0]) return null
-		const token = randomToken()
-		await this.pool.query(
-			`INSERT INTO setup_links(user_id,token_hash,created_at) VALUES($1,$2,now())
-			 ON CONFLICT(user_id) DO UPDATE SET token_hash=EXCLUDED.token_hash,created_at=now(),last_used_at=NULL`,
-			[userId, sha256Hex(token)]
-		)
-		return token
+	async issueSetupLink(
+		userId: string,
+		delivery?: { origins: string[]; encryptionSecret: string }
+	): Promise<string | null> {
+		return withTransaction(this.pool, async (client) => {
+			await client.query('SELECT id FROM "user" WHERE id=$1 FOR UPDATE', [userId])
+			if (
+				(await client.query('SELECT 1 FROM passkey WHERE user_id=$1 LIMIT 1', [userId])).rows.length
+			)
+				return null
+			let channel: string | undefined
+			if (delivery) {
+				channel = (
+					await client.query<{ notification_channel: string }>(
+						'SELECT notification_channel FROM "user" WHERE id=$1',
+						[userId]
+					)
+				).rows[0]?.notification_channel
+				if (!channel || !delivery.origins.includes(channel))
+					throw new Error('Security mail is unavailable.')
+				if (
+					(
+						await client.query(
+							"SELECT 1 FROM setup_links WHERE user_id=$1 AND created_at > now()-interval '60 seconds'",
+							[userId]
+						)
+					).rows.length
+				)
+					throw new Error('Please wait one minute before requesting another link.')
+			}
+			const token = randomToken()
+			await client.query(
+				`INSERT INTO setup_links(user_id,token_hash,created_at,expires_at) VALUES($1,$2,now(),now()+$3*interval '1 second')
+				 ON CONFLICT(user_id) DO UPDATE SET token_hash=EXCLUDED.token_hash,created_at=now(),expires_at=EXCLUDED.expires_at,last_used_at=NULL`,
+				[userId, sha256Hex(token), SETUP_LINK_SECONDS]
+			)
+			await client.query('DELETE FROM session WHERE user_id=$1 AND setup_token_hash IS NOT NULL', [
+				userId
+			])
+			if (delivery) {
+				const id = crypto.randomUUID()
+				await client.query(
+					`INSERT INTO identity_security_mail(id,user_id,channel,kind,token_ciphertext,dedupe_key)
+				 VALUES($1::uuid,$2,$3,'setup-replaced',$4,$1::text)`,
+					[id, userId, channel, encryptSetupToken(token, delivery.encryptionSecret)]
+				)
+			}
+			return token
+		})
 	}
 
-	async verifySetupLink(token: string): Promise<{ userId: string } | null> {
+	async verifySetupLink(token: string): Promise<{ userId: string; tokenHash: string } | null> {
 		if (!isToken(token)) return null
 		return withTransaction(this.pool, async (client) => {
 			const row = (
 				await client.query<{ user_id: string }>(
-					'SELECT user_id FROM setup_links WHERE token_hash=$1 FOR UPDATE',
+					'SELECT user_id FROM setup_links WHERE token_hash=$1 AND expires_at > now()',
 					[sha256Hex(token)]
 				)
 			).rows[0]
@@ -57,7 +94,7 @@ export class PasskeyService {
 			await client.query('UPDATE setup_links SET last_used_at=now() WHERE user_id=$1', [
 				row.user_id
 			])
-			return { userId: row.user_id }
+			return { userId: row.user_id, tokenHash: sha256Hex(token) }
 		})
 	}
 

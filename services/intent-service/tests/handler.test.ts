@@ -80,6 +80,7 @@ async function headers(action = 'intents:read', overrides: Record<string, string
 			sub: subject,
 			sid: 'session-1',
 			role: 'user',
+			membershipRole: 'owner',
 			environmentId,
 			databaseName: databaseNameForEnvironment(environmentId),
 			routingGeneration: 1,

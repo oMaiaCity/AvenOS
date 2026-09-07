@@ -23,7 +23,7 @@ For each selected target, one run creates:
 - a random deployment namespace such as `avenos-4f7c2a91b6`;
 - one repository-level GitHub Packages reader used only for dependency downloads;
 - one versioned, private Pulumi state bucket;
-- one private Restic backup bucket;
+- one versioned, private Restic backup bucket;
 - bucket policies that isolate each target and keep observer credentials read-only;
 - a raw Polar webhook endpoint when the target is `next` or `production`, subscribed to
   every event;
@@ -45,6 +45,12 @@ deployment credential crosses a project boundary.
 
 ## Prepare the provider accounts
 
+The first rollout runs reviewed code from protected release branches, not arbitrary
+workstation changes. Complete [release promotion](deployment.md#promote-release-branches)
+first. The local checkout must match `prod`; `next` and `prod` must contain the same
+source tree. The wizard builds on next and deploys through prod. This prevents setup
+from executing a development ref with identity or production secrets.
+
 Install and authenticate these command-line tools on the operator workstation:
 
 ```sh
@@ -62,6 +68,9 @@ with `read:packages` and no write scope. The wizard verifies that it can downloa
 cross-repository `@myavenceo` packages, saves it as the repository secret
 `PACKAGE_READ_TOKEN`, and includes it in the recovery CSV. GitHub's per-workflow token
 still publishes this repository's images; the long-lived reader cannot publish them.
+Bootstrap also configures that read-only token for Dependabot, installs the release
+branch rules, and removes the former automatic-promotion `DEPLOY_KEY`. These shared
+repository protections survive generation uninstall.
 
 When another operator becomes available, add their GitHub login as the optional top-level
 `reviewer` field beside `repository`. The bootstrap then requires that person to approve

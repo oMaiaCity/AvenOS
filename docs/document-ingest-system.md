@@ -7,11 +7,37 @@ chooses device or server placement, how the selected host runs document actors t
 the authenticated LLM gateway, how both placements publish to one Artifact Store, and
 how progress returns to the UI.
 
+CSV financial ingestion has a mandatory document-type human checkpoint. The shared
+solver first runs a deterministic detector and publishes
+`banking.csv-statement-detection@1`, which is not a financial statement or transaction.
+Only reviewed exact profiles with complete, unambiguous rows are eligible for the
+existing comparison gate. Unknown formats remain ordinary documents, not guesses at
+account statements. The [CSV corpus](../fixtures/golden/bank-csv/README.md) names the
+admitted profiles and deliberate negative examples.
+
+The physical gate commits `banking.csv-statement-confirmation@1`, bound to the source
+artifact, content SHA-256, detector version and exact detection artifact. The solver
+observes that committed confirmation as an input fact before the CSV-admission Actor
+can produce `banking.account-statement-candidate@2`. The existing statement validator,
+normalizer and transaction fan-out then run through the same general solver. A new
+remote observation uses the confirmation ID only to distinguish its idempotency key;
+the ID supplied by the caller is not itself approval authority. The runner reads the
+committed decision independently. Confirmation is not exposed as a voice/model tool.
+
+The facade recomputes CSV detection from committed source bytes before accepting local
+detection, confirmation or admission publications. Model-based finance extraction cannot
+be used on a CSV source to bypass this path. Missing or rejected confirmation, failed
+publication and changed source/detector identity leave the source unreconciled. An
+accepted document confirmation is not an invoice-to-booking relationship decision.
+Restoring accepted document history does not itself trigger new global reconciliation.
+
 The server host is a real remote Plan Runner client. It crosses `api.aven.ceo`, reaches
 the separately hosted Actor Runner, and stores its run ledger and document artifacts
 inside the selected customer's database. The runner keeps its generic protocol and
 repository application-neutral; its production application catalog installs the
-document-ingest skill as one application executor around the dynamic document DAG.
+document-ingest and reconciliation skills as application executors using the shared
+observation-driven general solver. Domain contributions define facts and bindings;
+the solver schedules ready work on either host.
 The normative protocol is specified in
 [`actor-runtime-formal-spec.md`](./actor-runtime-formal-spec.md).
 
@@ -82,17 +108,19 @@ downstream owns provider credentials and model capability enforcement; the artif
 downstream owns tenant resolution and publication validation. The Artifact Store owns
 durable values and successful provenance. On server placement, the facade admits the
 run and the Actor Runner owns the document runtime, decoder, publication, and durable
-checkpoint presentation. Its current server catalog is deterministic: model-backed
-vision and OCR remain local-only capabilities.
+checkpoint presentation. Both hosts support model-backed vision and document
+understanding through the authenticated model gateway, subject to the same admission
+limits. Deterministic model fixtures prove parity; live-provider accuracy is a
+separate qualification.
 
 ## Architectural layers
 
 | Layer | Owns | Must not own |
 | --- | --- | --- |
-| `@avenos/actors` | Actor manifests, mailboxes, envelopes, bus, predicates, sandbox, capability planner | Document logic, Tauri, Svelte, persistence, provider transport |
+| `@avenos/actors` | Actor manifests, mailboxes, envelopes, bus, predicates, sandbox, capability planner and observation-driven execution | Document logic, Tauri, Svelte, persistence, provider transport |
 | `@avenos/llm-client` | Transport-neutral model catalog and completion contracts | Authentication implementation, model policy, prompts, provider credentials |
 | `@avenos/artifact-store` | Client-run and processing contracts, queued/retry publication decorator | Document orchestration, UI state, Tauri commands |
-| `@avenos/document-ingest` | Document actor catalog, prompts/schemas, model selection, host-neutral run adapter, current execution DAG, publication identities, headless server decoder and publisher | Svelte, Tauri, caller-selected tenant routes |
+| `@avenos/document-ingest` | Actor catalog, prompts/schemas, model selection, skill requirements and bindings, publication/projection adapters, reconciliation, headless decoder | Svelte, Tauri, caller-selected tenant routes |
 | Desktop adapters | Browser decoding, Tauri transport, singleton wiring, UI projection updates | Domain contracts and actor-specific transformations |
 | Aven API facade | Authentication verification, fixed downstream routing, and credential replacement | Client UI state, actor execution, product policy, or caller-selected physical routes |
 | LLM and artifact downstreams | Model transport, tenant artifact access, publication validation, and product/data policy | Identity issuance or document orchestration |
@@ -169,24 +197,24 @@ publication gateway, and runtime. This prevents Vite hot-module replacement from
 creating split-brain bus generations. In production, normal module initialization
 creates them once.
 
-Actor instances are **not yet** spawned per plan, upload, page, stage, attempt, or
+Desktop Actor instances are not spawned per upload, page, stage, attempt or
 envelope. They are long-lived host workers. Each has a runtime UUID and a FIFO mailbox; one instance
 processes one message at a time. Multiple document runs may exist concurrently, but
 messages reaching the same actor instance serialize through that mailbox. Different
-actor instances can work independently, while the current coordinator itself executes
-one document's steps in an explicit order.
+actor instances can work independently, while the current observation engine executes
+one ready invocation at a time, selecting its next frontier from observed facts.
 
 The app always supplies a `DocumentModelGateway`, so it constructs all sixteen actors.
 Whether the four model actors are used is decided per document from live catalog
-availability and the admitted page count. The current Actor Runner omits the model
-gateway and constructs the deterministic actor set for each admitted document run.
+availability and the admitted page count. The Actor Runner supplies its authenticated
+model gateway and constructs the same actor set for each admitted document run.
 
 ### 3. Document run lifecycle
 
 `DocumentExecutionRouter.start(request)` first freezes the selected environment and
 routes to exactly one host. The local host JSON-round-trips the request, resolves
 source bytes through Tauri, and calls its `DocumentProcessingRuntime`. The remote host
-turns the request into `os.aven:protocol:actors:plan-runner@1`, starts it through the
+turns the request into `os.aven:protocol:actors:plan-runner@2`, starts it through the
 facade, and polls the durable run record. On the server, the document application
 executor validates the stored source envelope, fetches its bytes through scoped
 Artifact Store access, and calls a server-owned `DocumentProcessingRuntime`. A runtime:
@@ -205,7 +233,7 @@ make already committed steps replayable on either host.
 
 ### 4. Envelope and step lifecycle
 
-For every step, the runtime creates one envelope and sends it through the private bus.
+For each uncommitted step, the runtime creates an envelope and sends it through the private bus.
 The target actor queues it, runs its handler, and returns a structured result. The
 runtime then enters a separate publication phase. The step is terminally successful
 only after Artifact Store publication returns immutable output IDs.
@@ -216,13 +244,14 @@ the committed artifacts and production run are durable.
 
 ### Winding down
 
-Completing a document run does not tear down actor instances. They remain registered
+Completing a desktop document run does not tear down actor instances. They remain registered
 and ready for the next document. The current desktop composition has no dynamic
 document-actor shutdown path; application/process shutdown releases the instances.
+The server executor disposes its per-run Actor instances in a `finally` block.
 
 The generic `MessageBus.unregister(ref)` operation removes an actor and calls
 `actor.dispose()`, which releases a QuickJS sandbox session when present. A future
-dynamic or headless host must explicitly unregister/dispose actors during host
+dynamic host must explicitly unregister/dispose actors during host
 shutdown, stop admitting new envelopes, drain or reject queued work, and close its
 transport resources. Each local document **actor instance** is currently registered
 with both the application discovery bus and its host's private execution bus. The
@@ -352,72 +381,74 @@ The finance validator actors are deterministic and deliberately separate from mo
 extraction. A plausible model result is not treated as a valid invoice or statement
 until the relevant rule set has run.
 
-This graph describes the current coordinator. Its encrypted branch still ends in
+This graph describes the document skill's possible observations. Its encrypted branch ends in
 `needs_review`; the conforming generic runner replaces that branch with the durable
 password continuation defined in the formal specification. Likewise, XRechnung is
-added through observation and replanning, never another branch in this coordinator.
+added through a skill contribution and observed facts, not a branch in the scheduler.
 
 ## What `DocumentProcessingRuntime` is
 
-The runtime is a document-application coordinator built on generic actor and Artifact
-Store primitives. It is intentionally more capable than a simple bus, but it is not yet
-a general skill runner.
+The runtime is the document execution/publication and presentation adapter for
+`executeObservedProgram` in `@avenos/actors`. It does not schedule a hardcoded sequence
+of extraction methods. The skill catalog in `src/skill.ts` defines each operation's
+requirements, possible success/failure observations, input binding and projection.
 
 ### Current capabilities
 
 - creates one run projection per source and suppresses duplicate concurrent starts;
 - discovers model availability and applies page-admission policy;
 - dispatches concrete actor methods through ordinary envelopes;
-- executes serial per-page extraction/classification and finance-family branching;
+- asks the general solver for ready invocations, including per-page and finance work;
 - records dependency keys and stage/attempt states for explanation and the UI;
 - retries model execution independently from publication;
 - retains a successful actor result while publication is retrying;
-- derives stable publication IDs from the source, stage, procedure, and bound inputs;
+- derives stable invocation/publication IDs from run identity, operation and exact
+  ordered input/gather occurrences;
 - replaces local output keys with immutable Artifact Store IDs; and
 - returns honest `succeeded`, `needs_review`, or `failed` outcomes.
 
-### What remains document-specific
+### Observation-driven execution
 
-The runtime currently names document actor methods, stage keys, artifact types, page
-loops, finance taxonomies, retryable model methods, branch rules, and presentation
-outcomes directly in TypeScript. Its `DocumentActors` interface also has named fields
-such as `extractInvoice` and `validateStatement`.
+The solver uses the generic predicate unifier and requires a consistent witness for
+all requirements. It never inserts advertised outputs as facts. After each committed
+receipt, it recomputes the ready frontier; classification and validation observations
+therefore select the next branch. Failure can unlock only declared fallback facts.
+An uncertain publication throws instead of inventing a negative observation.
 
-Its `dependsOn` values currently describe the graph for projection and explanation;
-ordinary TypeScript control flow actually schedules the steps. They are not consumed
-by a generic dependency scheduler. Page loops are serial today, although the actor and
-artifact contracts do not require a future host to keep independent pages serial.
+Fan-out publishes an exact ordered collection of member identities. A gather waits
+for precisely those members, rejects ambiguous duplicate witnesses, and handles an
+empty collection explicitly. Extraction revision identifiers join candidate, details
+and validation so two extractions of the same source cannot cross-wire evidence.
+The solver bounds invocation count and requirement search, excludes effects by
+default, and reports incomplete, cancelled or limited work honestly.
 
-That means adding a new document stage or branch still requires editing the runtime.
-The actor manifests make capabilities discoverable, but the runtime does not inspect
-those facts to synthesize this pipeline and does not execute the planner's
-`AdHocProgram`.
+Before invoking an Actor, the adapter looks up its immutable publication. Committed
+inspection includes a decoded-page JSON blob; restored downstream bindings can reuse
+all successful steps without calling the model again. Local transient progress is
+still a presentation, not the authoritative store. Server runs additionally retain
+their run-level claim and checkpoint in the customer database. Their latest
+presentation is also persisted as informational `PlanRunRecord.progress`; it does
+not supply solver facts or replace the terminal checkpoint. The desktop applies
+each new progress revision through the existing stage UI, and stops showing an
+active status if monitoring fails. The remote execution itself is not cancelled
+by a monitoring error.
 
-This is a useful boundary rather than hidden generality: document admission,
-page-level fan-out, accepted-kind thresholds, and deterministic validation are current
-product policy. Pretending the coordinator is already generic would move those
-decisions into implicit conventions.
+### Extensibility boundary
 
-### Extensibility path
+To add a document operation, contribute its predicates, payload/evidence binding and
+observed-output projection in the skill package, register its Actor, and extend the
+publication contract if it introduces a new procedure or artifact type. The shared
+scheduler contains no invoice, statement, page or UI-specific cases. Reconciliation
+contributes scope retrieval, shortlisting, ranking and review through that same
+engine; a separate admitted effect records the human decision.
 
-There are three reasonable levels of extension:
-
-1. **Extend the temporary coordinator only for current parity.** Add its actor
-   directory, server publication contract, registry entry, and explicit runtime step.
-   Do not use this path for XRechnung or another capability intended to prove generic
-   discovery.
-2. **Make the document recipe declarative.** Extract stage descriptions—method,
-   required slots, output bindings, retry class, condition, and presentation mapping—
-   while retaining document-specific branch functions. This can remove repetitive
-   `#step` calls without inventing a universal runner.
-3. **Build the general skill runtime.** Accept a frozen planner program, persist a run
-   and attempts, bind artifact slots generically, lease runnable steps, support gates
-   and effect semantics, and replan only unfinished work. That belongs above
-   `@avenos/actors` and `@avenos/artifact-store`, not inside this document package.
-
-The current runtime is a good reference implementation for level three's invariants:
-separate execution/publication retry domains, immutable outputs, stable idempotency,
-and honest terminal states.
+The production catalog is installed explicitly and its Actor factories are currently
+eager. Skill bindings remain TypeScript contributions, not arbitrary untrusted
+downloadable recipes. The older fixed-output `AdHocProgram` executor remains for its
+other consumers; document execution does not pretend that its promised facts support
+dynamic observation. Per-step distributed claims, a durable failed-attempt journal,
+host cancellation propagation and generic third-party skill installation remain
+separate work. These limits do not create a second finance orchestration path.
 
 ## One actor step and its commit boundary
 
@@ -460,9 +491,10 @@ lets the planner reason about whether a goal is reachable. These predicates desc
 logical availability. They are not JSON Schemas, do not validate payload fields, and
 do not automatically construct a runtime envelope.
 
-`capabilitiesFromManifests` normalizes these method contracts for planning. The current
-document coordinator uses the same contracts for discovery but binds its executable
-steps explicitly.
+`capabilitiesFromManifests` normalizes method contracts for fixed-output planning.
+The document skill contributes its richer observation contracts separately, including
+extraction revisions and sealed gathers, and binds executable inputs explicitly.
+These bindings describe domain values; the general solver owns scheduling.
 
 ### 2. Runtime value and artifact-slot binding
 
@@ -485,9 +517,9 @@ For a concrete step, `DocumentProcessingRuntime` supplies two parallel inputs:
 - `inputs` binds semantic roles and dense ordinals to already-published Artifact Store
   IDs. These bindings become production-run lineage and determine the stable
   publication identity.
-- `dependsOn` names execution-stage dependencies for projection and explanation. The
-  current coordinator's call order performs scheduling; `dependsOn` does not schedule
-  work and does not replace artifact input bindings.
+- `dependsOn` is derived from the invocation's input/gather facts for projection and
+  explanation. The solver's requirements schedule work; presentation dependencies
+  neither replace artifact input bindings nor impose a total order on independent work.
 
 The actor returns drafts. Each draft binds:
 
@@ -623,8 +655,9 @@ presentation is an in-memory projection. After a restart, running again from the
 replays committed step publications and reconstructs the remaining lineage; the UI
 projection itself is not yet a durable run record.
 
-A future general skill runner should persist plan/run state separately, using Artifact
-Store production runs as successful facts rather than making mutable progress an
+The remote Plan Runner already persists admission, run claims and final checkpoints
+separately. A richer per-step attempt journal remains future work and should use
+Artifact Store production runs as successful facts, not make mutable progress an
 artifact.
 
 ## UI projection
@@ -730,13 +763,12 @@ actor registry makes actors visible wholesale, and
 `@avenos/actors.capabilitiesFromManifests` turns their manifests into planner-ready
 method capabilities.
 
-The current document pipeline does **not** execute a generated plan. Its coordinator is
-an explicit, tested DAG because its branching, page fan-out, model admission, and
-validation policy are product behavior. The separate capability planner proves that a
-future skill runtime can synthesize ad-hoc programs from the same method contracts.
-Generated plans use the durable Plan Runner layer and the same Artifact Store
-publication boundary. The document skill remains an application executor until the
-generic planner supports its required dynamic `many` cardinalities.
+The document and reconciliation pipelines execute the general observation solver's
+generated frontier. The document package owns model admission, validation policy and
+domain bindings, not a second scheduler. Application executors bridge that shared
+engine into the durable remote Plan Runner protocol. Fixed-output ad-hoc planning
+remains a separate API for consumers whose capabilities really guarantee their
+outputs; it is not the finance execution path.
 
 ## Source map
 
@@ -752,7 +784,10 @@ generic planner supports its required dynamic `many` cardinalities.
 | `libs/aven-document-ingest/src/model.ts` | Document prompts, schemas, and model port |
 | `libs/aven-document-ingest/src/llm-gateway.ts` | Capability-based document model adapter |
 | `libs/aven-document-ingest/src/execution.ts` | Placement-frozen document run and host boundary |
-| `libs/aven-document-ingest/src/runtime.ts` | DAG execution, retries, publication IDs, projections |
+| `libs/aven-actors/src/observation-solver.ts` | Generic observed frontier, sealed gathers, receipts, limits |
+| `libs/aven-document-ingest/src/skill.ts` | Document operation contributions and evidence bindings |
+| `libs/aven-document-ingest/src/reconciliation-flow.ts` | Shared retrieval, ranking, review and explicit decision effect |
+| `libs/aven-document-ingest/src/runtime.ts` | Execution/publication retry, committed replay, projections |
 | `libs/aven-document-ingest/src/server.ts` | Headless decoder, tenant Artifact Store publisher, document skill executor |
 | `app/src/lib/artifacts/browser-document-decoder.ts` | PDF.js/browser host adapter |
 | `app/src/lib/actors/document-llm-gateway.ts` | Tauri LLM host adapter |

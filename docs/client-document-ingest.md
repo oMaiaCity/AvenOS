@@ -69,15 +69,17 @@ default never moves an active run.
 
 The built-in actors are registered on the same message bus as other client actors. Each
 actor advertises an invocable method-level contract and handles one transformation.
-The coordinator only advances the graph, binds input artifact IDs into the next
-envelope, publishes successful outputs, and updates the presentation projection.
+The generic observation solver selects ready skill operations. The document runtime
+binds input artifact IDs into their envelopes, publishes successful outputs, and
+updates the presentation projection. There is no separate legacy document coordinator.
 
 The local host adapter owns:
 
 - magic-byte inspection and bounded PDF/PNG/JPEG decoding;
 - native PDF text and normalized-millionth layout extraction;
 - 144-DPI PDF rendering for admitted model work;
-- the `aven-finance-vision-v3` prompts and expanded finance schemas;
+- the `aven-finance-vision-v5` prompts and expanded finance schemas, including
+  explicit unknown-versus-zero monetary values;
 - document-kind and invoice-versus-statement branching;
 - model result parsing, classification thresholds, grounded evidence filtering, and
   extraction-kind conflict checks;
@@ -93,6 +95,15 @@ stored in the durable run checkpoint. Its headless decoder admits bounded PNG/JP
 extracts native PDF text, and renders PDF pages for the same model-backed actors used
 locally. When the model route is unavailable, an image without native text settles
 honestly as `needs_review` and publishes no finance fact.
+
+While a server run is active, the same presentation travels through the generic
+execution context's `reportProgress` callback into `PlanRunRecord.progress`. Status
+polling shows stage names, attempts and the most recent retry error through the
+existing UI. This mutable progress is not a committed solver fact or replay
+checkpoint, and cannot prove completion. The terminal checkpoint remains authoritative.
+Progress writes are serialized on the claimed SQL connection and flushed before
+completion. A monitoring failure changes the desktop status to an error; it does
+not claim to cancel work that may still be running remotely.
 
 The canonical finance payload schemas are imported from Artifact Store conformance
 fixtures. The actor implementation and publication adapter therefore validate against
@@ -155,7 +166,7 @@ Each document procedure becomes one non-streaming generic completion:
 The request uses the selected public model ID, high-detail PNG/JPEG parts, the exact
 procedure schema, `temperature: 0`, and a bounded output budget. The system instruction
 treats document content as untrusted data. An expected document kind is added only from
-the coordinator's trusted classification decision, never from text inside the file.
+the committed classification selected by the skill, never from text inside the file.
 
 The gateway enforces model capability matching, canonical base64, at most 63 images,
 12 MiB per decoded image, 40 MiB total image data, 2 MiB text input, response bounds,
@@ -173,10 +184,10 @@ directly with a dedicated credential and stable publisher identity.
 
 For every successful step:
 
-1. the coordinator sends an envelope containing concrete input artifact IDs;
+1. the runtime sends an envelope containing concrete input artifact IDs;
 2. the actor returns typed artifact drafts and evidence;
 3. the publication adapter commits the drafts and one production-run receipt;
-4. the coordinator replaces local output keys with returned artifact IDs; and
+4. the runtime replaces local output keys with returned artifact IDs; and
 5. those immutable IDs become the next actor's inputs.
 
 Model-backed receipts retain the public model ID and label, advertised capabilities,
@@ -201,8 +212,8 @@ Each actor invocation has a deterministic UUIDv8 publication ID derived from:
 Repeating a committed step therefore produces an Artifact Store replay, not a duplicate
 derivation. If the app stops after a provider response but before publication, the same
 generic completion body selects the same gateway request key on retry. If it stops after
-publication, replay returns the already committed outputs and the coordinator rebuilds
-the remaining graph from their IDs.
+publication, replay returns the already committed outputs and the runtime rebuilds
+solver observations from their IDs.
 
 Model stages make at most three attempts with 500 ms and 1,000 ms delays. Deterministic
 stages fail immediately because repeating identical local logic cannot repair its input.

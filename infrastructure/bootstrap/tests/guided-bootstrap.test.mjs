@@ -25,6 +25,8 @@ import {
 	signedS3DeleteBucketRequest,
 	signedS3ListBucketsRequest,
 	signedS3ReadRequest,
+	signedS3VersionsRequest,
+	signedS3LifecycleRequest,
 	unseenWorkflowRunId,
 	validateS3ProjectCredential,
 	valueAt,
@@ -439,6 +441,20 @@ test('signs read-only S3 verification requests without exposing the secret', () 
 	assert.match(request.headers.Authorization, /Signature=[a-f0-9]{64}$/)
 	assert.doesNotMatch(JSON.stringify(request), /example-secret-that-must-not-appear/)
 	assert.equal(s3ErrorCode('<Error><Code>NoSuchBucket</Code></Error>'), 'NoSuchBucket')
+})
+
+test('signs version inspection and bounded noncurrent retention without expiring current objects', () => {
+	const input = { region: 'hel1', accessKeyId: 'EXAMPLEACCESS', secretAccessKey: 'example-secret',
+		bucket: 'avenos-0123456789-1234567-next-backup', now: new Date('2026-08-30T12:34:56.000Z') }
+	const versions = signedS3VersionsRequest(input)
+	assert.match(versions.url, /\?max-keys=1000&versions=$/)
+	const lifecycle = signedS3LifecycleRequest(input)
+	assert.match(lifecycle.url, /\?lifecycle=$/)
+	assert.match(lifecycle.headers.Authorization, /SignedHeaders=content-md5;host;x-amz-content-sha256;x-amz-date/)
+	assert.match(lifecycle.body, /<NoncurrentDays>90<\/NoncurrentDays>/)
+	assert.match(lifecycle.body, /<DaysAfterInitiation>7<\/DaysAfterInitiation>/)
+	assert.doesNotMatch(lifecycle.body, /<Expiration>|<Transition>/)
+	assert.doesNotMatch(JSON.stringify(lifecycle), /example-secret/)
 })
 
 test('signs the project-level bucket listing used to validate an S3 credential', () => {

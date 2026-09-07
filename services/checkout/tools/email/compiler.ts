@@ -57,6 +57,7 @@ const metadataSchema = z
 	.strict()
 
 const templateFiles = {
+	'identity.security': 'identity-security-email',
 	'name.purchase-link': 'purchase-link-email',
 	'name.purchased': 'purchase-completed-email'
 } as const satisfies Record<SystemEmailTemplate, string>
@@ -65,7 +66,12 @@ export const emailTemplateCatalog: readonly CatalogEntry[] = systemEmailTemplate
 	const filename = templateFiles[key]
 	return {
 		key,
-		label: key === 'name.purchase-link' ? 'Purchase link' : 'Purchase completed',
+		label:
+			key === 'identity.security'
+				? 'Account security'
+				: key === 'name.purchase-link'
+					? 'Purchase link'
+					: 'Purchase completed',
 		sourcePath: `${templateRoot}/${filename}.vue`,
 		metadataPath: `${templateRoot}/${filename}.json`
 	}
@@ -135,6 +141,8 @@ function variants(key: SystemEmailTemplate): Record<string, Record<string, strin
 function maizzleConfig(email: Record<string, string>): Partial<MaizzleConfig> {
 	return {
 		root: templateRoot,
+		// Each render creates and closes its own renderer; no live file watching is needed.
+		vite: { server: { watch: null } },
 		components: {
 			source: { path: componentRoot, prefix: '', pathPrefix: false }
 		},

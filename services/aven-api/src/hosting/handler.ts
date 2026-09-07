@@ -1,5 +1,6 @@
 import { timingSafeEqual } from 'node:crypto'
 import type { IdentityClaims } from '@avenos/aven-identity'
+import { readBoundedJson } from '@avenos/http-boundary'
 import { z } from 'zod'
 import { HostingControlError, type HostingStore } from './store.js'
 import { siteBindingInputSchema } from './validation.js'
@@ -34,7 +35,7 @@ function authorized(request: Request, token: string): boolean {
 }
 
 async function input(request: Request) {
-	return siteBindingInputSchema.parse(await request.json().catch(() => null))
+	return siteBindingInputSchema.parse(await readBoundedJson(request, 65536).catch(() => null))
 }
 
 function failure(error: unknown): Response {
@@ -57,7 +58,7 @@ export class HostingHandler {
 		if (request.method === 'GET' && pathname === '/internal/v1/static-sites/bindings')
 			return json(200, await this.store.directory())
 		if (request.method === 'POST' && pathname === '/internal/v1/static-sites/status') {
-			const parsed = reportSchema.safeParse(await request.json().catch(() => null))
+			const parsed = reportSchema.safeParse(await readBoundedJson(request, 65536).catch(() => null))
 			if (!parsed.success) return json(400, { code: 'VALIDATION_ERROR' })
 			await this.store.report(parsed.data)
 			return new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } })

@@ -5,6 +5,7 @@ import {
 	type TenantGrantKey
 } from '@avenos/aven-customer-contracts'
 import type { IdentityClaims } from '@avenos/aven-identity'
+import { readBoundedJson } from '@avenos/http-boundary'
 import { z } from 'zod'
 import type { CustomerStore, EntitlementEvent } from './store.js'
 import { CustomerAuthorizationError } from './store.js'
@@ -43,7 +44,9 @@ export class CustomerHandler {
 			new URL(request.url).pathname !== '/internal/v1/customer-entitlement-events'
 		)
 			return json(404, { code: 'NOT_FOUND' })
-		const parsed = entitlementSchema.safeParse(await request.json().catch(() => null))
+		const parsed = entitlementSchema.safeParse(
+			await readBoundedJson(request, 16384).catch(() => null)
+		)
 		if (!parsed.success) return json(400, { code: 'ENTITLEMENT_EVENT_INVALID' })
 		try {
 			const result = await this.entitlementStore.acceptEntitlement(parsed.data as EntitlementEvent)

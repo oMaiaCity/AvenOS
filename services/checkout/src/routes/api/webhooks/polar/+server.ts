@@ -1,3 +1,4 @@
+import { BodyLimitError, readBoundedText } from '@avenos/http-boundary'
 import type { RequestEvent } from '@sveltejs/kit'
 import { json } from '@sveltejs/kit'
 import { writeAudit } from '$lib/server/audit.js'
@@ -11,7 +12,13 @@ import { runtime } from '$lib/server/runtime.js'
 
 export const POST = async (event: RequestEvent) => {
 	const rt = await runtime()
-	const rawBody = await event.request.text()
+	let rawBody: string
+	try {
+		rawBody = await readBoundedText(event.request, 1024 * 1024)
+	} catch (error) {
+		if (error instanceof BodyLimitError) return json({ code: error.code }, { status: error.status })
+		throw error
+	}
 	const webhookHeaders = {
 		'webhook-id': event.request.headers.get('webhook-id'),
 		'webhook-timestamp': event.request.headers.get('webhook-timestamp'),

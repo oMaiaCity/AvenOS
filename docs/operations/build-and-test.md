@@ -28,6 +28,13 @@ contracts. The HTTP-resource suite starts a loopback origin and proves authentic
 redirect handling, exact response bytes, and ETag revalidation; it does not replace
 the full-stack customer-database isolation proof.
 
+The native credential regression suite verifies one refresh for 80 concurrent callers,
+session separation, expiry, invalid responses and failed-refresh behavior:
+
+```sh
+cargo test --locked --release --manifest-path app/src-tauri/Cargo.toml --lib service_token::tests
+```
+
 Run the application unit tests separately:
 
 ```sh
@@ -38,6 +45,10 @@ Format and lint changed files before committing:
 
 ```sh
 bun run check:docs
+bun run check:secrets
+bun audit
+cargo install cargo-audit --version 0.22.2 --locked
+bun run check:rust-advisories
 bun run lint
 ```
 
@@ -64,8 +75,42 @@ Signed App Store, Android, and distribution-specific application builds have sep
 credentials and guides under `docs/deploy/`; they are not part of the server-platform
 deployment.
 
-The deployment workflow builds service containers itself and publishes immutable GHCR
-digests only after verification passes.
+`platform-release`, running from protected `next`, publishes immutable GHCR digests only
+after verification passes. Secret-bearing deployment jobs consume its verified manifest;
+they do not rebuild candidate application code. `Platform release gate` is the stable
+required promotion check emitted by `platform-ci`, including documentation-only changes.
+
+The Linux full-stack E2E and release publisher also run `bash scripts/scan-container-os.sh`
+against their exact built image references. This requires Docker, curl, jq and network
+access to the pinned scanner release and its advisory database. To scan an existing
+local image directly, pass its name or digest as the final argument. Fixed high/critical
+OS findings fail the gate; unresolved upstream findings are reported separately. This
+gate does not audit Go libraries embedded in the upstream Caddy binary. Updating the
+Alpine packages cannot patch those libraries; they require an updated binary.
+
+`check:secrets` scans working files and reachable Git history with fully redacted output.
+Its checksum-pinned scanner first proves that a synthetic registry credential is detected.
+The historical baseline contains exact reviewed commit/file/rule fingerprints, not broad
+path exclusions. New occurrences still fail. Never add an active credential to the baseline.
+
+CI dependency installation temporarily authenticates through an owner-only project
+`.npmrc`, then restores its exact prior contents and permissions in the same step.
+The action restores it on success, failure and handled cancellation; it does not leave
+a token hidden behind Git's skip-worktree flag. A local action regression runs in both
+platform CI and release verification before scanning. An abruptly killed disposable
+runner cannot execute its cleanup trap, so no workspace or registry configuration is
+exported as a cache or artifact.
+
+The Rust audit checks every supported application, library and service lockfile, excluding
+archived code. Artifact Store's locked but unused SQLx MySQL/RSA dependency is exempt only
+when Cargo proves it absent from every enabled target/feature graph on that run. Other
+vulnerabilities fail. RustSec informational/unmaintained warnings remain visible: Tauri's
+Linux GTK3 stack still requires old bindings, including the `glib::VariantStrIter`
+unsoundness warning. No local fork or unsupported GTK ABI upgrade conceals that upstream
+constraint. CI installs the official pinned auditor release only after checking its
+recorded SHA-256; it does not share an executable scanner cache between development
+and release branches. The manual `cargo install` command above builds the same version
+from crates.io when a supported prebuilt CI binary is not applicable.
 
 ## Infrastructure and recovery checks
 
@@ -75,6 +120,7 @@ These tests do not contact Hetzner:
 bun run test:infra
 bun run test:bootstrap
 bun run test:deploy
+bun run test:proxy-boundary
 bun run test:recovery
 ```
 
@@ -90,6 +136,10 @@ bun run test:recovery
   checkpoint state without contacting a provider.
 - `test:deploy` validates shell scripts, production Compose files, Caddy
   configuration, dependency order, non-root images, and secret-safe build contexts.
+- `test:proxy-boundary` runs the production checkout Caddy block against a loopback
+  fixture on Linux, proves distinct transport clients survive forwarding, rejects
+  caller-selected forwarding identity, and checks the production Svelte one-hop settings.
+  It does not simulate separate users behind the same NAT or a future CDN.
 - `test:recovery` creates source databases, takes encrypted backups, restores fresh
   targets, compares exact data and access control lists, and proves bounded provider
   failure, wrong-key, and populated-target rejection.
@@ -109,10 +159,16 @@ fresh databases on dynamic loopback ports, and proves the public journey:
 - first and second passkey enrollment and login;
 - native Tauri device authorization and short-lived service-token exchange;
 - customer database provisioning and per-schema isolation;
+- live membership downgrade/removal with an unchanged identity token, while another
+  environment remains independently accessible;
 - artifact upload and exact readback;
 - native document import on both Device and Server placement, exact source and
   extracted bytes, and canonical stored-graph equivalence for the deterministic text
   fixture;
+- synthetic invoice and statement PDF imports in opposite orders on Device and Server,
+  automatic match proposals, and a physical confirmation through the existing native
+  comparison control, with the accepted decision and its three evidence inputs read
+  back from the customer database;
 - authenticated LLM chat with durable Intent history, including session-local
   anonymous speaker attribution and a duplex interruption followed by another
   speaker;
@@ -127,6 +183,9 @@ fresh databases on dynamic loopback ports, and proves the public journey:
 
 The test uses disposable volumes and always tears down the `hosting` profile. Setting
 `E2E_SKIP_IMAGE_BUILD=true` is useful while iterating but is not release proof.
+The harness overlays production container limits, capability removal, read-only roots,
+temporary filesystems, and child-process reaping. Recovery uses a separate drill; the
+local payment, inbox and LLM fixtures do not prove availability of external providers.
 The voice path uses deterministic silent fixtures through the production semantic
 state machine. It proves ordering, interruption, attribution transport, and Intent
 persistence without microphone hardware; physical acoustic qualification remains the
@@ -134,8 +193,100 @@ separate procedure in
 [Voice dependency qualification](../voice-dependency-qualification.md).
 The [Actor runtime proof strategy](../actor-runtime-proof-strategy.md) states the exact
 claims this rail establishes. The focused document conformance suite additionally
-compares browser and headless-runner results for deterministic text, CSV, and
-native-text PDF goldens; server OCR and live-model parity remain explicit gaps.
+compares browser and headless-runner results for deterministic text, CSV, native-text
+PDF and model-backed image goldens. The real-store reconciliation suite also proves
+restart without repeated model calls, identical local/remote financial payloads,
+candidate lineage, decision replay and scope denial. The native journey has a
+180-second budget. Financial document waits fail immediately on terminal failure or
+unexpected review-required processing; otherwise they allow 20 seconds per document
+and 10 seconds for saving a decision. Failed decodes retain diagnostic context.
+Text-document graph waits are bounded to 20 seconds. Financial waits print stage
+transitions and retry errors; remote progress comes from the runner's shared status
+protocol. There is no longer a per-test override extending the journey to five minutes.
+
+CSV intake has a separate native checkpoint: the test imports a recognized synthetic
+CSV on Device and Server, verifies that no transactions or matching candidates exist
+from it before a physical click, exercises rejection and acceptance, then verifies the
+accepted transaction amounts and dates without accepting any invoice relationship.
+These expected document-type review states use their own 10-second bounded waits.
+The native test then imports a matching synthetic invoice on each placement and
+requires a second physical decision before accepting the exact invoice/booking
+relationship. It checks the original CSV row and all three decision evidence inputs.
+The same two-gate composition also has a fast in-memory integration test.
+Restart tests replay accepted and rejected document decisions without
+presenting another gate or treating restoration as a new human click.
+The shared detector/runtime tests run with `bun run --cwd libs/aven-document-ingest test`;
+the physical-gate unit tests run with `bun test app/tests/csv-document-review.test.ts`.
+The [CSV corpus](../../fixtures/golden/bank-csv/README.md) records supported and blocked
+formats, source provenance and the distinction between decoding and financial import.
+
+### Use a real document model in the local proof
+
+The document provider is opt-in. Set both `TEST_DOCUMENT_PROVIDER_BASE_URL` (the
+OpenAI-compatible `/v1` base, not `/models`) and `TEST_DOCUMENT_PROVIDER_MODEL` to the
+exact installed model. `TEST_DOCUMENT_PROVIDER_PROFILE=qwen-tools` selects the
+production Qwen tool-call adapter and disables thinking; the default is
+`openai-json-schema`. Do not select a profile merely to hide invalid provider output.
+
+With these variables set, `bun deploy/e2e/document-provider.ts` runs the two reviewed
+OCR goldens through the production facade translation. It accepts an optional
+`TEST_DOCUMENT_PROVIDER_TOKEN`, binds its temporary gateway to loopback with a random
+token, limits each provider request to 45 seconds and each test to 120 seconds, stops
+at the first failed test, and kills the child process group if the suite exceeds
+270 seconds. No external endpoint
+is contacted by this test unless configured explicitly.
+
+Two expanded corpora use the same wrapper and provider variables:
+
+```bash
+TEST_DOCUMENT_CORPUS=market bun deploy/e2e/document-provider.ts
+TEST_DOCUMENT_CORPUS=market TEST_DOCUMENT_CASE=cn-private-receipt bun deploy/e2e/document-provider.ts
+bun fixtures/golden/public-documents/fetch.ts
+AVEN_PUBLIC_DOCUMENT_DIR="$PWD/fixtures/golden/public-documents/files" TEST_DOCUMENT_CORPUS=public bun deploy/e2e/document-provider.ts
+```
+
+The [market corpus](../../fixtures/golden/reconciliation-market/README.md) has 13
+single-document tests; its full-suite watchdog is 1,590 seconds (13 bounded tests
+plus teardown), not a longer per-document wait. A selected case retains the
+270-second suite watchdog. The [public corpus](../../fixtures/golden/public-documents/README.md)
+has seven checksum/page-count checks and two live blank-form safety checks. Its
+download step contacts only the listed issuer URLs, refuses changed hashes, and
+does not submit files to a model. The subsequent opt-in provider command does.
+For public decoding without any model calls, set only `AVEN_PUBLIC_DOCUMENT_DIR`
+when running the document-ingest suite.
+
+To regenerate the synthetic PDFs, use Python with ReportLab plus installed
+DejaVuSans, DejaVuSans-Bold and DroidSansFallbackFull fonts at the paths in the
+generator, then run `python3 fixtures/golden/reconciliation-market/build.py`.
+Render and inspect every page after regeneration and rerun the decoder tests;
+font substitutions can lose Chinese or Latin glyphs without failing PDF generation.
+
+The same base/model/profile variables also make `bun run test:e2e:platform` use that
+provider for native PDF invoice/statement processing on both Device and Server.
+Chat remains the deterministic fixture provider. This full-stack override currently
+uses an unauthenticated endpoint reachable from its containers; the focused wrapper's
+token option does not configure native-stack credentials. Live document waits allow
+60 seconds, within the native journey's 180-second total budget. CSV detection is
+deterministic and never calls the LLM, even in this mode.
+
+Live-provider success proves the tested inputs and adapter, not general OCR accuracy,
+provider determinism or recognition of unsupported documents. Keep corpus expected
+values independent of the provider response.
+
+These are synthetic correctness fixtures, not a representative validation corpus.
+The native invoice and statement PDFs use a deterministic structured-output model in the
+isolated E2E catalog; all decoders, Actors, solver, transports, publication validation,
+database and review controls are production implementations. This proves wiring and
+invariants, not OCR accuracy, supplier coverage or quarter-level precision/recall.
+The optional live native run verifies provider-backed local/remote parity for those
+same inputs; expanded provider corpus tests use an in-memory publication gateway.
+No automated
+settlement or global assignment is claimed. See the
+[reconciliation validation boundaries](../invoice-statement-reconciliation.md#current-executable-flow-and-validation-boundaries).
+
+On filesystems that reject native file watches with `EINVAL`, use
+`CHOKIDAR_USEPOLLING=true bun run test:e2e:platform`. This changes file watching only;
+it does not skip any gate or alter the application under test.
 
 ## Polar Sandbox checkout E2E
 

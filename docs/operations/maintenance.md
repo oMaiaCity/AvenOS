@@ -11,15 +11,16 @@ hourly backup runs on each host, and GitHub checks public and host health hourly
 | Frequency | Operator action |
 | --- | --- |
 | Continuous | Respond only to failed public, container, disk, TLS, or backup checks |
-| Each release | Deploy an exact verified ref and complete the smoke checklist |
+| Each release | Deploy an immutable verified release manifest and complete the smoke checklist |
 | Monthly | Review capacity trend, failed workflow history, provider expiry notices, and access membership |
 | Quarterly | Perform a real fresh-host recovery drill and verify password-manager recovery; include another recovery holder when available |
 | Before retirement | Take a final verified backup and record the data-retention decision |
 
 ## Automated maintenance
 
-- `platform-operations` runs an `identity`, `next`, and production job at minute 17
-  each hour once each target's Pulumi stack exists.
+- `platform-operations` dispatches protected `platform-observe` from `prod` at minute 17
+  each hour once the installation exists. The default-branch scheduler has no target
+  secrets; the protected observer runs the identity, next and production checks.
 - The jobs use the corresponding read-only `<target>-operations` GitHub Environment;
   deployment approval rules never block scheduled monitoring.
 - It checks the target's public HTTPS origins, host Compose state, data volume use,
@@ -98,6 +99,40 @@ If a customer remains provisioning:
 Never create a customer database, schema, role, or route by hand.
 
 ## Release and credential maintenance
+
+Dependabot checks JavaScript/Bun, Rust, Docker bases, GitHub Actions and Android Gradle
+dependencies weekly and groups compatible changes to keep the review queue bounded.
+JavaScript/Rust advisory and redacted secret scans run in platform CI, release verification,
+and the weekly `dependency-security` workflow even when application source is unchanged.
+An automatic update PR is not automatically deployed: it must pass the same tests and
+promotion rules. Advisory feeds can miss unpublished flaws, and a clean package scan
+does not prove the operating-system or container dependency set is safe.
+
+Application runtime Dockerfiles update their Debian or Alpine packages during a fresh
+build, before dropping to the runtime user. Existing images and running containers do
+not update themselves: publish and deploy a new verified release to receive those fixes.
+Reusing a cached package-update layer does not refresh it; security rebuilds must bypass
+that layer. OS image scanning remains a separate check from JavaScript and Rust audits.
+The full local E2E harness audits its newly built images. Release publication scans all
+eleven exact runtime digests before exporting a usable release manifest. Fixed high or
+critical OS advisories block release; findings without an upstream fix remain visible.
+The checksum-pinned scanner reads its current advisory database and fails if that check
+cannot run. It does not claim that the absence of a published fix makes a finding safe.
+The weekly dependency check also rescans the most recent successful release's exact
+image digests. It reports when no release exists and fails if a recorded release's
+manifest cannot be retrieved; an expired artifact is not a successful security check.
+
+The database and proxy are also built and pinned in the release manifest, rather than
+pulled from floating production tags. The OS scanner does not inspect Go libraries
+inside Caddy. The latest reviewed upstream Caddy binary still has reported library
+advisories; rebuilding its Alpine layer does not resolve them. Treat those as open
+upstream findings, not as covered by the OS gate. A custom Caddy dependency fork is
+not part of the low-maintenance deployment model.
+
+See [Runtime security controls](security-controls.md) for request budgets, boundary
+signals, container exceptions, static-fetch limits and desktop permissions. Review
+unexpected internal-peer denials using the existing bounded logs. Do not respond by
+adding an IP to an allowlist without establishing why that service needs access.
 
 - Deploy updates through [Deployment](deployment.md#deploy-an-update).
 - Rotate secrets according to [Access and secrets](access-and-secrets.md#rotation).

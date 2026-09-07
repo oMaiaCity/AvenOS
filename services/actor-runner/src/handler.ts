@@ -7,6 +7,7 @@ import type {
 import type { TenantGrantClaims, TenantGrantKey } from '@avenos/aven-customer-contracts'
 import { admitCustomerRequest, CustomerAdmissionError } from '@avenos/aven-customer-runtime'
 import type { IdentityVerifier } from '@avenos/aven-identity'
+import { BodyLimitError, readBoundedBytes } from '@avenos/http-boundary'
 import { ZodError } from 'zod'
 import { parsePlanRunStartCommand } from './command.js'
 
@@ -33,7 +34,7 @@ async function readJson(request: Request): Promise<unknown> {
 	if (Number.isFinite(declared) && declared > MAX_COMMAND_BYTES) {
 		throw new ActorRunHttpError(413, 'COMMAND_TOO_LARGE', 'The actor run command is too large.')
 	}
-	const bytes = new Uint8Array(await request.arrayBuffer())
+	const bytes = await readBoundedBytes(request, MAX_COMMAND_BYTES)
 	if (bytes.byteLength > MAX_COMMAND_BYTES) {
 		throw new ActorRunHttpError(413, 'COMMAND_TOO_LARGE', 'The actor run command is too large.')
 	}
@@ -106,7 +107,7 @@ export function createActorRunnerHandler(
 		throw new Error('runner service token must contain at least 32 bytes')
 	return async (request: Request): Promise<Response> => {
 		const url = new URL(request.url)
-		if (url.pathname === '/health/live') {
+		if (request.method === 'GET' && ['/health/live', '/health/ready'].includes(url.pathname)) {
 			return json(200, { status: 'ok', service: 'actor-runner', authority: 'os.aven' })
 		}
 		try {
@@ -183,6 +184,7 @@ export function createActorRunnerHandler(
 			}
 			return json(404, { code: 'ROUTE_NOT_FOUND' })
 		} catch (error) {
+			if (error instanceof BodyLimitError) return json(error.status, { code: error.code })
 			if (error instanceof ActorRunHttpError) {
 				return json(error.status, { code: error.code, message: error.message })
 			}

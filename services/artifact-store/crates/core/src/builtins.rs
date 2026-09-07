@@ -22,6 +22,8 @@ const CORE_BUNDLE_JSON: &[u8] =
     include_bytes!("../../../conformance/fixtures/protocol/core.bundle.v1.json");
 const CORE_FILE_INSPECTION_JSON: &[u8] =
     include_bytes!("../../../conformance/fixtures/protocol/core.file-inspection.v1.json");
+const CORE_FILE_INSPECTION_V2_JSON: &[u8] =
+    include_bytes!("../../../conformance/fixtures/protocol/core.file-inspection.v2.json");
 const DOCS_PAGE_JSON: &[u8] =
     include_bytes!("../../../conformance/fixtures/protocol/docs.page.v1.json");
 const CORE_CONTENT_CLASSIFICATION_JSON: &[u8] =
@@ -36,6 +38,8 @@ const CORE_DOCUMENT_CLASSIFICATION_JSON: &[u8] =
     include_bytes!("../../../conformance/fixtures/protocol/core.document-classification.v1.json");
 const BOOKKEEPING_INVOICE_CANDIDATE_JSON: &[u8] =
     include_bytes!("../../../conformance/fixtures/protocol/bookkeeping.invoice-candidate.v1.json");
+const BOOKKEEPING_INVOICE_CANDIDATE_V2_JSON: &[u8] =
+    include_bytes!("../../../conformance/fixtures/protocol/bookkeeping.invoice-candidate.v2.json");
 const BOOKKEEPING_INVOICE_VALIDATION_JSON: &[u8] =
     include_bytes!("../../../conformance/fixtures/protocol/bookkeeping.invoice-validation.v1.json");
 const BOOKKEEPING_INVOICE_DETAILS_JSON: &[u8] =
@@ -53,8 +57,12 @@ const BANKING_TRANSACTION_JSON: &[u8] =
     include_bytes!("../../../conformance/fixtures/protocol/banking.transaction.v1.json");
 const RECONCILIATION_MATCH_CANDIDATE_JSON: &[u8] =
     include_bytes!("../../../conformance/fixtures/protocol/reconciliation.match-candidate.v1.json");
+const RECONCILIATION_MATCH_CANDIDATE_V2_JSON: &[u8] =
+    include_bytes!("../../../conformance/fixtures/protocol/reconciliation.match-candidate.v2.json");
 const INTENT_DECLARATION_JSON: &[u8] =
     include_bytes!("../../../conformance/fixtures/protocol/intent.declaration.v1.json");
+const RECONCILIATION_DECISION_JSON: &[u8] =
+    include_bytes!("../../../conformance/fixtures/protocol/reconciliation.decision.v1.json");
 
 /// Exact source-controlled built-ins registered by the first migration.
 ///
@@ -67,6 +75,7 @@ pub fn builtin_type_definitions() -> Result<Vec<TypeDefinition>, crate::CoreErro
         CORE_FILE_JSON,
         CORE_BUNDLE_JSON,
         CORE_FILE_INSPECTION_JSON,
+        CORE_FILE_INSPECTION_V2_JSON,
         DOCS_PAGE_JSON,
         CORE_CONTENT_CLASSIFICATION_JSON,
         CORE_CONTENT_DESCRIPTION_JSON,
@@ -74,14 +83,19 @@ pub fn builtin_type_definitions() -> Result<Vec<TypeDefinition>, crate::CoreErro
         DOCS_TEXT_LAYOUT_JSON,
         CORE_DOCUMENT_CLASSIFICATION_JSON,
         BOOKKEEPING_INVOICE_CANDIDATE_JSON,
+        BOOKKEEPING_INVOICE_CANDIDATE_V2_JSON,
         BOOKKEEPING_INVOICE_VALIDATION_JSON,
         BOOKKEEPING_INVOICE_DETAILS_JSON,
         BANKING_ACCOUNT_STATEMENT_CANDIDATE_JSON,
+        include_bytes!("../../../conformance/fixtures/protocol/banking.csv-statement-detection.v1.json"),
+        include_bytes!("../../../conformance/fixtures/protocol/banking.csv-statement-confirmation.v1.json"),
         BANKING_STATEMENT_VALIDATION_JSON,
         BOOKKEEPING_OPEN_ITEM_JSON,
         BANKING_STATEMENT_JSON,
         BANKING_TRANSACTION_JSON,
         RECONCILIATION_MATCH_CANDIDATE_JSON,
+        RECONCILIATION_MATCH_CANDIDATE_V2_JSON,
+        RECONCILIATION_DECISION_JSON,
         INTENT_DECLARATION_JSON,
     ]
     .into_iter()
@@ -128,6 +142,22 @@ mod tests {
             catalog
                 .validate_payload(registered, &payload)
                 .unwrap_or_else(|error| panic!("{type_key} sample failed validation: {error}"));
+            if type_key == RECONCILIATION_MATCH_CANDIDATE {
+                let current = catalog
+                    .get(&key, 2)
+                    .expect("current match schema should exist");
+                let mut value: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+                value["matcherVersion"] = "invoice-transaction-v2".into();
+                let missing_ordinal =
+                    parse_canonical(&serde_json::to_vec(&value).unwrap(), true).unwrap();
+                assert!(catalog.validate_payload(current, &missing_ordinal).is_err());
+                value["transactionInputOrdinal"] = 0.into();
+                let current_payload =
+                    parse_canonical(&serde_json::to_vec(&value).unwrap(), true).unwrap();
+                catalog
+                    .validate_payload(current, &current_payload)
+                    .expect("current match requires exact occurrence ordinal");
+            }
         }
     }
 }

@@ -203,7 +203,7 @@ test('fails after a bounded bucket visibility wait', async () => {
 	assert.equal(waits, BOOTSTRAP_BUCKET_VISIBILITY_RETRY_DELAYS_MS.length)
 })
 
-test('retries an idempotent state-backend migration only for transient missing-bucket reads', async () => {
+test('retries an idempotent state-backend migration only for transient missing-bucket operations', async () => {
 	let attempts = 0
 	const waits = []
 	assert.equal(
@@ -232,6 +232,36 @@ test('retries an idempotent state-backend migration only for transient missing-b
 	])
 })
 
+test('retries fresh-backend metadata writes without treating denied writes as propagation', async () => {
+	let attempts = 0
+	await retryBootstrapStateBackendMigration({
+		migrate: async () => {
+			if (++attempts === 1)
+				throw Object.assign(new Error('pulumi failed'), {
+					commandOutput:
+						'problem logging in: write ".pulumi/meta.yaml": operation error S3: PutObject, StatusCode: 404, NoSuchBucket'
+				})
+		},
+		sleep: async () => {}
+	})
+	assert.equal(attempts, 2)
+	assert.equal(
+		isRetryableBootstrapStateBackendError({
+			commandOutput: 'operation error S3: PutObject, AccessDenied'
+		}),
+		false
+	)
+	const source = readFileSync(
+		new URL('../../../scripts/deployment-bootstrap.ts', import.meta.url),
+		'utf8'
+	)
+	const migration = source.slice(source.indexOf('await retryBootstrapStateBackendMigration({'))
+	assert.match(
+		migration,
+		/\['login', remoteBackend\], \{ env: bootstrapEnvironment, capture: true \}/
+	)
+})
+
 test('skips a repeated provider update only for a complete settled local bootstrap stack', () => {
 	const resource = (type, name, extra = {}) => ({
 		type,
@@ -244,6 +274,7 @@ test('skips a repeated provider update only for a complete settled local bootstr
 		resource('minio:index/s3Bucket:S3Bucket', 'production-state'),
 		resource('minio:index/s3Bucket:S3Bucket', 'production-backup'),
 		resource('minio:index/s3BucketVersioning:S3BucketVersioning', 'production-state-versioning'),
+		resource('minio:index/s3BucketVersioning:S3BucketVersioning', 'production-backup-versioning'),
 		resource('minio:index/s3BucketPolicy:S3BucketPolicy', 'production-state-policy'),
 		resource('minio:index/s3BucketPolicy:S3BucketPolicy', 'production-backup-policy')
 	]
@@ -929,13 +960,13 @@ test('uses solo operation by default and enables review when requested', () => {
 		wait_timer: 0,
 		prevent_self_review: false,
 		reviewers: [],
-		deployment_branch_policy: { protected_branches: true, custom_branch_policies: false }
+		deployment_branch_policy: { protected_branches: false, custom_branch_policies: true }
 	})
 	assert.deepEqual(githubEnvironmentProtection(true, 42), {
 		wait_timer: 0,
 		prevent_self_review: true,
 		reviewers: [{ type: 'User', id: 42 }],
-		deployment_branch_policy: { protected_branches: true, custom_branch_policies: false }
+		deployment_branch_policy: { protected_branches: false, custom_branch_policies: true }
 	})
 	assert.deepEqual(githubEnvironmentProtection(false, 42).reviewers, [])
 })

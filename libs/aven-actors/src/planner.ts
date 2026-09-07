@@ -381,18 +381,36 @@ function expandEnrichment(
 	}
 }
 
+export class RequirementSearchLimit extends Error {
+	constructor() {
+		super('requirement search limit reached')
+	}
+}
+
 export function matchRequirements(
 	requirements: Predicate[],
-	facts: PlanValue[]
+	facts: PlanValue[],
+	options: { maxAttempts?: number; maxMatches?: number } = {}
 ): RequirementMatch[] {
 	if (requirements.length === 0) return [{ bindings: {}, inputs: [] }]
 	const matches: RequirementMatch[] = []
+	let attempts = 0
+	const candidates = requirements.map((requirement) => {
+		const term = parseTerm(requirement)
+		return facts.filter((fact) => {
+			const other = parseTerm(fact.predicate)
+			return other.functor === term.functor && other.args.length === term.args.length
+		})
+	})
 	const visit = (index: number, bindings: Bindings, inputs: PlanValue[]) => {
+		if (matches.length >= (options.maxMatches ?? Infinity)) return
 		if (index === requirements.length) {
 			matches.push({ bindings, inputs })
 			return
 		}
-		for (const fact of facts) {
+		for (const fact of candidates[index] ?? []) {
+			if (matches.length >= (options.maxMatches ?? Infinity)) return
+			if (++attempts > (options.maxAttempts ?? Infinity)) throw new RequirementSearchLimit()
 			const next = unify(requirements[index] ?? '', fact.predicate, bindings)
 			if (next) visit(index + 1, next, [...inputs, fact])
 		}
@@ -439,13 +457,7 @@ function hasCapabilityInAncestry(
 }
 
 function resolveGoals(goals: Predicate[], facts: PlanValue[]): PlanValue[] | null {
-	const results: PlanValue[] = []
-	for (const goal of goals) {
-		const fact = facts.find((candidate) => unify(goal, candidate.predicate))
-		if (!fact) return null
-		results.push(fact)
-	}
-	return results
+	return matchRequirements(goals, facts)[0]?.inputs ?? null
 }
 
 function stateKey(state: SearchState): string {

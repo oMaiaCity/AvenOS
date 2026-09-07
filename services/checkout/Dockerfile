@@ -36,6 +36,7 @@ RUN --mount=type=cache,target=/root/.bun/install/cache,sharing=locked \
   && rm -f "$HOME/.npmrc"
 
 FROM oven/bun:1.3.13
+RUN apt-get update && apt-get upgrade --yes --no-install-recommends && rm -rf /var/lib/apt/lists/*
 WORKDIR /repo/services/checkout
 ENV NODE_ENV=production
 COPY --from=production-dependencies /repo/node_modules /repo/node_modules

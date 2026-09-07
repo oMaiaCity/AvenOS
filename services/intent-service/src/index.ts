@@ -1,6 +1,7 @@
 import { importTenantGrantPublicKey } from '@avenos/aven-customer-contracts'
 import { TenantPoolProvider } from '@avenos/aven-customer-runtime'
 import { IdentityVerifier } from '@avenos/aven-identity'
+import { BoundarySignals } from '@avenos/http-boundary'
 import pino from 'pino'
 import { loadIntentServiceConfig } from './config.js'
 import { createIntentHandler } from './handler.js'
@@ -31,9 +32,16 @@ const handler = createIntentHandler(
 	(error) => logger.error({ err: error }, 'Intent request failed')
 )
 
+const boundary = new BoundarySignals('facade-to-intents', (summary) =>
+	logger.warn(summary, 'Service boundary denials observed')
+)
 Bun.serve({
 	port: config.PORT,
-	fetch: handler,
+	async fetch(request, server) {
+		const response = await handler(request)
+		boundary.record(response.status, server.requestIP(request)?.address)
+		return response
+	},
 	error(error) {
 		logger.error({ err: error }, 'Intent server failed')
 		return Response.json(

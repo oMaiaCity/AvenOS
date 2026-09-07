@@ -1,0 +1,40 @@
+version: 2
+registries:
+  github-npm:
+    type: npm-registry
+    url: https://npm.pkg.github.com
+    token: ${{ secrets.PACKAGE_READ_TOKEN }}
+updates:
+  - package-ecosystem: bun
+    directory: /
+    registries: [github-npm]
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 3
+    groups:
+      compatible-updates:
+        patterns: ['*']
+        update-types: [minor, patch]
+  - package-ecosystem: cargo
+    directories: [/app/src-tauri, /services/artifact-store, '/libs/*']
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 3
+    groups:
+      compatible-updates:
+        patterns: ['*']
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    groups:
+      actions:
+        patterns: ['*']
+  - package-ecosystem: docker
+    directories: ['/services/*', /deploy/operations, /deploy/database, /deploy/proxy]
+    schedule: { interval: weekly }
+    groups:
+      base-images:
+        patterns: ['*']
+  - package-ecosystem: gradle
+    directory: /app/src-tauri/gen/android
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 2

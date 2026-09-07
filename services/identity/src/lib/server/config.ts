@@ -47,16 +47,54 @@ export const identityConfigSchema = z
 			.regex(/^postgres(ql)?:\/\//)
 			.optional(),
 		BETTER_AUTH_SECRET: z.string().min(32),
+		BACKUP_HEALTH_FILE: z.string().optional(),
 		IDENTITY_PROVISIONING_SECRETS: provisioningSecrets,
+		IDENTITY_MAIL_ORIGINS: z
+			.string()
+			.default('')
+			.transform((value) =>
+				value
+					.split(',')
+					.map((v) => v.trim())
+					.filter(Boolean)
+			),
 		REQUIRE_PASSKEY_PRF: bool.default(false),
 		SESSION_MAX_AGE_SECONDS: z.coerce.number().int().positive().default(43_200),
 		SESSION_UPDATE_AGE_SECONDS: z.coerce.number().int().positive().default(3_600),
 		ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().min(60).max(900).default(300),
 		POW_DIFFICULTY_BITS: z.coerce.number().int().min(8).max(28).default(16),
-		POW_CHALLENGE_TTL_SECONDS: z.coerce.number().int().positive().default(300),
+		POW_CHALLENGE_TTL_SECONDS: z.coerce.number().int().min(1).max(3600).default(300),
 		LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info')
 	})
 	.superRefine((config, context) => {
+		if (
+			config.IDENTITY_MAIL_ORIGINS.length &&
+			config.IDENTITY_MAIL_ORIGINS.length !== config.IDENTITY_PROVISIONING_SECRETS.length
+		)
+			context.addIssue({
+				code: 'custom',
+				path: ['IDENTITY_MAIL_ORIGINS'],
+				message: 'must match provisioning-secret order and count'
+			})
+		for (const value of config.IDENTITY_MAIL_ORIGINS) {
+			try {
+				const url = new URL(value)
+				if (
+					url.origin !== value ||
+					url.username ||
+					url.password ||
+					(url.protocol !== 'https:' &&
+						!(config.NODE_ENV !== 'production' && url.protocol === 'http:'))
+				)
+					throw new Error('origin')
+			} catch {
+				context.addIssue({
+					code: 'custom',
+					path: ['IDENTITY_MAIL_ORIGINS'],
+					message: 'must contain fixed HTTPS origins (HTTP only outside production)'
+				})
+			}
+		}
 		const origin = new URL(config.PUBLIC_BASE_URL)
 		if (origin.pathname !== '/' || origin.search || origin.hash)
 			context.addIssue({ code: 'custom', path: ['PUBLIC_BASE_URL'], message: 'must be an origin' })
@@ -69,6 +107,12 @@ export const identityConfigSchema = z
 		if (config.NODE_ENV === 'production' && origin.protocol !== 'https:')
 			context.addIssue({ code: 'custom', path: ['PUBLIC_BASE_URL'], message: 'must use HTTPS' })
 		if (config.NODE_ENV === 'production') {
+			if (!config.IDENTITY_MAIL_ORIGINS.length)
+				context.addIssue({
+					code: 'custom',
+					path: ['IDENTITY_MAIL_ORIGINS'],
+					message: 'security mail delivery is required in production'
+				})
 			for (const key of ['ACCOUNTS_DATABASE_URL', 'AUTHORIZATION_DATABASE_URL'] as const)
 				if (!config[key])
 					context.addIssue({

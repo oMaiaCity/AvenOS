@@ -59,6 +59,7 @@ if [ -z "${NODE_AUTH_TOKEN:-}" ] || [ "$NODE_AUTH_TOKEN" = "undefined" ]; then
   exit 1
 fi
 
+docker build --file "$root/deploy/database/Dockerfile" --tag aven-e2e-database:local "$root"
 docker build --secret id=npm_token,env=NODE_AUTH_TOKEN --file "$root/services/identity/Dockerfile" --tag aven-e2e-identity:local "$root"
 docker build --secret id=npm_token,env=NODE_AUTH_TOKEN --file "$root/services/aven-api/Dockerfile" --tag aven-e2e-api:local "$root"
 docker build --secret id=npm_token,env=NODE_AUTH_TOKEN --file "$root/services/checkout/Dockerfile" --tag aven-e2e-checkout:local "$root"

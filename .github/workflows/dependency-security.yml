@@ -1,0 +1,51 @@
+name: dependency-security
+on:
+  schedule:
+    - cron: '31 6 * * 1'
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+  packages: read
+concurrency:
+  group: dependency-security
+  cancel-in-progress: false
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.93.1
+      - uses: ./.github/actions/bun-install
+        with:
+          token: ${{ secrets.PACKAGE_READ_TOKEN }}
+      - uses: ./.github/actions/setup-security-audit
+      - run: bun audit
+      - run: bun run check:rust-advisories
+      - run: bun run check:secrets
+      - name: Audit the latest verified release images
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release_run=$(gh run list --workflow platform-release.yml --branch next --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          if [ -z "$release_run" ]; then
+            echo 'No successful release exists yet; there are no published release images to audit.'
+            exit 0
+          fi
+          stage=$(mktemp -d)
+          trap 'docker logout ghcr.io >/dev/null 2>&1 || true; rm -rf "$stage"' EXIT
+          gh run download "$release_run" --name aven-release --dir "$stage"
+          bun -e 'import {validateReleaseManifest} from "./scripts/lib/platform-release.ts"; validateReleaseManifest(await Bun.file(Bun.argv.at(-1)).json())' "$stage/release.json"
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          mapfile -t images < <(jq -r '.images[]' "$stage/release.json")
+          bash scripts/scan-container-os.sh "${images[@]}"

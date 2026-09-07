@@ -1,6 +1,7 @@
 import type { TenantGrantClaims, TenantGrantKey } from '@avenos/aven-customer-contracts'
 import { admitCustomerRequest, CustomerAdmissionError } from '@avenos/aven-customer-runtime'
 import type { IdentityVerifier } from '@avenos/aven-identity'
+import { BodyLimitError, readBoundedText } from '@avenos/http-boundary'
 import { z } from 'zod'
 import type { IntentServiceConfig } from './config.js'
 import {
@@ -94,11 +95,7 @@ function problem(status: number, code: string, message: string): Response {
 }
 
 async function requestJson(request: Request): Promise<unknown> {
-	const declared = Number(request.headers.get('content-length') ?? 0)
-	if (declared > 1024 * 1024) throw new IntentInputError('Request body is too large.')
-	const text = await request.text()
-	if (Buffer.byteLength(text) > 1024 * 1024)
-		throw new IntentInputError('Request body is too large.')
+	const text = await readBoundedText(request, 256 * 1024)
 	try {
 		return JSON.parse(text)
 	} catch {
@@ -190,6 +187,7 @@ export function createIntentHandler(
 			}
 			return problem(404, 'ROUTE_NOT_FOUND', 'The intent route does not exist.')
 		} catch (error) {
+			if (error instanceof BodyLimitError) return problem(error.status, error.code, error.message)
 			if (error instanceof CustomerAdmissionError)
 				return problem(401, 'AUTHENTICATION_REQUIRED', 'Intent authentication failed.')
 			if (error instanceof IntentNotFoundError)

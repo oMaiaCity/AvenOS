@@ -1,100 +1,27 @@
 name: platform-operations
 
+# GitHub schedules originate on main. It can dispatch fixed prod observer code,
+# but this workflow has no deployment Environment or infrastructure credentials.
 on:
   schedule:
     - cron: '17 * * * *'
   workflow_dispatch:
 
 permissions:
-  actions: read
+  actions: write
   contents: read
 
-jobs:
-  validate-environment-prefix:
-    runs-on: ubuntu-latest
-    outputs:
-      active: ${{ steps.prefix.outputs.active }}
-      targets: ${{ steps.prefix.outputs.targets }}
-    steps:
-      - name: Validate the active infrastructure generation
-        id: prefix
-        env:
-          DEPLOYMENT_ENVIRONMENT_PREFIX: ${{ vars.DEPLOYMENT_ENVIRONMENT_PREFIX }}
-          DEPLOYMENT_TARGETS_JSON: ${{ vars.DEPLOYMENT_TARGETS_JSON }}
-          EVENT_NAME: ${{ github.event_name }}
-        run: |
-          set -euo pipefail
-          if [[ -z "$DEPLOYMENT_ENVIRONMENT_PREFIX" && "$EVENT_NAME" == schedule ]]; then
-            echo 'active=false' >> "$GITHUB_OUTPUT"
-            echo 'targets=[]' >> "$GITHUB_OUTPUT"
-            echo 'No infrastructure generation is active; scheduled monitoring is dormant.'
-            exit 0
-          fi
-          [[ "$DEPLOYMENT_ENVIRONMENT_PREFIX" =~ ^avenos-[0-9a-f]{10}$ ]]
-          jq -e 'type == "array" and length > 0 and all(.[]; . == "identity" or . == "next" or . == "production")' <<<"$DEPLOYMENT_TARGETS_JSON" >/dev/null
-          echo 'active=true' >> "$GITHUB_OUTPUT"
-          echo "targets=$(jq -c . <<<"$DEPLOYMENT_TARGETS_JSON")" >> "$GITHUB_OUTPUT"
+concurrency:
+  group: aven-platform-observation-dispatch
+  cancel-in-progress: false
 
-  health:
-    needs: validate-environment-prefix
-    if: needs.validate-environment-prefix.outputs.active == 'true'
+jobs:
+  dispatch:
+    if: vars.DEPLOYMENT_ENVIRONMENT_PREFIX != ''
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        target: ${{ fromJSON(needs.validate-environment-prefix.outputs.targets) }}
-    environment: ${{ format('{0}-{1}-operations', vars.DEPLOYMENT_ENVIRONMENT_PREFIX, matrix.target) }}
-    concurrency:
-      group: aven-platform-operations-${{ vars.DEPLOYMENT_ENVIRONMENT_PREFIX }}-${{ matrix.target }}
-      cancel-in-progress: false
-    env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.PULUMI_STATE_S3_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.PULUMI_STATE_S3_SECRET_ACCESS_KEY }}
-      AWS_REGION: ${{ vars.PULUMI_STATE_S3_REGION }}
-      AWS_DEFAULT_REGION: ${{ vars.PULUMI_STATE_S3_REGION }}
-      AWS_EC2_METADATA_DISABLED: 'true'
-      PULUMI_CONFIG_PASSPHRASE: ${{ secrets.PULUMI_CONFIG_PASSPHRASE }}
-      PULUMI_STACK: ${{ vars.PULUMI_STACK }}
-      PULUMI_BACKEND: s3://${{ vars.PULUMI_STATE_S3_BUCKET }}/avenos/platform?endpoint=${{ vars.PULUMI_STATE_S3_REGION }}.your-objectstorage.com&region=${{ vars.PULUMI_STATE_S3_REGION }}&s3ForcePathStyle=true&awssdk=v2
+    timeout-minutes: 3
     steps:
-      - uses: actions/checkout@v5
-      - name: Install Pulumi CLI
-        uses: pulumi/actions@8e5e406f4007fca908480587cb9893c07090f58d # v7
-      - name: Detect provisioned target
-        id: activation
-        run: |
-          set -euo pipefail
-          pulumi login "$PULUMI_BACKEND" >/dev/null
-          if pulumi stack select "$PULUMI_STACK" --cwd infrastructure/platform >/dev/null 2>&1; then
-            echo 'active=true' >> "$GITHUB_OUTPUT"
-          else
-            echo 'active=false' >> "$GITHUB_OUTPUT"
-            echo '${{ matrix.target }} has no provisioned stack; monitoring is dormant.'
-          fi
-      - name: Check public service health
-        if: steps.activation.outputs.active == 'true'
-        run: |
-          case '${{ matrix.target }}' in
-            identity)
-              curl --fail --show-error --silent --max-time 20 https://aven.id/api/health/ready
-              ;;
-            next)
-              curl --fail --show-error --silent --max-time 20 https://api.next.aven.ceo/health/live
-              curl --fail --show-error --silent --max-time 20 https://portal.next.aven.ceo/api/health/ready
-              curl --fail --show-error --silent --max-time 20 https://next.aven.ceo/ >/dev/null
-              ;;
-            production)
-              curl --fail --show-error --silent --max-time 20 https://api.aven.ceo/health/live
-              curl --fail --show-error --silent --max-time 20 https://portal.aven.ceo/api/health/ready
-              curl --fail --show-error --silent --max-time 20 https://aven.ceo/ >/dev/null
-              ;;
-          esac
-      - name: Check host disk and backup health
-        if: steps.activation.outputs.active == 'true'
-        run: |
-          if [[ '${{ matrix.target }}' == identity ]]; then
-            ./tools/stack-observe/run.sh identity check
-          else
-            ./tools/stack-observe/run.sh platform check
-          fi
+      - name: Start protected read-only observation
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run platform-observe.yml --repo "$GITHUB_REPOSITORY" --ref prod

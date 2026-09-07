@@ -57,6 +57,7 @@ describe('tenant grant contract', () => {
 				sub: randomUUID(),
 				sid: 'session-1',
 				role: 'user',
+				membershipRole: 'owner',
 				environmentId,
 				databaseName: databaseNameForEnvironment(environmentId),
 				routingGeneration: 3,

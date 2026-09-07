@@ -58,6 +58,8 @@ export const facadeConfigSchema = z.object({
 	IDENTITY_JWKS_URL: z.url().optional(),
 	IDENTITY_AUDIENCE: z.string().min(1).default('aven-services'),
 	API_PUBLIC_BASE_URL: z.url().default('https://api.aven.ceo'),
+	CHECKOUT_CAPABILITIES_URL: z.url().optional(),
+	BACKUP_HEALTH_FILE: z.string().optional(),
 	CUSTOMER_ENTITLEMENT_TOKEN: z.string().regex(/^[A-Za-z0-9_-]{32,128}$/),
 	TENANT_GRANT_PRIVATE_KEY: z.string().min(80),
 	CORS_ORIGINS: z.string().default('https://portal.aven.ceo,https://aven.ceo'),

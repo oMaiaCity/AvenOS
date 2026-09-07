@@ -56,11 +56,13 @@ export function renderEmail<T extends SystemEmailTemplate>(
 	const record = data as unknown as Record<string, string>
 	const compiled = compiledEmailTemplates[template]
 	const variant =
-		template === 'name.purchased' && !(data as TemplateDataMap['name.purchased']).accessUrl
-			? compiledEmailTemplates['name.purchased'].variants.withoutAccess
-			: template === 'name.purchased'
-				? compiledEmailTemplates['name.purchased'].variants.withAccess
-				: compiledEmailTemplates['name.purchase-link'].variants.default
+		template === 'identity.security'
+			? compiledEmailTemplates['identity.security'].variants.default
+			: template === 'name.purchased' && !(data as TemplateDataMap['name.purchased']).accessUrl
+				? compiledEmailTemplates['name.purchased'].variants.withoutAccess
+				: template === 'name.purchased'
+					? compiledEmailTemplates['name.purchased'].variants.withAccess
+					: compiledEmailTemplates['name.purchase-link'].variants.default
 	return {
 		subject: interpolate(compiled.subject, record, subjectValue),
 		text: interpolate(variant.text, record, (value) => value),

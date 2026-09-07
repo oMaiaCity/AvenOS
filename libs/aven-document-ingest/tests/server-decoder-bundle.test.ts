@@ -32,7 +32,16 @@ describe('production-bundled PDF decoder', () => {
 			const path = new URL(`../../../fixtures/golden/document-pdf/${file}`, import.meta.url)
 				.pathname
 			const { stdout, stderr } = await execute('bun', [executable, path])
-			expect(stderr).toBe('')
+			// PDF.js probes an optional unbundled canvas package even though the
+			// service has already installed the bundled instance's DOM primitives.
+			// Permit only that probe warning; missing primitives or render failures
+			// remain failures, as do the decoded text/image assertions below.
+			expect(
+				stderr.replace(
+					/^Warning: Cannot load "@napi-rs\/canvas" package: "ResolveMessage: Cannot find module '@napi-rs\/canvas' from '[^'\n]+'"\.\n/gm,
+					''
+				)
+			).toBe('')
 			const decoded = JSON.parse(stdout) as {
 				outcome: string
 				pages: number

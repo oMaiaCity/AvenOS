@@ -666,7 +666,13 @@ pub(crate) fn session_token(state: &tauri::State<'_, AuthState>) -> Result<Strin
 /// Exchange the long-lived, revocable Better Auth session for a short-lived,
 /// audience-bound JWT before crossing the identity boundary. Product services
 /// never receive the session credential and can verify the JWT from public JWKS.
+static SERVICE_TOKENS: crate::service_token::ServiceTokenCache = crate::service_token::ServiceTokenCache::new();
+
 pub(crate) fn service_access_token(session_token: &str) -> Result<String, String> {
+	SERVICE_TOKENS.get(session_token, || exchange_service_access_token(session_token))
+}
+
+fn exchange_service_access_token(session_token: &str) -> Result<String, String> {
 	let response = agent()
 		.get(&endpoint("/token"))
 		.set("authorization", &format!("Bearer {session_token}"))
@@ -1058,6 +1064,7 @@ pub async fn auth_passkey_begin(
 		expires_at: Instant::now() + Duration::from_secs(300),
 	});
 	inner.session = None;
+	SERVICE_TOKENS.clear();
 	Ok(BeginPasskeyAuthentication {
 		command: if cfg!(target_os = "android") {
 			"plugin:android-passkey|login".to_string()
@@ -1122,6 +1129,7 @@ pub async fn auth_begin(state: tauri::State<'_, AuthState>) -> Result<BeginAutho
 	inner.pending = Some(pending);
 	inner.pending_passkey = None;
 	inner.session = None;
+	SERVICE_TOKENS.clear();
 	Ok(response)
 }
 
@@ -1171,6 +1179,7 @@ pub async fn auth_logout(state: tauri::State<'_, AuthState>) -> Result<(), Strin
 		inner.pending_passkey = None;
 		inner.session.take().map(|session| session.token)
 	};
+	SERVICE_TOKENS.clear();
 	if let Some(token) = token {
 		tauri::async_runtime::spawn_blocking(move || {
 			let _ = agent()

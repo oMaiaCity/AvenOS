@@ -79,7 +79,8 @@ describe('provider-backed document golden', () => {
 				issueDate: '2026-08-11',
 				supplier: expect.objectContaining({
 					name: 'La Estrella Transit',
-					taxNumber: 'PZA841064A1'
+					taxNumber: 'PZA841064A1',
+					vatId: null
 				}),
 				lineItems: expect.arrayContaining([
 					expect.objectContaining({ title: 'Rail ticket', grossMinor: 55_440 }),
@@ -93,7 +94,7 @@ describe('provider-backed document golden', () => {
 				implementationDigest: expect.any(String)
 			})
 		},
-		600_000
+		120_000
 	)
 
 	providerTest(
@@ -148,7 +149,9 @@ describe('provider-backed document golden', () => {
 				issueDate: '2025-10-18',
 				supplier: expect.objectContaining({
 					name: 'Jopich Hering KGaA AG',
-					vatId: 'DE667194179',
+					// These are separately labelled in the source image.
+					taxNumber: 'DE667194179',
+					vatId: 'DE771485309',
 					city: 'Goslar'
 				}),
 				buyer: expect.objectContaining({ name: 'Hendriks UG', city: 'Sondershausen' }),
@@ -163,7 +166,7 @@ describe('provider-backed document golden', () => {
 				implementationDigest: expect.any(String)
 			})
 		},
-		180_000
+		120_000
 	)
 })
 

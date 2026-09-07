@@ -117,7 +117,8 @@ For a customer request:
 2. the facade verifies the signed identity token and current customer entitlement;
 3. the facade maps the stable environment ID to the current verified routing
    generation;
-4. it creates a short-lived grant bound to environment, audience, and allowed action;
+4. it reads the current membership role and creates a short-lived grant bound to
+   environment, audience, role and allowed action; unknown combinations fail closed;
 5. the domain service verifies that grant and derives the exact customer login for its
    function; and
 6. the bounded pool provider opens or reuses only that customer's connection pool.
@@ -168,10 +169,12 @@ proves exact encrypted fresh-target restore.
   ad hoc backup workflow.
 - Actor runs are durable; the richer generic observation/effect journal remains future
   runtime work.
-- Document import supports device and remote execution. The remote Actor Runner uses
-  the selected customer's run ledger and Artifact Store scope. Its document
-  application executor is intentionally separate from the still-narrow generic
-  planner; server OCR and model-backed understanding remain future capabilities.
+- Document ingestion and invoice reconciliation share the observation-driven general
+  solver on device and remote execution. The remote Actor Runner uses the selected
+  customer's run ledger and Artifact Store scope, including model-backed document
+  understanding. Deterministic fixtures prove transport and semantic parity, not live
+  provider extraction accuracy. Successful publications replay after restart; local
+  in-flight progress and failed attempts are not a durable per-step journal.
 
 These gaps must stay explicit. They are not permission to add shared databases,
 cluster-wide runtime credentials, handwritten customer setup, caller-selected routing,

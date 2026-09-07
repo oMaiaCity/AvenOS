@@ -64,6 +64,16 @@ test('bounds logs and staggers automatic maintenance reboots', () => {
 	assert.match(platform, /backup container is \$health/)
 })
 
+test('disables cloud-init network hotplug on fixed-NIC hosts', () => {
+	const cloudInit = render('/opt/aven/platform')
+	assert.match(cloudInit, /updates:\n {2}network:\n(?:.*\n)*? {4}when: \[boot-new-instance\]/)
+	assert.match(cloudInit, /systemctl mask --now cloud-init-hotplugd\.socket/)
+	assert.match(
+		cloudInit,
+		/systemctl reset-failed cloud-init-hotplugd\.service 2>\/dev\/null \|\| true/
+	)
+})
+
 test('creates a key-only admin plus separate least-privilege service accounts', () => {
 	const cloudInit = render('/opt/aven/platform')
 	assert.match(cloudInit, /name: aven-admin/)

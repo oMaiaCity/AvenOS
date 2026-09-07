@@ -107,7 +107,19 @@ export class RemoteDocumentExecutionHost implements DocumentExecutionHost {
 		const artifactId = request.source.artifactId
 		const active = this.#running.get(artifactId)
 		if (active) return active
-		const run = this.#start(request).finally(() => this.#running.delete(artifactId))
+		const run = this.#start(request)
+			.catch((error) => {
+				const current = this.#presentations.get(artifactId)
+				if (current) {
+					const message = error instanceof Error ? error.message : String(error)
+					current.state = 'failed'
+					current.summary = `Could not monitor the server run: ${message}`
+					current.warnings.push({ code: 'server-monitoring-failed', message, retryable: true })
+					this.#update(artifactId, current)
+				}
+				throw error
+			})
+			.finally(() => this.#running.delete(artifactId))
 		this.#running.set(artifactId, run)
 		return run
 	}
@@ -133,6 +145,7 @@ export class RemoteDocumentExecutionHost implements DocumentExecutionHost {
 			derivedArtifacts: []
 		})
 		const deadline = Date.now() + this.timeoutMs
+		let progressRevision: number | undefined
 		while (Date.now() < deadline) {
 			const record = await this.runner.status(handle.runId)
 			if (!record) throw new Error('the Actor Runner lost the admitted document run')
@@ -152,6 +165,14 @@ export class RemoteDocumentExecutionHost implements DocumentExecutionHost {
 				this.#update(artifactId, failed)
 				return portableRunClone(failed)
 			}
+			if (record.progress?.presentation && record.revision !== progressRevision) {
+				const progress = documentPresentation(record.progress.presentation, true)
+				// Until the run commits a terminal result, this is only live progress.
+				progress.state = 'active'
+				progress.metadata.runId = handle.runId
+				this.#update(artifactId, progress)
+				progressRevision = record.revision
+			}
 			await new Promise((resolve) => setTimeout(resolve, this.pollIntervalMs))
 		}
 		throw new Error('document processing on the Actor Runner timed out')
@@ -164,13 +185,15 @@ export class RemoteDocumentExecutionHost implements DocumentExecutionHost {
 	}
 }
 
-function documentPresentation(value: unknown): ArtifactProcessingPresentation {
+function documentPresentation(value: unknown, progress = false): ArtifactProcessingPresentation {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) {
 		throw new Error('the Actor Runner returned no document presentation')
 	}
 	const presentation = portableRunClone(value) as ArtifactProcessingPresentation
 	if (
-		!['succeeded', 'needs_review', 'failed'].includes(presentation.state) ||
+		!['succeeded', 'needs_review', 'failed', ...(progress ? ['active'] : [])].includes(
+			presentation.state
+		) ||
 		presentation.metadata?.executionEnvironment !== 'server' ||
 		presentation.metadata?.runtimeHost !== 'actor-runner' ||
 		!Array.isArray(presentation.stages) ||
@@ -182,9 +205,8 @@ function documentPresentation(value: unknown): ArtifactProcessingPresentation {
 }
 
 /**
- * Host adapter for the current document coordinator. The request and response
- * cross a strict JSON round trip even when the host is in-process, preserving
- * the seam that the remote server implementation will later occupy.
+ * In-process host for the observation-solver document skill. The request and
+ * response cross a strict JSON round trip, matching the remote host boundary.
  */
 export class InProcessDocumentExecutionHost implements DocumentExecutionHost {
 	onChange?: (artifactId: string, presentation: ArtifactProcessingPresentation) => void

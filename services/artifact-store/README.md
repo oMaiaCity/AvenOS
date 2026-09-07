@@ -1,47 +1,42 @@
 # Aven Artifact Store
 
-This directory contains the durable, immutable Artifact Store kernel: contracts,
-validation, PostgreSQL persistence, and the HTTP server. It intentionally contains no
-document processor, actor runner, intent service, model adapter, or checkout logic.
+The Artifact Store retains exact documents, derived facts and their evidence so a
+person can inspect what an Actor used and safely retry interrupted work. This package
+owns immutable contracts, validation, PostgreSQL persistence and the HTTP server. It
+does not decode documents, run Actors or choose models.
 
-The hard-coded processor and per-customer provisioning runtime were removed during the
-fresh platform cut. The generic actor runner under development in
-`feat/document-ingest-actors` will integrate this store through `api.aven.ceo` with
-short-lived, scope- and action-bound grants. Until that integration lands, the Artifact
-Store is buildable and testable source but is not part of the new production Compose
-stack.
+The deployed customer-data plane routes authenticated access to the selected customer
+database. The facade validates client procedures; the remote Actor Runner publishes
+through its tenant-scoped route. A caller cannot choose a physical database or publisher.
+See the [customer-data boundary](../../docs/customer-database-platform.md) and
+[implemented system map](../../docs/customer-database-system-map.md).
 
-## Local verification
+## Committed replay and typed retrieval
 
-Rust 1.93.1 and PostgreSQL 17 are the tested toolchain.
+Publication is atomic and idempotent by publication ID. The scoped publication read
+returns its committed receipt and production metadata; an absent publication returns
+`404 RESOURCE_UNAVAILABLE`, while authorization and transport failures remain errors.
+The TypeScript client rehydrates output envelopes and exact blob bytes for replay.
+This is a successful-production record, not a mutable attempt journal or work lease.
+Replayable inspection uses `core.file-inspection@2`; occurrence-bound matching uses
+`reconciliation.match-candidate@2`. Earlier registered definitions remain unchanged,
+so introducing these contracts does not rewrite immutable schema identities.
 
-```bash
-export ARTIFACT_STORE_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/artifact_store
-cargo run -p aven-artifact-store-server --bin aven-artifact-store -- migrate
-```
+The scoped artifact collection query selects a type, publication watermark and UUID
+cursor, with at most 128 results per page. The first page captures the watermark; later
+pages and related type queries reuse it so new publications cannot alter that snapshot.
+The query returns immutable envelopes and a continuation cursor, not a claim that all
+real-world bank transactions are present. Its current snapshot token has no restore
+epoch; clients must restart their query/review session after environment restore.
 
-For the fixed-scope development adapter:
+These reads use the same scoped access boundary as existing artifact reads. Derived
+invoice/transaction candidates and human relationship decisions preserve exact input
+roles and ordinals. They do not create a bank allocation ledger in this kernel.
 
-```bash
-export ARTIFACT_STORE_SCOPE_ID=11111111-1111-4111-8111-111111111111
-export ARTIFACT_STORE_BEARER_TOKEN='replace-with-a-url-safe-secret'
-export ARTIFACT_STORE_PUBLISHER_ISSUER='api.aven.ceo'
-export ARTIFACT_STORE_PUBLISHER_SUBJECT='service:local-runner'
-export ARTIFACT_STORE_LISTEN=127.0.0.1:8087
-cargo run -p aven-artifact-store-server --bin aven-artifact-store -- serve
-```
+## Contracts and verification
 
-The client cannot select a database, physical tenant route, publisher, or scope. Those
-values are established by the trusted service boundary.
-
-## Verify
-
-```bash
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test --workspace --all-features
-bun run --cwd ../../libs/aven-artifact-store check
-bun test ../../libs/aven-artifact-store/tests
-```
-
-The normative store contracts live in [`artifact-store-spec`](artifact-store-spec/README.md).
+Rust 1.93.1 and PostgreSQL 17 are the tested toolchain. The
+[normative contracts](artifact-store-spec/README.md) define publication and evidence.
+The [build and test handbook](../../docs/operations/build-and-test.md) owns verification
+commands and the complete native/customer-database E2E gate; the
+[local stack guide](../../docs/operations/local-stack.md) owns local operation.

@@ -110,6 +110,7 @@ interface TauriAcceptance {
 	extractedTextArtifactId: string
 	serverSourceArtifactId: string
 	serverExtractedTextArtifactId: string
+	remoteReconciliationCandidateId: string
 }
 
 interface BrowsedArtifact {
@@ -125,9 +126,12 @@ async function waitForDocumentGraph(
 	excludedSources: ReadonlySet<string>
 ): Promise<{ sourceId: string; extractedTextId: string; graph: BrowsedArtifact[] }> {
 	let lastArtifactResponse = 'not requested'
-	const deadline = Date.now() + 120_000
+	const deadline = Date.now() + 20_000
 	while (Date.now() < deadline) {
-		const response = await fetch(artifactBase, { headers: authorizedHeaders })
+		const response = await fetch(artifactBase, {
+			headers: authorizedHeaders,
+			signal: AbortSignal.timeout(10_000)
+		})
 		lastArtifactResponse = `${response.status} ${await response.clone().text()}`
 		if (response.ok) {
 			const browse = (await response.json()) as { artifacts: BrowsedArtifact[] }
@@ -447,12 +451,19 @@ async function tauriAcceptance(
 						confidence: duplex.follow_up.confidence
 					}
 				})
+				const remoteReconciliationCandidateId = await tauriReconciliation(
+					session,
+					dashboard,
+					artifactBase,
+					authorizedHeaders
+				)
 				return {
 					intentId,
 					sourceArtifactId,
 					extractedTextArtifactId,
 					serverSourceArtifactId: serverDocument.sourceId,
-					serverExtractedTextArtifactId: serverDocument.extractedTextId
+					serverExtractedTextArtifactId: serverDocument.extractedTextId,
+					remoteReconciliationCandidateId
 				}
 			}
 			await new Promise((resolve) => setTimeout(resolve, 100))
@@ -461,6 +472,240 @@ async function tauriAcceptance(
 	} finally {
 		await session.close()
 	}
+}
+
+/** Real native import and human-confirmation surfaces; only the model provider is deterministic. */
+async function tauriReconciliation(
+	session: TauriSession,
+	dashboard: URL,
+	artifactBase: string,
+	headers: Record<string, string>
+) {
+	const readType = async (typeKey: string) => {
+		const response = await fetch(
+			`${artifactBase}/query?typeKey=${encodeURIComponent(typeKey)}&limit=128`,
+			{ headers, signal: AbortSignal.timeout(10_000) }
+		)
+		expect(response.status).toBe(200)
+		return (
+			(await response.json()) as {
+				items: Array<{ artifactId: string; payload: Record<string, unknown> }>
+			}
+		).items
+	}
+	const waitForCount = async (typeKey: string, count: number) => {
+		const documentTimeout = process.env.TEST_DOCUMENT_PROVIDER_BASE_URL ? 60_000 : 20_000
+		const deadline = Date.now() + (typeKey === 'reconciliation.decision' ? 10_000 : documentTimeout)
+		let diagnostics: unknown
+		let previousProgress = ''
+		while (Date.now() < deadline) {
+			const items = await readType(typeKey)
+			if (items.length === count) return items
+			const sources = await readType('core.file')
+			const state = await session.execute<{
+				presentations: Array<{
+					state: string
+					stages?: Array<{ key: string; state: string; attemptCount?: number; lastError?: string }>
+				} | null>
+				body: string
+			}>(
+				`return {
+			body: document.body.innerText,
+			warnings: globalThis.__e2eDocumentWarnings ?? [],
+			presentations: arguments[0].map(id => globalThis['aven.document-execution-router']?.status(id))
+		}`,
+				[sources.map((item) => item.artifactId)]
+			)
+			diagnostics = state
+			const progress = JSON.stringify(
+				state.presentations
+					.filter((p) => p?.state === 'active')
+					.map((p) =>
+						p?.stages?.filter((s) =>
+							['running', 'retry_wait', 'publishing', 'failed'].includes(s.state)
+						)
+					)
+			)
+			if (progress !== previousProgress) {
+				console.info(`[native finance ${typeKey}] ${progress}`)
+				previousProgress = progress
+			}
+			if (
+				state.presentations.some(
+					(item) => item && ['failed', 'needs_review'].includes(item.state)
+				) ||
+				state.body.includes('Could not persist')
+			) {
+				throw new Error(
+					`Native financial flow reached a failed/review-required state: ${JSON.stringify(state)}`
+				)
+			}
+			await new Promise((resolve) => setTimeout(resolve, 200))
+		}
+		throw new Error(
+			`Native reconciliation did not commit ${count} ${typeKey} occurrences: ${JSON.stringify(diagnostics)}`
+		)
+	}
+	let invoices = 0
+	let transactions = 0
+	let decisions = 0
+	let remoteCandidateId = ''
+	for (const placement of ['local', 'server']) {
+		for (const kind of placement === 'local'
+			? ['invoice', 'statement']
+			: ['statement', 'invoice']) {
+			dashboard.searchParams.set(
+				'e2eFixture',
+				new URL(`./fixtures/e2e-${kind}.pdf`, import.meta.url).pathname
+			)
+			dashboard.searchParams.set('e2ePlacement', placement)
+			await session.navigate(dashboard.toString())
+			await session.execute(`
+				globalThis.__e2eDocumentWarnings = [];
+				const original = console.warn;
+				console.warn = (...args) => {
+					globalThis.__e2eDocumentWarnings.push(args.map(arg => arg instanceof Error ? arg.name + ': ' + arg.message : String(arg)).join(' '));
+					if (globalThis.__e2eDocumentWarnings.length > 20) globalThis.__e2eDocumentWarnings.shift();
+					original.apply(console, args);
+				};
+			`)
+			await session.click(await session.findEventually('[data-testid="e2e-import-fixture"]'))
+			if (kind === 'invoice') await waitForCount('bookkeeping.open-item', ++invoices)
+			else await waitForCount('banking.transaction', ++transactions)
+		}
+		await session.waitForBodyText('Confirm invoice-to-booking relationship', 15_000)
+		const before = await readType('reconciliation.decision')
+		expect(before).toHaveLength(decisions)
+		const confirm = await session.findEventually(
+			'.gate-card[data-held-id^="reconciliation:"] .btn--primary'
+		)
+		await session.click(confirm)
+		const saved = await waitForCount('reconciliation.decision', ++decisions)
+		const priorIds = new Set(before.map((item) => item.artifactId))
+		const decision = saved.find((item) => !priorIds.has(item.artifactId))!
+		expect(decision.payload).toMatchObject({ decision: 'accepted', relation: 'supports-booking' })
+		if (placement === 'server') remoteCandidateId = String(decision.payload.candidateArtifactId)
+		const candidate = (await json(
+			await fetch(`${artifactBase}/${decision.payload.candidateArtifactId}`, { headers })
+		)) as { payload: { amountDistanceMinor: number; transactionInputOrdinal: number } }
+		expect(candidate.payload.amountDistanceMinor).toBe(0)
+		const evidence = (await json(
+			await fetch(`${artifactBase}/${decision.artifactId}/evidence`, { headers })
+		)) as { artifactId: string; evidence: Array<{ inputArtifactId: string; inputRole: string }> }
+		expect(evidence.artifactId).toBe(decision.artifactId)
+		expect(evidence.evidence.map((item) => [item.inputRole, item.inputArtifactId])).toEqual([
+			['match-candidate', decision.payload.candidateArtifactId],
+			['open-item', decision.payload.openItemArtifactId],
+			['transaction', decision.payload.transactionArtifactId]
+		])
+	}
+	// CSV detection is a separate mandatory human decision. Even known, fully
+	// parsed exports must contribute zero bookings before that physical click.
+	let csvDetections = 0
+	let csvConfirmations = 0
+	const waitCsvCount = async (typeKey: string, count: number, timeoutMs = 10_000) => {
+		const deadline = Date.now() + timeoutMs
+		while (Date.now() < deadline) {
+			const rows = await readType(typeKey)
+			if (rows.length === count) return rows
+			await new Promise((resolve) => setTimeout(resolve, 100))
+		}
+		throw new Error(
+			`CSV gate did not commit ${count} ${typeKey}: ${await session.execute('return document.body.innerText')}`
+		)
+	}
+	for (const placement of ['local', 'server']) {
+		for (const accept of [false, true]) {
+			const beforeTransactions = (await readType('banking.transaction')).length
+			const beforeCandidates = (await readType('reconciliation.match-candidate')).length
+			const beforeDecisions = (await readType('reconciliation.decision')).length
+			dashboard.searchParams.set(
+				'e2eFixture',
+				new URL('../../fixtures/golden/bank-csv/nl-rabobank-official-layout.csv', import.meta.url)
+					.pathname
+			)
+			dashboard.searchParams.set('e2ePlacement', placement)
+			await session.navigate(dashboard.toString())
+			await session.click(await session.findEventually('[data-testid="e2e-import-fixture"]'))
+			await waitCsvCount('banking.csv-statement-detection', ++csvDetections)
+			await session.waitForBodyText('Confirm this CSV is an account statement', 10_000)
+			expect(await readType('banking.transaction')).toHaveLength(beforeTransactions)
+			expect(await readType('reconciliation.match-candidate')).toHaveLength(beforeCandidates)
+			expect(await readType('banking.csv-statement-confirmation')).toHaveLength(csvConfirmations)
+			await session.click(
+				await session.findEventually(
+					`.gate-card[data-held-id^="csv-document:"] ${accept ? '.btn--primary' : '.btn:not(.btn--primary)'}`
+				)
+			)
+			const confirmations = await waitCsvCount(
+				'banking.csv-statement-confirmation',
+				++csvConfirmations
+			)
+			expect(
+				confirmations.filter((r) => r.payload.decision === (accept ? 'accepted' : 'rejected'))
+			).toHaveLength(placement === 'local' ? 1 : 2)
+			const bookings = await waitCsvCount(
+				'banking.transaction',
+				beforeTransactions + (accept ? 2 : 0)
+			)
+			if (accept)
+				expect(
+					bookings.filter((r) => r.payload.providerTransactionId === '000000000000000001').at(-1)
+						?.payload
+				).toMatchObject({ amountMinor: -11900, bookingDate: '2026-09-02', valueDate: '2026-09-03' })
+			expect(await readType('reconciliation.decision')).toHaveLength(beforeDecisions)
+			if (accept) {
+				// Import the independently authored invoice only after CSV admission.
+				// The existing same-amount PDF booking is a different supplier/reference.
+				dashboard.searchParams.set(
+					'e2eFixture',
+					new URL(
+						'../../fixtures/golden/reconciliation-market/de-business-invoice.pdf',
+						import.meta.url
+					).pathname
+				)
+				await session.navigate(dashboard.toString())
+				await session.click(await session.findEventually('[data-testid="e2e-import-fixture"]'))
+				await waitCsvCount(
+					'bookkeeping.open-item',
+					++invoices,
+					process.env.TEST_DOCUMENT_PROVIDER_BASE_URL ? 60_000 : 20_000
+				)
+				await session.waitForBodyText('Confirm invoice-to-booking relationship', 15_000)
+				expect(await readType('reconciliation.decision')).toHaveLength(beforeDecisions)
+				await session.click(
+					await session.findEventually('.gate-card[data-held-id^="reconciliation:"] .btn--primary')
+				)
+				const saved = await waitCsvCount('reconciliation.decision', beforeDecisions + 1)
+				const matched = []
+				for (const decision of saved) {
+					const invoice = (await json(
+						await fetch(`${artifactBase}/${decision.payload.openItemArtifactId}`, { headers })
+					)) as { payload: Record<string, unknown> }
+					if (invoice.payload.invoiceNumber !== 'RE-DE-1001') continue
+					const transaction = (await json(
+						await fetch(`${artifactBase}/${decision.payload.transactionArtifactId}`, { headers })
+					)) as { payload: Record<string, unknown> }
+					expect(transaction.payload).toMatchObject({
+						providerTransactionId: '000000000000000001',
+						amountMinor: -11900,
+						sourceRow: 2
+					})
+					const evidence = (await json(
+						await fetch(`${artifactBase}/${decision.artifactId}/evidence`, { headers })
+					)) as { evidence: Array<{ inputRole: string; inputArtifactId: string }> }
+					expect(evidence.evidence.map((e) => [e.inputRole, e.inputArtifactId])).toEqual([
+						['match-candidate', decision.payload.candidateArtifactId],
+						['open-item', decision.payload.openItemArtifactId],
+						['transaction', decision.payload.transactionArtifactId]
+					])
+					matched.push(decision)
+				}
+				expect(matched).toHaveLength(placement === 'local' ? 1 : 2)
+			}
+		}
+	}
+	return remoteCandidateId
 }
 
 async function json(response: Response) {
@@ -527,7 +772,10 @@ interface MailSummary {
 	Subject: string
 }
 
-async function waitForMail(subject: RegExp): Promise<{ text: string; html: string }> {
+async function waitForMail(
+	subject: RegExp,
+	content?: RegExp
+): Promise<{ text: string; html: string }> {
 	const deadline = Date.now() + 30_000
 	while (Date.now() < deadline) {
 		const list = (await json(await fetch(`${mailpit}/api/v1/messages`))) as {
@@ -539,7 +787,8 @@ async function waitForMail(subject: RegExp): Promise<{ text: string; html: strin
 				Text?: string
 				HTML?: string
 			}
-			return { text: detail.Text ?? '', html: detail.HTML ?? '' }
+			if (!content || content.test(detail.Text ?? ''))
+				return { text: detail.Text ?? '', html: detail.HTML ?? '' }
 		}
 		await new Promise((resolve) => setTimeout(resolve, 250))
 	}
@@ -598,7 +847,6 @@ async function deviceSession(page: import('@playwright/test').Page): Promise<str
 }
 
 test('fresh split stack: checkout, identity, facade, and managed hosting', async ({ browser }) => {
-	test.setTimeout(300_000)
 	requireEnvironment()
 	const context = await browser.newContext()
 	await context.credentials.install()
@@ -669,11 +917,49 @@ test('fresh split stack: checkout, identity, facade, and managed hosting', async
 	await expect(page).toHaveURL(/\/purchase\/success/)
 
 	const setupMail = await waitForMail(new RegExp(`Login for ${name}`))
-	const setupUrl = linkFrom(setupMail, new URL(identityBrowser).host)
+	let setupUrl = linkFrom(setupMail, new URL(identityBrowser).host)
 	await page.goto(setupUrl)
 	await expect(page.getByRole('heading', { name: 'Your account' })).toBeVisible()
+	await expect(page).toHaveURL(`${identityBrowser}/dashboard`)
+	// Pending onboarding remains cross-device, but neither browser receives normal service access.
+	const pendingContext = await browser.newContext()
+	const pendingPage = await pendingContext.newPage()
+	await pendingPage.goto(setupUrl)
+	await expect(pendingPage.getByRole('heading', { name: 'Your account' })).toBeVisible()
+	expect((await pendingContext.request.get(`${identityBrowser}/api/auth/token`)).status()).toBe(403)
+	expect((await context.request.get(`${identityBrowser}/api/auth/token`)).status()).toBe(403)
+	const useNotice = await waitForMail(/Your aven.id account security/, /setup link was opened/)
+	expect(useNotice.text).not.toContain('token=')
+	// Exercise the public replacement action and its real per-account cooldown. No
+	// test-only clock, privileged account edit, or direct database replacement is used.
+	await expect(async () => {
+		await page.getByRole('button', { name: 'Email a replacement setup link' }).click()
+		await expect(page.getByRole('status')).toContainText('A replacement link is queued', {
+			timeout: 1000
+		})
+	}).toPass({ timeout: 70_000, intervals: [10_000] })
+	expect((await pendingContext.request.get(setupUrl)).status()).toBe(401)
+	const replacement = await waitForMail(
+		/Your aven.id account security/,
+		/requested a replacement setup link/
+	)
+	setupUrl = linkFrom(replacement, new URL(identityBrowser).host)
+	await page.goto(setupUrl)
+	await pendingPage.goto(setupUrl)
+	await expect(page.getByRole('heading', { name: 'Your account' })).toBeVisible()
+	expect((await pendingContext.request.get(`${identityBrowser}/api/auth/token`)).status()).toBe(403)
 	await page.getByRole('button', { name: 'Add passkey' }).click()
 	await expect(page.getByRole('list', { name: 'Passkeys' }).getByRole('listitem')).toHaveCount(1)
+	expect(
+		await (await pendingContext.request.get(`${identityBrowser}/api/auth/get-session`)).json()
+	).toBeNull()
+	expect((await pendingContext.request.get(setupUrl)).status()).toBe(401)
+	await pendingContext.close()
+	const enrollmentNotice = await waitForMail(
+		/Your aven.id account security/,
+		/first passkey was registered/
+	)
+	expect(enrollmentNotice.text).not.toContain('token=')
 	const [firstCredential] = await context.credentials.get({ rpId: 'localhost' })
 	expect(firstCredential).toBeDefined()
 
@@ -684,9 +970,13 @@ test('fresh split stack: checkout, identity, facade, and managed hosting', async
 	await secondContext.credentials.install()
 	const secondPage = await secondContext.newPage()
 	await secondPage.goto(`${identityBrowser}/dashboard`)
-	await expect(secondPage.getByRole('list', { name: 'Passkeys' }).getByRole('listitem')).toHaveCount(1)
+	await expect(
+		secondPage.getByRole('list', { name: 'Passkeys' }).getByRole('listitem')
+	).toHaveCount(1)
 	await secondPage.getByRole('button', { name: 'Add another passkey' }).click()
-	await expect(secondPage.getByRole('list', { name: 'Passkeys' }).getByRole('listitem')).toHaveCount(2)
+	await expect(
+		secondPage.getByRole('list', { name: 'Passkeys' }).getByRole('listitem')
+	).toHaveCount(2)
 	const [secondCredential] = await secondContext.credentials.get({ rpId: 'localhost' })
 	expect(secondCredential).toBeDefined()
 	expect(secondCredential.id).not.toBe(firstCredential.id)
@@ -742,6 +1032,11 @@ test('fresh split stack: checkout, identity, facade, and managed hosting', async
 				id: 'deepseek/deepseek-v4-flash-0731',
 				label: 'E2E Chat',
 				capabilities: ['streaming', 'text-generation', 'tool-calling']
+			},
+			{
+				id: 'e2e/document',
+				label: 'E2E Documents',
+				capabilities: ['structured-output', 'text-generation', 'vision']
 			}
 		]
 	})
@@ -860,6 +1155,50 @@ test('fresh split stack: checkout, identity, facade, and managed hosting', async
 		id: string
 	}[]
 	expect(firstList.map((intent) => intent.id)).not.toContain(secondIntentId)
+	// The same still-valid identity token must obey current database membership.
+	const membershipDatabase = new pg.Pool({
+		connectionString: databaseUrl.replace(/\/postgres$/, '/aven_api'),
+		max: 1
+	})
+	try {
+		await membershipDatabase.query(
+			'UPDATE customer_environment_memberships SET role=$1 WHERE environment_id=$2 AND subject_id=$3',
+			['member', environment.id, claims.sub]
+		)
+		expect((await fetch(intentBase, { headers: authorizedHeaders })).status).toBe(200)
+		expect(
+			(
+				await fetch(`${intentBase}/${targetIntentId}`, {
+					method: 'DELETE',
+					headers: authorizedHeaders
+				})
+			).status
+		).toBe(403)
+		expect(
+			(await fetch(`${intentBase}/${targetIntentId}`, { headers: authorizedHeaders })).status
+		).toBe(200)
+		await membershipDatabase.query(
+			'DELETE FROM customer_environment_memberships WHERE environment_id=$1 AND subject_id=$2',
+			[environment.id, claims.sub]
+		)
+		expect((await fetch(intentBase, { headers: authorizedHeaders })).status).toBe(404)
+		// Membership in the other environment is unaffected.
+		expect(
+			(
+				await fetch(`${api}/api/environments/${secondEnvironment.id}/intents`, {
+					headers: authorizedHeaders
+				})
+			).status
+		).toBe(200)
+	} finally {
+		await membershipDatabase.query(
+			`INSERT INTO customer_environment_memberships(environment_id,subject_id,role)
+			VALUES($1,$2,'owner') ON CONFLICT(environment_id,subject_id) DO UPDATE SET role='owner'`,
+			[environment.id, claims.sub]
+		)
+		await membershipDatabase.end()
+	}
+	expect((await fetch(intentBase, { headers: authorizedHeaders })).status).toBe(200)
 	const voiceFixture = silentVoiceFixture()
 	const anonymousSpeaker = {
 		session_id: voiceFixture.session_id,
@@ -1021,7 +1360,7 @@ test('fresh split stack: checkout, identity, facade, and managed hosting', async
 			expect(
 				(await customer.query('SELECT count(*)::int AS count FROM aven_intents.intents')).rows[0]
 					.count
-			).toBe(4)
+			).toBe(14)
 			expect(
 				(
 					await customer.query(
@@ -1057,14 +1396,41 @@ test('fresh split stack: checkout, identity, facade, and managed hosting', async
 					)
 				).rows[0].count
 			).toBe(4)
+			const retainedRuns = (
+				await customer.query('SELECT record FROM aven_actor_runs.runs')
+			).rows.map((row) => row.record)
+			const documentRuns = retainedRuns.filter(
+				(run) => run.skillRef === 'ceo.aven:skill:docs.ingest:document-ingest@1'
+			)
+			// Three original document runs, two remote CSV detections, and the
+			// accepted CSV's new observation after its human confirmation, plus
+			// the invoice imported to prove its separate relationship decision.
+			expect(documentRuns).toHaveLength(7)
+			expect(documentRuns.every((run) => run.state === 'succeeded')).toBe(true)
+			const reconciliationRuns = retainedRuns.filter(
+				(run) => run.skillRef === 'ceo.aven:skill:bookkeeping:invoice-reconciliation@2'
+			)
+			// Restoring a file can trigger an additional read-only reconciliation. Prove
+			// the required financial runs and exact remote candidate, not a timing-dependent total.
+			expect(reconciliationRuns.length).toBeGreaterThanOrEqual(2)
 			expect(
-				(await customer.query('SELECT count(*)::int AS count FROM aven_actor_runs.runs')).rows[0]
-					.count
-			).toBe(2)
+				reconciliationRuns.some(
+					(run) =>
+						run.state === 'succeeded' &&
+						run.checkpoints.some((checkpoint: { artifactIds: string[] }) =>
+							checkpoint.artifactIds.includes(tauri.remoteReconciliationCandidateId)
+						)
+				)
+			).toBe(true)
+			expect(
+				retainedRuns.filter((run) => run.skillRef === 'ceo.aven:skill:e2e:already-satisfied@1')
+			).toHaveLength(1)
 			const documentRun = (
 				await customer.query(
 					`SELECT record FROM aven_actor_runs.runs
-					 WHERE record->>'skillRef'='ceo.aven:skill:docs.ingest:document-ingest@1'`
+					 WHERE record->>'skillRef'='ceo.aven:skill:docs.ingest:document-ingest@1'
+					 AND record->'parameters'->'source'->>'artifactId'=$1`,
+					[tauri.serverSourceArtifactId]
 				)
 			).rows[0]?.record as
 				| {

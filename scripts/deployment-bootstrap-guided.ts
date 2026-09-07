@@ -397,7 +397,7 @@ async function withProgress<T>(
 	})
 }
 
-type RolloutRunField = 'infrastructurePreviewRunId' | 'infrastructureApplyRunId' | 'deployRunId'
+type RolloutRunField = 'infrastructurePreviewRunId' | 'infrastructureApplyRunId' | 'releaseRunId' | 'deployRunId'
 
 function appendRolloutLog(message: string): void {
 	if (!existsSync(rolloutLogPath))
@@ -779,10 +779,7 @@ async function completeInitialRollout(input: BootstrapInput): Promise<boolean> {
 		return false
 	}
 	const repository = input.repository
-	const defaultBranch = await resilientGitHubRead(
-		['api', `repos/${repository}`, '--jq', '.default_branch'],
-		'Read repository default branch'
-	)
+	const defaultBranch = 'prod'
 	const localRef = await run('git', ['rev-parse', 'HEAD'], true, 10_000)
 	const remoteRef = await resilientGitHubRead(
 		['api', `repos/${repository}/commits/${defaultBranch}`, '--jq', '.sha'],
@@ -792,6 +789,10 @@ async function completeInitialRollout(input: BootstrapInput): Promise<boolean> {
 		throw new Error(
 			`The setup code must be the current ${defaultBranch} commit before deployment. Local ${localRef.slice(0, 12)} differs from GitHub ${remoteRef.slice(0, 12)}.`
 		)
+	const nextRef = await resilientGitHubRead(['api', `repos/${repository}/commits/next`, '--jq', '.sha'], 'Read protected next release')
+	const nextTree = await resilientGitHubRead(['api', `repos/${repository}/git/commits/${nextRef}`, '--jq', '.tree.sha'], 'Read next release tree')
+	const productionTree = await resilientGitHubRead(['api', `repos/${repository}/git/commits/${localRef}`, '--jq', '.tree.sha'], 'Read production release tree')
+	if (nextTree !== productionTree) throw new Error('Initial installation requires the same source tree promoted through next to prod. Open the promotion PR; main has no deployment authority.')
 	if (
 		!generated.initialRollout ||
 		generated.initialRollout.ref !== localRef ||
@@ -842,12 +843,22 @@ async function completeInitialRollout(input: BootstrapInput): Promise<boolean> {
 		refreshCompletedCredentials(input)
 	}
 	await runRolloutWorkflow({
+		field: 'releaseRunId',
+		workflow: 'platform-release.yml',
+		label: 'Verify and publish immutable software images',
+		repository,
+		ref: 'next',
+		inputs: {},
+		timeoutMs: 3 * 60 * 60_000,
+		refreshCredentials: () => refreshCompletedCredentials(input)
+	})
+	await runRolloutWorkflow({
 		field: 'deployRunId',
 		workflow: 'platform-deploy.yml',
-		label: 'Verify, publish, and deploy all software',
+		label: 'Install identity, verify next, then install production',
 		repository,
 		ref: defaultBranch,
-		inputs: { target: 'all', ref: localRef, recover_from_backup: 'false' },
+		inputs: { target: 'all', release_run_id: String(generated.initialRollout.releaseRunId), recover_from_backup: 'false' },
 		timeoutMs: 3 * 60 * 60_000,
 		refreshCredentials: () => refreshCompletedCredentials(input)
 	})

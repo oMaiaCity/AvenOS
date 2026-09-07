@@ -4,6 +4,7 @@ import { createPaymentProvider } from './billing/fake.js'
 import type { PaymentProvider } from './billing/provider.js'
 import { SubscriptionService } from './billing/subscriptions.js'
 import { PolarWebhookDeliveryStore } from './billing/webhook-deliveries.js'
+import { CheckoutCapabilities } from './capabilities.js'
 import { loadApiConfig, type ServerConfig } from './config.js'
 import { decodeEncryptionKey } from './crypto.js'
 import { type DatabaseContext, openDatabase } from './db.js'
@@ -14,6 +15,7 @@ import { enqueuePlatformEvent } from './platform-events.js'
 import { ProofOfWorkService } from './proof-of-work.js'
 
 export interface Runtime {
+	capabilities: CheckoutCapabilities
 	config: ServerConfig
 	logger: pino.Logger
 	database: DatabaseContext
@@ -100,8 +102,11 @@ async function create(): Promise<Runtime> {
 		(client, input) => enqueuePlatformEvent(client, { ...input, eventType: 'purchase_revoked' })
 	)
 	if (payments.kind === 'fake') logger.warn('fake payments enabled')
+	const capabilities = new CheckoutCapabilities(database.pool, config)
+	capabilities.start()
 
 	return {
+		capabilities,
 		config,
 		logger,
 		database,
@@ -118,6 +123,7 @@ async function create(): Promise<Runtime> {
 		webhookSubscriptions,
 		webhookDeliveries: new PolarWebhookDeliveryStore(webhookDatabase.pool),
 		async shutdown() {
+			capabilities.stop()
 			await Promise.all([database.pool.end(), webhookDatabase.pool.end()])
 		}
 	}

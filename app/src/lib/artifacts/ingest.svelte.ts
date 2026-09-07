@@ -151,7 +151,16 @@ export async function loadPersistentIntents(): Promise<void> {
 			? await clientDocumentSourceExecutionEnvironment(source.artifactId)
 			: null
 		if (detail && source?.artifactId && executionEnvironment) {
-			void processClientDocument(source.artifactId, detail.title, undefined, executionEnvironment)
+			// Restoring history is not a new request to reconcile the entire account
+			// using each historical document's placement. New imports and the review
+			// tool explicitly start reconciliation against the current snapshot.
+			void processClientDocument(
+				source.artifactId,
+				detail.title,
+				undefined,
+				executionEnvironment,
+				false
+			)
 			void watchArtifactProcessing(source.artifactId, detail.id)
 			continue
 		}

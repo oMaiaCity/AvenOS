@@ -9,23 +9,33 @@
 {$API_DOMAIN:api.aven.ceo} {
 	encode zstd gzip
 	header {
-		Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options nosniff
 		Referrer-Policy strict-origin-when-cross-origin
 		-Server
 	}
-	reverse_proxy api:3000
+	request_body {
+		max_size 25MiB
+	}
+	reverse_proxy api:3000 {
+		header_up X-Forwarded-For {remote_host}
+	}
 }
 
 {$CHECKOUT_DOMAIN:portal.aven.ceo} {
 	encode zstd gzip
 	header {
-		Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options nosniff
 		Referrer-Policy strict-origin-when-cross-origin
 		-Server
 	}
-	reverse_proxy checkout:3000
+	request_body {
+		max_size 1MiB
+	}
+	reverse_proxy checkout:3000 {
+		header_up X-Forwarded-For {remote_host}
+	}
 }
 
 https:// {
@@ -33,5 +43,10 @@ https:// {
 		on_demand
 	}
 	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		-Server
+	}
 	reverse_proxy static-site-host:8093
 }

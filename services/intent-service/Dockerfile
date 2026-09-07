@@ -9,6 +9,7 @@ RUN --mount=type=cache,target=/root/.bun/install/cache,sharing=locked \
 RUN bun --cwd services/intent-service build
 
 FROM oven/bun:1.3.13
+RUN apt-get update && apt-get upgrade --yes --no-install-recommends && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /repo/services/intent-service/build ./build
 COPY --from=build /repo/node_modules /repo/node_modules

@@ -1,101 +1,16 @@
 name: platform-ci
 
+# A required check must be emitted even for documentation-only promotions.
 on:
   pull_request:
-    paths:
-      - app/**
-      - deploy/**
-      - infrastructure/platform/**
-      - infrastructure/bootstrap/**
-      - libs/aven-hosting/**
-      - libs/aven-identity/**
-      - libs/aven-customer-contracts/**
-      - libs/aven-customer-runtime/**
-      - libs/aven-actors/**
-      - services/aven-api/**
-      - services/checkout/**
-      - services/identity/**
-      - services/static-site-host/**
-      - services/platform-provisioner/**
-      - services/intent-service/**
-      - services/actor-runner/**
-      - services/artifact-store/**
-      - libs/aven-artifact-store/**
-      - libs/aven-document-ingest/**
-      - libs/aven-llm-client/**
-      - .dockerignore
-      - bun.lock
-      - package.json
-      - scripts/deployment-bootstrap-guided.ts
-      - scripts/deployment-bootstrap.ts
-      - scripts/deployment-credentials-preflight.ts
-      - scripts/deployment-uninstall.ts
-      - scripts/lib/deployment-bootstrap-guided.ts
-      - scripts/lib/deployment-bootstrap-tui.ts
-      - scripts/lib/deployment-bootstrap-tui.test.ts
-      - scripts/lib/deployment-bootstrap.ts
-      - scripts/lib/deployment-uninstall.ts
-      - scripts/lib/polar-webhook.ts
-      - scripts/lib/redpill-model-catalog.ts
-      - scripts/lib/redpill-model-catalog.test.ts
-      - scripts/lib/united-domains-dns.ts
-      - scripts/lib/united-domains-dns.test.ts
-      - .github/workflows/platform-ci.yml
-      - .github/workflows/platform-deploy.yml
-      - .github/workflows/platform-infrastructure.yml
-      - .github/workflows/platform-operations.yml
-      - .github/actions/bun-install/action.yml
-      - .github/actions/setup-platform-test-host/action.yml
   push:
-    branches: [main, next]
-    paths:
-      - app/**
-      - deploy/**
-      - infrastructure/platform/**
-      - infrastructure/bootstrap/**
-      - libs/aven-hosting/**
-      - libs/aven-identity/**
-      - libs/aven-customer-contracts/**
-      - libs/aven-customer-runtime/**
-      - libs/aven-actors/**
-      - services/aven-api/**
-      - services/checkout/**
-      - services/identity/**
-      - services/static-site-host/**
-      - services/platform-provisioner/**
-      - services/intent-service/**
-      - services/actor-runner/**
-      - services/artifact-store/**
-      - libs/aven-artifact-store/**
-      - libs/aven-document-ingest/**
-      - libs/aven-llm-client/**
-      - .dockerignore
-      - bun.lock
-      - package.json
-      - scripts/deployment-bootstrap-guided.ts
-      - scripts/deployment-bootstrap.ts
-      - scripts/deployment-credentials-preflight.ts
-      - scripts/deployment-uninstall.ts
-      - scripts/lib/deployment-bootstrap-guided.ts
-      - scripts/lib/deployment-bootstrap-tui.ts
-      - scripts/lib/deployment-bootstrap-tui.test.ts
-      - scripts/lib/deployment-bootstrap.ts
-      - scripts/lib/deployment-uninstall.ts
-      - scripts/lib/polar-webhook.ts
-      - scripts/lib/redpill-model-catalog.ts
-      - scripts/lib/redpill-model-catalog.test.ts
-      - scripts/lib/united-domains-dns.ts
-      - scripts/lib/united-domains-dns.test.ts
-      - .github/workflows/platform-ci.yml
-      - .github/workflows/platform-deploy.yml
-      - .github/workflows/platform-infrastructure.yml
-      - .github/workflows/platform-operations.yml
-      - .github/actions/bun-install/action.yml
-      - .github/actions/setup-platform-test-host/action.yml
+    branches: [main, next, prod]
+  workflow_dispatch:
 
 permissions:
   contents: read
   packages: read
+
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -107,7 +22,7 @@ jobs:
     timeout-minutes: 45
     services:
       checkout-postgres:
-        image: postgres:17-alpine
+        image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
         env:
           POSTGRES_PASSWORD: aven-dev
         ports:
@@ -121,6 +36,9 @@ jobs:
       NODE_AUTH_TOKEN: ${{ secrets.PACKAGE_READ_TOKEN }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.13
@@ -137,8 +55,13 @@ jobs:
         with:
           token: ${{ secrets.PACKAGE_READ_TOKEN }}
       - uses: ./.github/actions/setup-platform-test-host
+      - uses: ./.github/actions/setup-security-audit
       - name: Static checks
         run: |
+          bun test scripts/lib/bun-install-action.test.ts
+          bun run check:secrets
+          bun audit
+          bun run check:rust-advisories
           bun run check:docs
           bun run check
           bun run check:identity
@@ -171,6 +94,8 @@ jobs:
           bun run --cwd libs/aven-customer-runtime test
           bun run --cwd libs/aven-actors test
           bun run --cwd libs/aven-artifact-store test
+          bun run --cwd libs/aven-document-ingest test
+          cargo test --locked --release --manifest-path app/src-tauri/Cargo.toml --lib service_token::tests
           cargo test --locked --workspace --manifest-path services/artifact-store/Cargo.toml
           bun run --cwd services/platform-provisioner test
           bun run --cwd services/intent-service test
@@ -188,7 +113,19 @@ jobs:
           bun run --cwd services/actor-runner build
       - name: Validate shell and Compose sources
         run: bun run test:deploy
+      - run: bun run test:proxy-boundary
       - name: Build and drill database recovery image
         run: bun run test:recovery
       - name: Full-stack browser E2E
         run: xvfb-run --auto-servernum bun run test:e2e:platform
+
+  gate:
+    name: Platform release gate
+    needs: verify
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require the complete applicable verification job
+        env:
+          RESULT: ${{ needs.verify.result }}
+        run: test "$RESULT" = success

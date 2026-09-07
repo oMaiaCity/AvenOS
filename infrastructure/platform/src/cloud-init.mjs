@@ -50,11 +50,17 @@ grep -q "UUID=$uuid " /etc/fstab || printf 'UUID=%s /var/lib/aven ext4 defaults,
 mountpoint -q /var/lib/aven || mount /var/lib/aven
 install -d -o 70 -g 70 -m 0700 /var/lib/aven/postgres
 install -d -o 65532 -g 65532 -m 0700 /var/lib/aven/backups
+install -d -o 65532 -g 65532 -m 0755 /var/lib/aven/backups/public-status
 install -d -m 0750 /var/lib/aven/caddy/data /var/lib/aven/caddy/config
 install -d -o 10003 -g 10003 -m 0750 /var/lib/aven/static-sites
 `
 
 	return `#cloud-config
+updates:
+  network:
+    # Hetzner servers have fixed NICs. Treating Docker veth devices as cloud
+    # hotplug events makes cloud-init fail and delays every container change.
+    when: [boot-new-instance]
 users:
   - default
   - name: aven-admin
@@ -225,6 +231,8 @@ ${indent(mountScript.trimEnd(), 6)}
       ${deployUser} ALL=(root) NOPASSWD: /usr/local/sbin/aven-restore identity, /usr/local/sbin/aven-restore platform
       aven-observe ALL=(root) NOPASSWD: /usr/local/sbin/aven-observe identity ps, /usr/local/sbin/aven-observe identity logs, /usr/local/sbin/aven-observe identity status, /usr/local/sbin/aven-observe identity check, /usr/local/sbin/aven-observe platform ps, /usr/local/sbin/aven-observe platform logs, /usr/local/sbin/aven-observe platform status, /usr/local/sbin/aven-observe platform check
 runcmd:
+  - systemctl mask --now cloud-init-hotplugd.socket
+  - systemctl reset-failed cloud-init-hotplugd.service 2>/dev/null || true
   - systemctl restart systemd-journald
   - systemctl enable --now docker
   - systemctl enable --now fail2ban

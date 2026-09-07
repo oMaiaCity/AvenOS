@@ -11,6 +11,8 @@
 		"db:migrate": "bun scripts/migrate.ts"
 	},
 	"dependencies": {
+		"@avenos/aven-identity": "workspace:*",
+		"@avenos/http-boundary": "workspace:*",
 		"@better-auth/passkey": "1.6.23",
 		"@myavenceo/aven-ceo": "^0.12.2",
 		"better-auth": "1.6.23",
@@ -22,7 +24,7 @@
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-node": "^5.5.0",
-		"@sveltejs/kit": "2.69.3",
+		"@sveltejs/kit": "2.70.3",
 		"@sveltejs/vite-plugin-svelte": "7.0.0",
 		"@types/node": "24.10.13",
 		"@types/pg": "8.15.6",

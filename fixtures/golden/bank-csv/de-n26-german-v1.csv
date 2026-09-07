@@ -1,0 +1,3 @@
+Datum,Empfänger,Kontonummer,Transaktionstyp,Verwendungszweck,Kategorie,Betrag (EUR),Betrag (Fremdwährung),Fremdwährung,Wechselkurs
+2026-09-02,Musterwerk Bürobedarf GmbH,,Überweisung,RE-DE-1001 SYNTHETISCH,Geschäftsausgaben,-119.00,,,
+2026-09-04,Musterwerk Bürobedarf GmbH,,Gutschrift,GS-DE-1001 SYNTHETISCH,Geschäftsausgaben,23.80,,,

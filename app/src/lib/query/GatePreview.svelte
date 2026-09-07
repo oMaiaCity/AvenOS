@@ -24,7 +24,7 @@ const { held }: { held: HeldMessage } = $props()
   footer are the actor's; the four preview LAYOUTS below stay, because they are
   content shapes and `gate-card-preview` is the box that holds whatever they are.
 -->
-<div class="gate-card">
+<div class="gate-card" data-held-id={held.id}>
 	<div class="gate-card-body">
 		<div class="gate-card-head">
 			{#if held.preview}

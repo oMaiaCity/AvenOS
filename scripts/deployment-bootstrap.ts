@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { observeMailProvider } from '../services/checkout/src/lib/server/email/provider-health.js'
 import {
 	assertPrivateFile,
 	type BootstrapBucketKind,
@@ -12,6 +13,7 @@ import {
 	ensureBootstrapBucketExists,
 	ensurePrivateDirectory,
 	githubConfiguration,
+	githubDeploymentBranches,
 	githubEnvironmentProtection,
 	githubEnvironmentVariableChanges,
 	isRetryableGitHubError,
@@ -31,10 +33,15 @@ import {
 	validateBootstrapInput,
 	writeRecoveryCsv
 } from './lib/deployment-bootstrap.js'
-import { createExactS3Bucket, exactS3BucketExists } from './lib/deployment-bootstrap-guided.js'
+import {
+	configureRecoveryBucketLifecycle,
+	createExactS3Bucket,
+	exactS3BucketExists
+} from './lib/deployment-bootstrap-guided.js'
 import { ensurePolarCatalog } from './lib/polar-catalog.js'
 import { ensurePolarWebhook } from './lib/polar-webhook.js'
 import { fetchRedpillPhalaCatalog } from './lib/redpill-model-catalog.js'
+import { releaseRules } from './lib/release-rules.js'
 
 const root = resolve(import.meta.dir, '..')
 const args = process.argv.slice(2)
@@ -73,6 +80,15 @@ const configurationTargets = deploymentConfigurationTargets(input, generated)
 validateBootstrapInput(input, configurationTargets)
 
 let catalog = [] as Awaited<ReturnType<typeof fetchRedpillPhalaCatalog>>
+
+for (const target of platformTargets) {
+	const provider = input.providers[target]
+	const observation = await observeMailProvider(provider.smtpUrl, provider.smtpFrom)
+	if (!observation.healthy)
+		throw new Error(
+			`${target} email capability is unavailable: ${observation.code}. SMTP login alone does not prove sending capacity; correct the provider setup before provisioning.`
+		)
+}
 
 if (dryRun) {
 	catalog =
@@ -113,7 +129,7 @@ const progressTotal =
 	1 +
 	1 +
 	configurationTargets.length * 2 +
-	1
+	2
 let completedProgress = 0
 let activeProgress: { label: string; detail?: string } | undefined
 function emitProgress(status: 'active' | 'complete', label: string, detail?: string): void {
@@ -379,12 +395,12 @@ for (const target of selectedTargets) {
 		updateProgress(`Moving the ${target} bootstrap state into its private state bucket.`)
 		await retryBootstrapStateBackendMigration({
 			migrate: async () => {
-				await run('pulumi', ['login', remoteBackend], { env: bootstrapEnvironment })
+				await run('pulumi', ['login', remoteBackend], { env: bootstrapEnvironment, capture: true })
 				await openPulumiStack(stack, bootstrapCwd, bootstrapEnvironment)
 				await run(
 					'pulumi',
 					['stack', 'import', '--stack', stack, '--cwd', bootstrapCwd, '--file', exportPath],
-					{ env: bootstrapEnvironment }
+					{ env: bootstrapEnvironment, capture: true }
 				)
 			},
 			onVisibilityWait: ({ retry, maxRetries, delayMs }) =>
@@ -400,7 +416,17 @@ for (const target of selectedTargets) {
 			env: bootstrapEnvironment
 		})
 	}
-	completeProgress(`${target} storage and role policies are reconciled.`)
+	updateProgress(
+		`Bounding noncurrent ${target} bucket versions to 90 days; live backup retention is unchanged.`
+	)
+	for (const kind of ['state', 'backup'] as const) {
+		await configureRecoveryBucketLifecycle({
+			region: input.objectStorage.region,
+			...storage.bootstrapCredential,
+			bucket: objectStorageBucketName(input, generated, target, kind)
+		})
+	}
+	completeProgress(`${target} storage, version retention and role policies are reconciled.`)
 }
 
 generated.polarWebhooks ??= {}
@@ -459,7 +485,112 @@ await runGitHub(['secret', 'set', 'PACKAGE_READ_TOKEN', '--repo', input.reposito
 	stdin: input.githubPackagesReadToken,
 	quiet: true
 })
+await runGitHub(
+	['secret', 'set', 'PACKAGE_READ_TOKEN', '--repo', input.repository, '--app', 'dependabot'],
+	{
+		stdin: input.githubPackagesReadToken,
+		quiet: true
+	}
+)
+// Do not let any development workflow obtain a repository-wide ruleset bypass key.
+const repositorySecretNames = await runGitHub(
+	['secret', 'list', '--repo', input.repository, '--json', 'name', '--jq', '.[].name'],
+	{ quiet: true }
+)
+if (repositorySecretNames.split('\n').includes('DEPLOY_KEY'))
+	await runGitHub(['secret', 'delete', 'DEPLOY_KEY', '--repo', input.repository], { quiet: true })
+const existingRules = JSON.parse(
+	await runGitHub(['api', `repos/${input.repository}/rulesets`], { quiet: true })
+)
+for (const body of releaseRules()) {
+	const existing = existingRules.find(
+		(item: { name: string; id: number }) => item.name === body.name
+	)
+	await runGitHub(
+		[
+			'api',
+			'--method',
+			existing ? 'PUT' : 'POST',
+			`repos/${input.repository}/rulesets${existing ? `/${existing.id}` : ''}`,
+			'--input',
+			'-'
+		],
+		{ stdin: JSON.stringify(body), quiet: true }
+	)
+}
+// Preserve unrelated rules. The former shared rule keeps protecting main only;
+// release branches now use mandatory PR/check rules with no deploy-key bypass.
+const oldRule = existingRules.find(
+	(item: { name: string; id: number }) => item.name === 'protect-deployments'
+)
+if (oldRule) {
+	const rule = JSON.parse(
+		await runGitHub(['api', `repos/${input.repository}/rulesets/${oldRule.id}`], { quiet: true })
+	)
+	if (
+		rule.conditions?.ref_name?.include?.every((name: string) =>
+			['refs/heads/main', 'refs/heads/next', 'refs/heads/prod'].includes(name)
+		)
+	) {
+		await runGitHub(
+			[
+				'api',
+				'--method',
+				'PUT',
+				`repos/${input.repository}/rulesets/${oldRule.id}`,
+				'--input',
+				'-'
+			],
+			{
+				stdin: JSON.stringify({
+					name: rule.name,
+					target: rule.target,
+					enforcement: rule.enforcement,
+					conditions: { ref_name: { include: ['refs/heads/main'], exclude: [] } },
+					bypass_actors: [],
+					rules: rule.rules
+				}),
+				quiet: true
+			}
+		)
+	}
+}
 completeProgress('The GitHub Packages read token is stored as an encrypted repository secret.')
+
+beginProgress(
+	'Protect repository credentials',
+	'Enabling provider secret scanning, push protection, and dependency security alerts.'
+)
+const repositorySettings = JSON.parse(
+	await runGitHub(['api', `repos/${input.repository}`], { quiet: true })
+)
+if (
+	repositorySettings.private === false ||
+	repositorySettings.security_and_analysis?.secret_scanning
+) {
+	await runGitHub(['api', '--method', 'PATCH', `repos/${input.repository}`, '--input', '-'], {
+		stdin: JSON.stringify({
+			security_and_analysis: {
+				secret_scanning: { status: 'enabled' },
+				secret_scanning_push_protection: { status: 'enabled' }
+			}
+		}),
+		quiet: true
+	})
+} else {
+	throw new Error(
+		'This repository plan does not expose secret scanning. Enable the required GitHub protection before continuing; the local secret gate is not a provider push-protection substitute.'
+	)
+}
+await runGitHub(['api', '--method', 'PUT', `repos/${input.repository}/vulnerability-alerts`], {
+	quiet: true
+})
+await runGitHub(['api', '--method', 'PUT', `repos/${input.repository}/automated-security-fixes`], {
+	quiet: true
+})
+completeProgress(
+	'Secret scanning, push protection and automated dependency security updates are enabled.'
+)
 
 const reviewerId = input.reviewer
 	? Number(await runGitHub(['api', `users/${input.reviewer}`, '--jq', '.id'], { quiet: true }))
@@ -484,6 +615,50 @@ for (const [environment, settings] of Object.entries(github)) {
 		],
 		{ stdin: JSON.stringify(body), quiet: true }
 	)
+	const target = TARGETS.find(
+		(candidate) =>
+			environment === `${generated.deploymentPrefix}-${candidate}` ||
+			environment === `${generated.deploymentPrefix}-${candidate}-operations`
+	)
+	if (!target) throw new Error('Unexpected deployment Environment name.')
+	const allowedBranches = githubDeploymentBranches(target)
+	const policies = JSON.parse(
+		await runGitHub(
+			['api', `repos/${input.repository}/environments/${environment}/deployment-branch-policies`],
+			{ quiet: true }
+		)
+	)
+	for (const policy of policies.branch_policies ?? []) {
+		if (policy.type !== 'branch' || !allowedBranches.includes(policy.name))
+			await runGitHub(
+				[
+					'api',
+					'--method',
+					'DELETE',
+					`repos/${input.repository}/environments/${environment}/deployment-branch-policies/${policy.id}`
+				],
+				{ quiet: true }
+			)
+	}
+	for (const branch of allowedBranches) {
+		if (
+			!(policies.branch_policies ?? []).some(
+				(policy: { name: string; type: string }) =>
+					policy.type === 'branch' && policy.name === branch
+			)
+		)
+			await runGitHub(
+				[
+					'api',
+					'--method',
+					'POST',
+					`repos/${input.repository}/environments/${environment}/deployment-branch-policies`,
+					'--input',
+					'-'
+				],
+				{ stdin: JSON.stringify({ name: branch, type: 'branch' }), quiet: true }
+			)
+	}
 	for (const [name, secret] of Object.entries(settings.secrets)) {
 		await runGitHub(['secret', 'set', name, '--repo', input.repository, '--env', environment], {
 			stdin: secret,
