@@ -2,8 +2,7 @@
 /**
  * Provision the exact Microsoft ONNX Runtime shared library used by `ort` rc.13.
  *
- * The stable `.dylib` filename is historical; on Linux its contents are an ELF
- * `.so`. Tauri resources and the Rust loader deliberately use that stable name.
+ * Tauri resources and the Rust loader use the native Linux `.so` filename.
  * On x64, `AVEN_SPEECH_GPU=auto` selects Microsoft's CUDA 12 build when all of
  * its CUDA/cuDNN dependencies are visible. `cuda` forces that build and `cpu`
  * forces the compact CPU build. ONNX Runtime itself still provides CPU fallback.
@@ -17,8 +16,8 @@ import { fileURLToPath } from 'node:url'
 
 const VERSION = '1.28.0'
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const outDir = path.join(repoRoot, 'app', 'src-tauri', 'onnxruntime')
-const bundledPath = path.join(outDir, 'libonnxruntime.dylib')
+const outDir = path.join(repoRoot, 'app', 'src-tauri', 'resources', 'onnxruntime')
+const bundledPath = path.join(outDir, 'libonnxruntime.so')
 
 const distributions = {
 	x64Cpu: {
@@ -151,8 +150,16 @@ export function ensureOnnxruntimeDylib(): string {
 			)
 		}
 
-		fs.rmSync(outDir, { recursive: true, force: true })
 		fs.mkdirSync(outDir, { recursive: true })
+		for (const entry of fs.readdirSync(outDir)) {
+			if (
+				entry.startsWith('libonnxruntime') ||
+				entry === 'ONNXRuntime-LICENSE' ||
+				entry === 'ONNXRuntime-ThirdPartyNotices.txt'
+			) {
+				fs.rmSync(path.join(outDir, entry), { force: true })
+			}
+		}
 		for (const entry of fs.readdirSync(sourceDir)) {
 			if (!entry.startsWith('libonnxruntime_providers_') || !entry.endsWith('.so')) continue
 			const sourceFile = path.join(sourceDir, entry)
@@ -163,6 +170,14 @@ export function ensureOnnxruntimeDylib(): string {
 		}
 		fs.copyFileSync(source, bundledPath)
 		fs.chmodSync(bundledPath, 0o755)
+		fs.copyFileSync(
+			path.join(tempDir, dist.name, 'LICENSE'),
+			path.join(outDir, 'ONNXRuntime-LICENSE')
+		)
+		fs.copyFileSync(
+			path.join(tempDir, dist.name, 'ThirdPartyNotices.txt'),
+			path.join(outDir, 'ONNXRuntime-ThirdPartyNotices.txt')
+		)
 		console.log(`[onnxruntime] installed ${dist.variant.toUpperCase()} runtime -> ${bundledPath}`)
 		return bundledPath
 	} finally {

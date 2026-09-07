@@ -1,0 +1,64 @@
+{
+  "typeKey": "inbox.intake",
+  "version": 1,
+  "tier": "T1",
+  "skill": "inbox",
+  "blobPolicy": "forbidden",
+  "payloadSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "inbox.intake@1",
+    "description": "The one clean envelope every arrival becomes: source, time, text, files. The join point where mail, upload, scan and chat share a shape.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["channel", "arrivedAt", "attachmentCount"],
+    "properties": {
+      "channel": { "enum": ["email", "upload", "postal-scan", "chat", "connector"] },
+      "arrivedAt": { "type": "string", "format": "date-time" },
+      "text": { "type": ["string", "null"], "maxLength": 16384 },
+      "subjectLine": { "type": ["string", "null"], "maxLength": 1024 },
+      "senderLabel": { "type": ["string", "null"], "maxLength": 255 },
+      "attachmentCount": { "type": "integer", "minimum": 0 }
+    }
+  },
+  "referencesSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "array",
+    "minItems": 1,
+    "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "ordinal", "targetArtifactId", "targetArtifactSha256", "locator", "attributes"],
+      "properties": {
+        "role": { "enum": ["source", "attachment"] },
+        "ordinal": { "type": "integer", "minimum": 0 },
+        "targetArtifactId": { "type": "string", "format": "uuid" },
+        "targetArtifactSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "locator": { "type": ["object", "null"] },
+        "attributes": { "type": "object", "additionalProperties": false, "properties": {} }
+      }
+    },
+    "allOf": [
+      {
+        "contains": {
+          "type": "object",
+          "required": ["role"],
+          "properties": { "role": { "const": "source" } }
+        },
+        "minContains": 1,
+        "maxContains": 1
+      }
+    ]
+  },
+  "search": {
+    "fullText": ["/text", "/subjectLine", "/senderLabel"],
+    "fields": [
+      { "path": "/channel", "kind": "keyword" },
+      { "path": "/arrivedAt", "kind": "timestamp" }
+    ]
+  },
+  "notes": [
+    "UI: the normalize node, config { envelope: ['source','time','text','attachments'], dedupe: 'hash' }.",
+    "The 'source' reference is structural on purpose: the envelope is about that exact arrival, and the pairing belongs in the digest. Exactly one source is enforced by contains/minContains/maxContains — that requires a validator with full 2020-12 support, which the pinned validation profile must confirm.",
+    "Hash dedupe belongs to the producer. Two intakes of the same bytes are two occurrences."
+  ]
+}

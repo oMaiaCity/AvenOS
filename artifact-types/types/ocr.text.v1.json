@@ -1,0 +1,48 @@
+{
+  "typeKey": "ocr.text",
+  "version": 1,
+  "tier": "T1",
+  "skill": "docs",
+  "blobPolicy": "required",
+  "payloadSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "ocr.text@1",
+    "description": "Complete extracted text for one document. The text is the blob (UTF-8); this payload describes it. The blob-backed form never duplicates the text in JSON.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["language", "pageCount", "encoding", "coordinateSpace", "characterCount"],
+    "properties": {
+      "language": { "type": "string", "pattern": "^[a-z]{2}(-[A-Z]{2})?$" },
+      "pageCount": { "type": "integer", "minimum": 0 },
+      "encoding": { "const": "utf-8" },
+      "coordinateSpace": { "enum": ["normalized", "pdf-user-space"] },
+      "characterCount": { "type": "integer", "minimum": 0 },
+      "engine": {
+        "type": ["object", "null"],
+        "additionalProperties": false,
+        "required": ["name", "version"],
+        "properties": {
+          "name": { "type": "string", "maxLength": 128 },
+          "version": { "type": "string", "maxLength": 64 }
+        }
+      }
+    }
+  },
+  "referencesSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "array",
+    "maxItems": 0
+  },
+  "search": {
+    "fullText": ["blob:text"],
+    "fields": [
+      { "path": "/language", "kind": "keyword" },
+      { "path": "/pageCount", "kind": "number" }
+    ]
+  },
+  "notes": [
+    "Blob policy is required, not optional: one registered type version cannot have an undecided blob policy. Bounded inline text for short scans would be a separate type.",
+    "text-range locators into this blob count Unicode code points; the canonicalizer's NFC rule is what keeps those offsets valid across the store.",
+    "engine is duplicated from the run receipt only when downstream code branches on it."
+  ]
+}

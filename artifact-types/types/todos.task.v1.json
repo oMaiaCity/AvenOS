@@ -1,0 +1,67 @@
+{
+  "typeKey": "todos.task",
+  "version": 1,
+  "tier": "T1",
+  "skill": "todos",
+  "blobPolicy": "forbidden",
+  "payloadSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "todos.task@1",
+    "description": "One complete immutable task value. Field list taken from the live tool schema in app/src/lib/actors/todo.config.ts.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["taskKey", "title", "tags", "revision"],
+    "properties": {
+      "taskKey": { "type": "string", "maxLength": 128 },
+      "title": { "type": "string", "minLength": 1, "maxLength": 512 },
+      "tags": {
+        "type": "array",
+        "maxItems": 32,
+        "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "maxLength": 64 }
+      },
+      "due": {
+        "oneOf": [
+          { "type": "null" },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["date"],
+            "properties": { "date": { "type": "string", "format": "date-time" } }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["start", "end"],
+            "properties": {
+              "start": { "type": "string", "format": "date-time" },
+              "end": { "type": "string", "format": "date-time" }
+            }
+          }
+        ]
+      },
+      "responsible": { "type": ["string", "null"], "maxLength": 128 },
+      "note": { "type": ["string", "null"], "maxLength": 4000 },
+      "revision": { "type": "integer", "minimum": 1 }
+    }
+  },
+  "referencesSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "array",
+    "maxItems": 0
+  },
+  "search": {
+    "fullText": ["/title", "/note"],
+    "fields": [
+      { "path": "/tags", "kind": "keyword" },
+      { "path": "/responsible", "kind": "keyword" },
+      { "path": "/due/date", "kind": "timestamp" },
+      { "path": "/due/start", "kind": "timestamp" }
+    ]
+  },
+  "notes": [
+    "No status field. open/doing/done live in todos.status-transition@1, gated by todo-machine.pl.",
+    "No spark field. Spark (me | team) is the authorization scope; putting it in the payload would encode an ACL into content. See open decision 4 in README.md.",
+    "A retitle publishes a new todos.task@1 with the same taskKey and revision + 1. The head is a preferred-value projection, not a store concept.",
+    "due is oneOf {date} or {start,end} — exactly the shape the todo_create tool already accepts."
+  ]
+}

@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   commitlint:
@@ -23,8 +24,8 @@ jobs:
       - name: Set up bun
         uses: oven-sh/setup-bun@v2
 
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
+      - uses: ./.github/actions/bun-install
+        with:
+          token: ${{ secrets.PACKAGE_READ_TOKEN }}
       - name: Lint pushed commit range
         run: bunx commitlint --from ${{ github.event.before }} --to ${{ github.sha }} --verbose

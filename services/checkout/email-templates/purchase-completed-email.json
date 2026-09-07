@@ -1,0 +1,8 @@
+{
+	"subject": "Login for {{name}}",
+	"fixture": {
+		"name": "aurora",
+		"accessUrl": "https://aven.id/api/auth/sign-in/setup-token?token=designer-example",
+		"baseUrl": "https://portal.aven.ceo"
+	}
+}

@@ -53,6 +53,16 @@ export interface FlowEdge {
 	predicate: string
 }
 
+/** Runtime state painted over a workflow template or processing DAG. */
+export type FlowInstanceState =
+	| 'done'
+	| 'running'
+	| 'waiting'
+	| 'retrying'
+	| 'error'
+	| 'review'
+	| 'skipped'
+
 /** Edges within one workflow — provides ∩ requires, derived at read time. */
 export function workflowEdges(w: WorkflowDef): FlowEdge[] {
 	const out: FlowEdge[] = []

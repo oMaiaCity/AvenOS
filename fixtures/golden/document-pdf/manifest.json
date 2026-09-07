@@ -1,0 +1,46 @@
+{
+	"version": 1,
+	"description": "Representative synthetic receipt PDFs used to prove deterministic client/server decoding and production bundling.",
+	"samples": [
+		{
+			"file": "syn_0006_JP_retail_pos_gift_receipt.pdf",
+			"sha256": "48180fc8fc3d658695c22787b7ad5547bde26b2656359899f93640d83c4be72b",
+			"bytes": 91883,
+			"pages": 1,
+			"minimumRuns": 50,
+			"textIncludes": ["GIFT RECEIPT", "T-2026-00006-A", "¥1,406"]
+		},
+		{
+			"file": "syn_0015_MX_transport_mobility_toll_receipt.pdf",
+			"sha256": "16928e424a1c19c65d6e7469ac2a02bc5c32b177b4538c63275e076c0f9d9916",
+			"bytes": 25830,
+			"pages": 1,
+			"minimumRuns": 75,
+			"textIncludes": ["TOLL", "T-2026-00015-V", "MX$633,60"]
+		},
+		{
+			"file": "syn_0051_CN_logistics_industrial_warehouse_pickup_slip.pdf",
+			"sha256": "9bf18313d5837d87b18d28681825cd279fe29128171515e0b82aa9c0a9e9f42f",
+			"bytes": 302972,
+			"pages": 1,
+			"minimumRuns": 140,
+			"textIncludes": ["海棠物流", "INV-2026-00051-A", "¥1,249.00"]
+		},
+		{
+			"file": "syn_0066_SA_digital_messaging_qr_only_receipt.pdf",
+			"sha256": "386aa4dfc0ba41c63292034b32d1ad4ed696b90fe35d056762e611db068f3737",
+			"bytes": 26707,
+			"pages": 1,
+			"minimumRuns": 18,
+			"textIncludes": ["VAT 387915089862405", "SAR 450.00", "393149-658"]
+		},
+		{
+			"file": "syn_0075_DE_composite_ugly_three_receipts_expense_page.pdf",
+			"sha256": "b2101afcc33977cad85cfee471560b85e40a065d0443cd0c67746d347d9d6153",
+			"bytes": 113941,
+			"pages": 1,
+			"minimumRuns": 190,
+			"textIncludes": ["EXPENSE EVIDENCE", "EXP-2026-00075-T", "162,59"]
+		}
+	]
+}

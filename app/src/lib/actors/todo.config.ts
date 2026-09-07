@@ -53,6 +53,9 @@ const todoProgram = composeTodoProgram(loadMachine(todoMachineSource))
 
 export const todoConfig: Manifest = {
 	id: 'todo',
+	authority: 'ceo.aven',
+	namespace: 'productivity.todos',
+	version: '1',
 	name: 'Todos',
 	description:
 		'Keeps the task list: create, change status, delete, show. Every task ' +

@@ -1,4 +1,5 @@
-import { type StyleDef, type ViewDef, withBrand } from '@avenos/aven-ui'
+import { withBrand } from '@myavenceo/aven-ceo/vibe-style'
+import type { StyleDef, ViewDef } from '@myavenceo/aven-vibes'
 
 /**
  * The conversation as a WINDOW — the chat rendered by the same universal
@@ -45,6 +46,12 @@ const selectors: StyleDef['selectors'] = {
 		background: 'var(--color-marine)',
 		color: 'var(--color-linen)',
 		border: 'none'
+	},
+	'.ch-bubble--speaker-two': {
+		background: 'color-mix(in srgb, var(--color-marine) 82%, var(--color-progress))'
+	},
+	'.ch-bubble--speaker-three': {
+		background: 'color-mix(in srgb, var(--color-marine) 82%, var(--color-success))'
 	},
 	'.ch-status': { fontSize: '12px', opacity: '0.5', textAlign: 'center' },
 	'.ch-status--hidden': { display: 'none' }

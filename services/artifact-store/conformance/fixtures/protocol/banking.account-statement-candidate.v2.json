@@ -1,0 +1,80 @@
+{
+  "typeKey": "banking.account-statement-candidate",
+  "version": 2,
+  "schemaProfileId": "artifact-json-schema-profile-v1",
+  "payloadSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["statementKind", "currency", "accountHolder", "accountHolderAddress", "accountHolderDetails", "institution", "accountIban", "accountBic", "accountNumber", "productName", "openingBalanceMinor", "closingBalanceMinor", "periodStart", "periodEnd", "transactions", "notes", "summary"],
+    "properties": {
+      "statementKind": { "enum": ["monthly-statement", "transaction-overview", "balance-certificate", "payment-receipt", "other"] },
+      "currency": { "type": ["string", "null"], "pattern": "^[A-Z]{3}$" },
+      "accountHolder": { "type": ["string", "null"], "maxLength": 255 },
+      "accountHolderAddress": { "type": ["string", "null"], "maxLength": 2000 },
+      "accountHolderDetails": { "$ref": "#/$defs/party" },
+      "institution": {
+        "type": ["object", "null"], "additionalProperties": false,
+        "required": ["name", "city"],
+        "properties": {
+          "name": { "type": ["string", "null"], "maxLength": 255 },
+          "city": { "type": ["string", "null"], "maxLength": 255 }
+        }
+      },
+      "accountIban": { "type": ["string", "null"], "maxLength": 64 },
+      "accountBic": { "type": ["string", "null"], "maxLength": 32 },
+      "accountNumber": { "type": ["string", "null"], "maxLength": 128 },
+      "productName": { "type": ["string", "null"], "maxLength": 255 },
+      "openingBalanceMinor": { "$ref": "#/$defs/money" },
+      "closingBalanceMinor": { "$ref": "#/$defs/money" },
+      "periodStart": { "type": ["string", "null"], "maxLength": 32 },
+      "periodEnd": { "type": ["string", "null"], "maxLength": 32 },
+      "notes": { "type": ["string", "null"], "maxLength": 4000 },
+      "summary": { "type": "string", "minLength": 1, "maxLength": 1000 },
+      "transactions": {
+        "type": "array", "maxItems": 128,
+        "items": {
+          "type": "object", "additionalProperties": false,
+          "required": ["transactionId", "bookingDate", "valueDate", "title", "amountMinor", "counterpartyName", "counterpartyIban", "description", "originalAmountMinor", "originalCurrency", "exchangeRate", "fxSurchargeMinor", "foreignExchangeFeeBps", "balanceAfterMinor", "sourceRow"],
+          "properties": {
+            "transactionId": { "type": ["string", "null"], "maxLength": 255 },
+            "bookingDate": { "type": ["string", "null"], "maxLength": 32 },
+            "valueDate": { "type": ["string", "null"], "maxLength": 32 },
+            "title": { "type": ["string", "null"], "maxLength": 512 },
+            "amountMinor": { "$ref": "#/$defs/money" },
+            "counterpartyName": { "type": ["string", "null"], "maxLength": 512 },
+            "counterpartyIban": { "type": ["string", "null"], "maxLength": 64 },
+            "description": { "type": ["string", "null"], "maxLength": 4000 },
+            "originalAmountMinor": { "$ref": "#/$defs/money" },
+            "originalCurrency": { "type": ["string", "null"], "pattern": "^[A-Z]{3}$" },
+            "exchangeRate": { "type": ["string", "null"], "maxLength": 64 },
+            "fxSurchargeMinor": { "$ref": "#/$defs/money" },
+            "foreignExchangeFeeBps": { "type": ["integer", "null"], "minimum": -100000, "maximum": 100000 },
+            "balanceAfterMinor": { "$ref": "#/$defs/money" },
+            "sourceRow": { "type": ["integer", "null"], "minimum": 1, "maximum": 1000000 }
+          }
+        }
+      }
+    },
+    "$defs": {
+      "money": { "type": ["integer", "null"], "minimum": -9007199254740991, "maximum": 9007199254740991 },
+      "party": {
+        "type": ["object", "null"], "additionalProperties": false,
+        "required": ["name", "street", "postalCode", "city", "country", "email", "phone", "taxId", "contactName"],
+        "properties": {
+          "name": { "type": ["string", "null"], "maxLength": 255 },
+          "street": { "type": ["string", "null"], "maxLength": 512 },
+          "postalCode": { "type": ["string", "null"], "maxLength": 64 },
+          "city": { "type": ["string", "null"], "maxLength": 255 },
+          "country": { "type": ["string", "null"], "maxLength": 128 },
+          "email": { "type": ["string", "null"], "maxLength": 320 },
+          "phone": { "type": ["string", "null"], "maxLength": 128 },
+          "taxId": { "type": ["string", "null"], "maxLength": 128 },
+          "contactName": { "type": ["string", "null"], "maxLength": 255 }
+        }
+      }
+    }
+  },
+  "blobPolicy": "forbidden",
+  "referenceRules": []
+}

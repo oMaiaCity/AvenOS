@@ -1,10 +1,10 @@
-@import "tailwindcss";
+@import "./brand-theme.css";
+@import "./brand-components.css";
 
-/* Source-aliased workspace libs live outside app/ (see svelte.config.js),
- * so Tailwind v4's automatic content detection never scans them. Register
- * them explicitly — otherwise classes used ONLY in these libs (e.g. the
- * board column's w-80) are silently dropped and layouts break. */
-@source "../../libs/aven-city/src";
+/* The reset and the utility layer, generated from this surface's own
+ * markup by @myavenceo/aven-ceo. Must follow the imports: a rule before
+ * an @import makes the browser drop the import. */
+@aven-utilities;
 
 @font-face {
 	font-family: "Ouroboros";
@@ -171,7 +171,7 @@
 	font-weight: 300;
 	line-height: 1;
 	letter-spacing: -0.02em;
-	color: var(--color-brand-navy, #1e293b);
+	color: var(--color-marine);
 }
 .avenos-wordmark .wm-aven {
 	font-weight: 300;
@@ -183,180 +183,22 @@
 }
 
 /*
- * The palette lives in @theme below, in four numbered blocks: the TONES (the
- * paint), the SURFACES (the cream ladder), the ROLES (what a colour means),
- * and the intent STATES (which role each state borrows). Read those; this
- * file is the source of truth and the Brand-Farben settings page renders it
- * back by resolving the very same variables.
+ * THE APP'S THEME.
+ *
+ * The palette is no longer here. Every tone, surface and role now comes from
+ * `@myavenceo/aven-ceo`'s `tokens.ts`, emitted into the generated
+ * `brand-theme.css` imported at the top of this file — the same source the id
+ * service, the marketing site and the vibe layer read.
  *
  * A prose inventory used to sit here listing every hex by hand. It outlived
- * three palette changes and was documenting colours that no longer existed
- * (moss #2F5D50, violet #7E6EAD, sage working, two extra cream rungs), which
- * is the argument against keeping one at all.
+ * three palette changes and was documenting colours that no longer existed,
+ * which is the argument against keeping one at all; the generator is that
+ * inventory now, and it cannot go stale.
+ *
+ * To re-theme: edit `packages/aven-ceo/src/tokens.ts` in avenCEO, publish,
+ * then run `bun run brand:generate` here and commit the regenerated files.
+ * The Brand-Farben settings page renders these very same variables back.
  */
-@theme {
-	/* Inter is the single typeface across body, UI, titles and badges — one
-	 * family, differentiated purely by weight and size. The old stacks
-	 * (AzeretMono body, ClashDisplay titles, Chillax fallback) made every
-	 * surface speak a different voice. `--font-display`
-	 * is intentionally a SEPARATE token (today aliased to Chillax) so headings can
-	 * later be upgraded to a dedicated display face by editing only this one line —
-	 * components reference `font-display`, not "Chillax", so nothing else changes.
-	 * `--font-serif` is kept as an alias too; the app no longer relies on a serif. */
-	/* board 0110 — the default body/UI text face is Azeret Mono (default weight Thin, set on `body`). */
-	--font-sans: "InterVariable", ui-sans-serif, system-ui, -apple-system, sans-serif;
-
-	--font-display: "InterVariable", ui-sans-serif, system-ui, sans-serif;
-	--font-serif: "InterVariable", ui-sans-serif, system-ui, sans-serif;
-	--font-mono: "InterVariable", ui-sans-serif, system-ui, sans-serif;
-
-	/* Chillax has noticeably heavier strokes than Inter at the same numeric
-	 * weight, so titles and highlighted items read too bold. Re-tune the weight
-	 * scale down one notch system-wide — every `font-semibold`/`font-bold`
-	 * utility across all components gets lighter without per-component edits.
-	 * Result tier: body 400 · medium/title 500 · strong emphasis 600 (was 700). */
-	--font-weight-medium: 500;
-	--font-weight-semibold: 600;
-	--font-weight-bold: 700;
-
-	/* ══ 1 · THE BRAND TONES ═══════════════════════════════════════════
-	 * The paint itself. Every colour the app owns is written as a hex
-	 * EXACTLY ONCE, here, under exactly ONE name. Nothing below this
-	 * block spells a hex — everything else points at a tone. That is the
-	 * whole discipline: to restyle the brand you edit these eight lines.
-	 *
-	 * Down from twelve: violet, grey-blue, warm grey and the deep moss green
-	 * are gone; so is the sage that briefly carried "in motion" — tidal blue
-	 * does that now, and being dark it reads as text without help. */
-	/* Row one — the cool half: the brand's own colours, deepest first. */
-	--color-marine: #1e293b; /* deep navy — the brand's ink and its fill */
-	--color-anchor: #57789e; /* steel blue, off the violet side — everything held back */
-	--color-tidal-blue: #2489a0; /* teal-blue — work in motion */
-	--color-paradise-water: #449c94; /* turquoise — the bright note; settled work */
-	/* Row two — the warm half: the signals. */
-	--color-terracotta: #c15b40; /* burnt orange — the failure tone */
-	--color-sunflower: #d2a24a; /* clean gold — brighter and yellower than the old #a06818 */
-	--color-earth: #d4a373; /* warm amber-tan — notice */
-	--color-sand: #f3e7c6; /* cream yellow — the warm fill */
-	--color-chalk: #f8fafc; /* near-white — text on a dark tone */
-	--color-ink: #1f2a3d; /* dark slate-blue — body copy, never pure black */
-
-	/* The cream family, lightest to warmest. Four rungs, four names — down
-	 * from six near-identical values, two of which (#f9f5e6, #efeada) sat so
-	 * close to their neighbours that no one could see the difference they
-	 * were paying for. Porcelain had been hiding as a raw #fffdf7 in eighteen
-	 * places of markup; it is the most-used surface in the app and now says
-	 * its name. */
-	--color-porcelain: #fffdf7; /* the raised card — lightest, lifts off the page */
-	--color-linen: #f8f6ef; /* the page ground everything rests on */
-	--color-eggshell: #f6f3e8; /* one step warmer — display panels, hover */
-	--color-ivory: #f6f1e2; /* warmest — cards at rest, and selection */
-
-	/* ══ 2 · THE SURFACES ══════════════════════════════════════════════
-	 * Which rung of the cream family each part of the app stands on. */
-	/* Four rungs, four names. `surface-card-hover` and `surface-card-selected`
-	 * are gone: once hover shared its value with `surface-soft` and selection
-	 * shared its value with `surface-card`, a second name for the same rung
-	 * was just a place for drift to start again. */
-	/* Raised — cards that lift off the page: the intent list, the settings
-	 * panels, the flow nodes. */
-	--color-surface-raised: var(--color-porcelain);
-	/* The page ground everything else is measured against. */
-	--color-surface-cream: var(--color-linen);
-	/* Display surfaces AND hover — the Activity log panel, the Display panel
-	 * iframe wrapper, the vibe-app `<body>`, and any raised card under the
-	 * pointer. Vibe apps mirror this value via their own `:root --bg-a`, being
-	 * bundled into the sandbox without access to these variables. */
-	--color-surface-soft: var(--color-eggshell);
-	/* Cards at rest AND selected — warmer than the page, so they read as
-	 * objects on it. Selection is carried by the border, not by the fill. */
-	--color-surface-card: var(--color-ivory);
-
-	--color-background: var(--color-surface-cream);
-	--color-card: #ffffff;
-	/* Preview host behind sandbox iframe — slight contrast vs. card surface */
-	--color-sandbox-host: color-mix(in srgb, var(--color-background) 94%, var(--color-foreground));
-
-	/* ══ 3 · THE ROLES ═════════════════════════════════════════════════
-	 * The design-system layer: what a colour MEANS, pointed at the tone
-	 * that carries the meaning. Components speak roles (`bg-primary`,
-	 * `text-error`) and never tones, so re-assigning a role below
-	 * re-skins every surface that uses it.
-	 *
-	 * Each role has up to three faces:
-	 *   --color-X              the tone itself — fills, borders, dots
-	 *   --color-X-foreground   text placed ON that fill
-	 *   --color-X-ink          the tone used AS text, on the cream page
-	 *                          (darkened where the raw tone is too light)
-	 *
-	 * ONE TONE, ONE ROLE — eight of each. Roles are named for what they mean
-	 * and nothing else: `error`, not `status-error`. The prefix said only that
-	 * a token was a token.
-	 *
-	 * There is no separate state layer either. An intent's state maps onto one
-	 * of these roles in STATE_ACCENT (IntentsPlaceholder) — waiting reads as
-	 * info, working as progress, done as success — so the mapping lives in one
-	 * place instead of being restated here as a second set of aliases.
-	 *
-	 *   ROLE       TONE            WHERE IT SPEAKS
-	 *   primary    marine          buttons, the rail, the HITL frame
-	 *   quiet      anchor          held back — every type badge
-	 *   progress   tidal blue      in motion (state: working)
-	 *   success    paradise water  settled — the bright note (state: done)
-	 *   error      terracotta      something failed (state: error)
-	 *   warning    sunflower       careful — but nothing is broken
-	 *   info       earth           notice (state: waiting — your turn)
-	 *   secondary  sand            the warm second action */
-	--color-primary: var(--color-marine);
-	--color-primary-foreground: var(--color-chalk);
-
-	/* Tidal blue is dark enough to read as text unaided — unlike the sage it
-	 * replaced, whose ink had to be mixed halfway to black. It stays separate
-	 * from anchor: motion and stillness are different things to say, and the
-	 * two blues are far enough apart to say them. */
-	--color-quiet: var(--color-anchor);
-	--color-quiet-foreground: var(--color-chalk);
-	--color-quiet-ink: color-mix(in oklab, var(--color-anchor) 82%, black);
-
-	--color-progress: var(--color-tidal-blue);
-	--color-progress-foreground: var(--color-chalk);
-	--color-progress-ink: var(--color-tidal-blue);
-
-	--color-success: var(--color-paradise-water);
-	--color-success-foreground: #fafaf9;
-	--color-success-ink: var(--color-paradise-water);
-
-	--color-warning: var(--color-sunflower);
-	--color-warning-foreground: #2b2313;
-	--color-warning-ink: color-mix(in oklab, var(--color-sunflower) 74%, black);
-
-	--color-error: var(--color-terracotta);
-	--color-error-foreground: #fffefb;
-	--color-error-ink: color-mix(in oklab, var(--color-terracotta) 85%, black);
-	--color-error-muted: color-mix(in oklab, var(--color-terracotta) 22%, white);
-	--color-error-strong: color-mix(in oklab, var(--color-terracotta) 78%, black);
-
-	--color-info: var(--color-earth);
-	--color-info-foreground: #2b231c;
-	--color-info-ink: color-mix(in oklab, var(--color-earth) 72%, black);
-
-	--color-secondary: var(--color-sand);
-	--color-secondary-foreground: var(--color-marine);
-
-	--color-foreground: var(--color-ink);
-	--color-card-foreground: var(--color-foreground);
-
-	--color-muted: color-mix(in srgb, var(--color-marine) 6%, var(--color-surface-cream));
-	--color-muted-foreground: color-mix(in srgb, var(--color-marine) 42%, transparent);
-
-	--color-border: color-mix(in srgb, var(--color-marine) 14%, transparent);
-	--color-input: color-mix(in srgb, #ffffff 65%, var(--color-surface-cream));
-
-	--radius-lg: 1rem;
-	--radius-xl: 1.5rem;
-	--radius-2xl: 2rem;
-	--radius-full: 9999px;
-}
 
 @layer base {
 	html {
@@ -415,20 +257,5 @@
 }
 
 @layer components {
-	.intent-mock-bar {
-		transform-origin: bottom center;
-		animation: mock-bars 1.05s ease-in-out infinite;
-	}
 
-	.tech-pill {
-		@apply border border-border rounded-full px-4 py-2 flex items-center gap-3 bg-surface-card;
-	}
-
-	.tech-card {
-		@apply border border-border rounded-2xl bg-white/10 transition-all hover:bg-white/20;
-	}
-
-	.tech-label {
-		@apply text-[10px] font-bold tracking-widest uppercase opacity-40;
-	}
 }

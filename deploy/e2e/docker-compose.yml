@@ -1,0 +1,529 @@
+name: aven-e2e
+
+services:
+  identity-database:
+    image: ${E2E_DATABASE_IMAGE:-aven-e2e-database:local}
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: identity-admin-e2e
+      IDENTITY_AUTH_PASSWORD: identity-auth-e2e
+      IDENTITY_ACCOUNTS_PASSWORD: identity-accounts-e2e
+      IDENTITY_AUTHORIZATION_PASSWORD: identity-authorization-e2e
+      IDENTITY_MIGRATOR_PASSWORD: identity-migrator-e2e
+      IDENTITY_BACKUP_PASSWORD: identity-backup-e2e
+    volumes:
+      - identity-postgres:/var/lib/postgresql/data
+      - ../identity/db-init.sh:/docker-entrypoint-initdb.d/10-identity.sql.sh:ro
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -h 127.0.0.1 -U postgres -d aven_identity]
+      interval: 2s
+      timeout: 3s
+      retries: 40
+    networks: [identity-private]
+
+  identity-database-roles:
+    image: ${E2E_DATABASE_IMAGE:-aven-e2e-database:local}
+    depends_on:
+      identity-database:
+        condition: service_healthy
+    command: [sh, /db-init.sh]
+    environment:
+      PGHOST: identity-database
+      PGPASSWORD: identity-admin-e2e
+      POSTGRES_USER: postgres
+      IDENTITY_AUTH_PASSWORD: identity-auth-e2e
+      IDENTITY_ACCOUNTS_PASSWORD: identity-accounts-e2e
+      IDENTITY_AUTHORIZATION_PASSWORD: identity-authorization-e2e
+      IDENTITY_MIGRATOR_PASSWORD: identity-migrator-e2e
+      IDENTITY_BACKUP_PASSWORD: identity-backup-e2e
+    volumes:
+      - ../identity/db-init.sh:/db-init.sh:ro
+    networks: [identity-private]
+
+  identity-migrate:
+    image: ${E2E_IDENTITY_IMAGE:-aven-e2e-identity:local}
+    depends_on:
+      identity-database-roles:
+        condition: service_completed_successfully
+    command: [bun, build/scripts/migrate.js]
+    environment: &identity-environment
+      NODE_ENV: test
+      PORT: "13100"
+      ORIGIN: http://localhost:${E2E_IDENTITY_HOST_PORT:-13100}
+      PUBLIC_BASE_URL: http://localhost:${E2E_IDENTITY_HOST_PORT:-13100}
+      WEBAUTHN_RP_ID: localhost
+      TRUSTED_WEB_ORIGINS: http://localhost:${E2E_CHECKOUT_HOST_PORT:-13200}
+      DATABASE_URL: postgres://aven_identity_auth:identity-auth-e2e@identity-database/aven_identity
+      ACCOUNTS_DATABASE_URL: postgres://aven_identity_accounts:identity-accounts-e2e@identity-database/aven_identity
+      AUTHORIZATION_DATABASE_URL: postgres://aven_identity_authorization:identity-authorization-e2e@identity-database/aven_identity
+      MIGRATOR_DATABASE_URL: postgres://aven_identity_migrator:identity-migrator-e2e@identity-database/aven_identity
+      BETTER_AUTH_SECRET: identity-better-auth-secret-for-e2e-only
+      IDENTITY_PROVISIONING_SECRETS: identity-provisioning-secret-for-e2e-only,identity-production-provisioning-secret-for-e2e-only
+      IDENTITY_MAIL_ORIGINS: http://checkout:13200,http://checkout:13200
+      POW_DIFFICULTY_BITS: "8"
+      REQUIRE_PASSKEY_PRF: "false"
+    networks: [identity-private, public-test]
+
+  identity:
+    image: ${E2E_IDENTITY_IMAGE:-aven-e2e-identity:local}
+    depends_on:
+      identity-migrate:
+        condition: service_completed_successfully
+    environment: *identity-environment
+    ports:
+      - 127.0.0.1:${E2E_IDENTITY_HOST_PORT:-13100}:13100
+    healthcheck:
+      test: [CMD, bun, -e, "fetch('http://127.0.0.1:13100/api/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    networks:
+      identity-private:
+      public-test:
+
+  platform-database:
+    image: ${E2E_DATABASE_IMAGE:-aven-e2e-database:local}
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: platform-admin-e2e
+      CHECKOUT_RUNTIME_PASSWORD: checkout-runtime-e2e
+      CHECKOUT_WEBHOOK_PASSWORD: checkout-webhook-e2e
+      CHECKOUT_MIGRATOR_PASSWORD: checkout-migrator-e2e
+      CHECKOUT_EMAIL_PASSWORD: checkout-email-e2e
+      CHECKOUT_PLATFORM_EVENTS_PASSWORD: checkout-platform-events-e2e
+      API_HOSTING_PASSWORD: api-hosting-e2e
+      API_AUTHORIZATION_PASSWORD: api-authorization-e2e
+      API_ENTITLEMENTS_PASSWORD: api-entitlements-e2e
+      API_RECONCILER_PASSWORD: api-reconciler-e2e
+      API_MIGRATOR_PASSWORD: api-migrator-e2e
+      CUSTOMER_PROVISIONER_PASSWORD: customer-provisioner-e2e
+      ARTIFACT_STORE_PROVISIONER_DB_PASSWORD: artifact-store-provisioner-db-e2e
+      PLATFORM_BACKUP_PASSWORD: platform-backup-e2e
+    volumes:
+      - platform-postgres:/var/lib/postgresql/data
+      - ../platform/db-init.sh:/docker-entrypoint-initdb.d/10-platform.sql.sh:ro
+      - ./artifact-store-init.sh:/docker-entrypoint-initdb.d/20-artifact-conformance.sh:ro
+    ports:
+      - 127.0.0.1:${E2E_DATABASE_HOST_PORT:-55439}:5432
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -h 127.0.0.1 -U postgres -d aven_api]
+      interval: 2s
+      timeout: 3s
+      retries: 40
+    networks: [platform-private, public-test]
+
+  platform-database-roles:
+    image: ${E2E_DATABASE_IMAGE:-aven-e2e-database:local}
+    depends_on:
+      platform-database:
+        condition: service_healthy
+    command: [sh, /db-init.sh]
+    environment:
+      PGHOST: platform-database
+      PGPASSWORD: platform-admin-e2e
+      POSTGRES_USER: postgres
+      CHECKOUT_RUNTIME_PASSWORD: checkout-runtime-e2e
+      CHECKOUT_WEBHOOK_PASSWORD: checkout-webhook-e2e
+      CHECKOUT_MIGRATOR_PASSWORD: checkout-migrator-e2e
+      CHECKOUT_EMAIL_PASSWORD: checkout-email-e2e
+      CHECKOUT_PLATFORM_EVENTS_PASSWORD: checkout-platform-events-e2e
+      API_HOSTING_PASSWORD: api-hosting-e2e
+      API_AUTHORIZATION_PASSWORD: api-authorization-e2e
+      API_ENTITLEMENTS_PASSWORD: api-entitlements-e2e
+      API_RECONCILER_PASSWORD: api-reconciler-e2e
+      API_MIGRATOR_PASSWORD: api-migrator-e2e
+      CUSTOMER_PROVISIONER_PASSWORD: customer-provisioner-e2e
+      ARTIFACT_STORE_PROVISIONER_DB_PASSWORD: artifact-store-provisioner-db-e2e
+      PLATFORM_BACKUP_PASSWORD: platform-backup-e2e
+    volumes:
+      - ../platform/db-init.sh:/db-init.sh:ro
+    networks: [platform-private]
+
+  checkout-migrate:
+    image: ${E2E_CHECKOUT_IMAGE:-aven-e2e-checkout:local}
+    depends_on:
+      platform-database-roles:
+        condition: service_completed_successfully
+    command: [bun, build/scripts/migrate.js]
+    environment:
+      DATABASE_URL: postgres://aven_checkout_http:checkout-runtime-e2e@platform-database/aven_checkout
+      MIGRATOR_DATABASE_URL: postgres://aven_checkout_migrator:checkout-migrator-e2e@platform-database/aven_checkout
+    networks: [platform-private]
+
+  checkout-billing-sync:
+    image: ${E2E_CHECKOUT_IMAGE:-aven-e2e-checkout:local}
+    depends_on:
+      checkout-migrate:
+        condition: service_completed_successfully
+    command: [bun, build/scripts/seed-billing.js]
+    environment:
+      NODE_ENV: test
+      PUBLIC_BASE_URL: http://localhost:${E2E_CHECKOUT_HOST_PORT:-13200}
+      DATABASE_URL: postgres://aven_checkout_http:checkout-runtime-e2e@platform-database/aven_checkout
+      EMAIL_QUEUE_ENCRYPTION_KEY: BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=
+      ALLOW_FAKE_PAYMENTS: "true"
+      POLAR_WEBHOOK_SECRET: polar-webhook-e2e
+    networks: [platform-private, public-test]
+
+  api-migrate:
+    image: ${E2E_API_IMAGE:-aven-e2e-api:local}
+    depends_on:
+      platform-database-roles:
+        condition: service_completed_successfully
+    command: [bun, build/migrate.js]
+    environment: &api-environment
+      PORT: "13000"
+      DATABASE_URL: postgres://aven_api_authorization:api-authorization-e2e@platform-database/aven_api
+      HOSTING_DATABASE_URL: postgres://aven_api_hosting:api-hosting-e2e@platform-database/aven_api
+      AUTHORIZATION_DATABASE_URL: postgres://aven_api_authorization:api-authorization-e2e@platform-database/aven_api
+      ENTITLEMENTS_DATABASE_URL: postgres://aven_api_entitlements:api-entitlements-e2e@platform-database/aven_api
+      MIGRATOR_DATABASE_URL: postgres://aven_api_migrator:api-migrator-e2e@platform-database/aven_api
+      IDENTITY_ISSUER: http://localhost:${E2E_IDENTITY_HOST_PORT:-13100}
+      IDENTITY_JWKS_URL: http://identity:13100/api/auth/jwks
+      IDENTITY_AUDIENCE: aven-services
+      API_PUBLIC_BASE_URL: http://localhost:${E2E_API_HOST_PORT:-13000}
+      CHECKOUT_CAPABILITIES_URL: http://checkout:13200/api/health/capabilities
+      CUSTOMER_ENTITLEMENT_TOKEN: customer-entitlement-token-for-e2e
+      TENANT_GRANT_PRIVATE_KEY: ${E2E_TENANT_PRIVATE_KEY}
+      CORS_ORIGINS: http://localhost:${E2E_CHECKOUT_HOST_PORT:-13200},http://localhost:1420
+      SITE_HOST_DIRECTORY_BEARER_TOKEN: site-host-directory-token-for-e2e-only
+      SITE_HOST_PUBLIC_IPV4: ${E2E_AVEN_CEO_IPV4:-}
+      SITE_HOST_PUBLIC_IPV6: ${E2E_AVEN_CEO_IPV6:-}
+      SYSTEM_SITES_JSON: '[{"hostname":"aven.ceo","repository":"myavenceo/aven-brands","sourceBranch":"production","deploymentBranch":"deploy/production"}]'
+      ARTIFACT_STORE_BASE_URL: http://artifact-store:8087
+      ARTIFACT_STORE_BEARER_TOKEN: artifact-store-service-token-for-e2e-0001
+      LLM_GATEWAY_ENABLED: "true"
+      LLM_GATEWAY_MODELS_JSON: ${E2E_LLM_MODELS_JSON:-[]}
+      LLM_GATEWAY_CREDENTIALS_JSON: '{}'
+      LLM_GATEWAY_ALLOW_INSECURE_HTTP: "true"
+      LLM_GATEWAY_ACTOR_RUNNER_BEARER_TOKEN: actor-runner-llm-gateway-token-e2e-01
+      DOWNSTREAMS_JSON: '[{"prefix":"/api/billing","baseUrl":"http://checkout:13200","targetPrefix":"/api/billing","bearerToken":"checkout-facade-token-for-e2e-only","roles":["user","admin"]},{"prefix":"/api/names","baseUrl":"http://checkout:13200","targetPrefix":"/api/names","bearerToken":"checkout-facade-token-for-e2e-only","roles":["user","admin"]}]'
+      CUSTOMER_DOWNSTREAMS_JSON: '[{"segment":"artifacts","baseUrl":"http://artifact-store:8087","targetPrefix":"/v1","bearerToken":"artifact-store-service-token-for-e2e-0001","componentRef":"ceo.aven:component:data:artifacts@1","readAction":"artifacts:read","writeAction":"artifacts:write","roles":["user","admin"]},{"segment":"intents","baseUrl":"http://intent-service:3010","targetPrefix":"/api/intents","bearerToken":"intent-service-token-for-e2e-0001","componentRef":"ceo.aven:component:data:intents@1","readAction":"intents:read","writeAction":"intents:write","deleteAction":"intents:delete","mergeAction":"intents:merge","roles":["user","admin"]},{"segment":"actor-runs","baseUrl":"http://actor-runner:3010","targetPrefix":"/api/actor-runs","bearerToken":"actor-runner-token-for-e2e-000001","componentRef":"os.aven:component:actors:run-repository@1","readAction":"actor-runs:read","writeAction":"actor-runs:write","roles":["user","admin"]}]'
+    networks: [platform-private, public-test]
+
+  checkout:
+    image: ${E2E_CHECKOUT_IMAGE:-aven-e2e-checkout:local}
+    depends_on:
+      checkout-billing-sync:
+        condition: service_completed_successfully
+      identity:
+        condition: service_healthy
+    environment:
+      NODE_ENV: test
+      PORT: "13200"
+      ORIGIN: http://localhost:${E2E_CHECKOUT_HOST_PORT:-13200}
+      PUBLIC_BASE_URL: http://localhost:${E2E_CHECKOUT_HOST_PORT:-13200}
+      DATABASE_URL: postgres://aven_checkout_http:checkout-runtime-e2e@platform-database/aven_checkout
+      WEBHOOK_DATABASE_URL: postgres://aven_checkout_webhooks:checkout-webhook-e2e@platform-database/aven_checkout
+      IDENTITY_ISSUER: http://localhost:${E2E_IDENTITY_HOST_PORT:-13100}
+      IDENTITY_JWKS_URL: http://identity:13100/api/auth/jwks
+      IDENTITY_INTERNAL_URL: http://identity:13100
+      IDENTITY_AUDIENCE: aven-services
+      IDENTITY_PROVISIONING_SECRET: identity-provisioning-secret-for-e2e-only
+      FACADE_BEARER_TOKEN: checkout-facade-token-for-e2e-only
+      PLATFORM_API_INTERNAL_URL: http://api:13000
+      DOWNLOAD_URL: https://downloads.example.test/aven
+      EMAIL_QUEUE_ENCRYPTION_KEY: BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=
+      ALLOW_FAKE_PAYMENTS: "true"
+      POLAR_WEBHOOK_SECRET: polar-webhook-e2e
+      POW_DIFFICULTY_BITS: "8"
+    ports:
+      - 127.0.0.1:${E2E_CHECKOUT_HOST_PORT:-13200}:13200
+    healthcheck:
+      test: [CMD, bun, -e, "fetch('http://127.0.0.1:13200/api/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    networks:
+      platform-private:
+      public-test:
+
+  platform-event-worker:
+    image: ${E2E_CHECKOUT_IMAGE:-aven-e2e-checkout:local}
+    depends_on:
+      checkout-migrate:
+        condition: service_completed_successfully
+      api:
+        condition: service_healthy
+    command: [bun, build/scripts/platform-event-worker.js]
+    healthcheck:
+      test: [CMD, bun, -e, "import pg from 'pg'; const pool = new pg.Pool({ connectionString: process.env.PLATFORM_EVENT_WORKER_DATABASE_URL }); await pool.query('SELECT 1 FROM platform_event_outbox LIMIT 1'); await pool.end()"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    environment:
+      NODE_ENV: test
+      PUBLIC_BASE_URL: http://localhost:${E2E_CHECKOUT_HOST_PORT:-13200}
+      DATABASE_URL: postgres://aven_checkout_platform_events:checkout-platform-events-e2e@platform-database/aven_checkout
+      PLATFORM_EVENT_WORKER_DATABASE_URL: postgres://aven_checkout_platform_events:checkout-platform-events-e2e@platform-database/aven_checkout
+      PLATFORM_API_INTERNAL_URL: http://api:13000
+      PLATFORM_EVENT_TOKEN: customer-entitlement-token-for-e2e
+      EMAIL_QUEUE_ENCRYPTION_KEY: BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=
+    networks: [platform-private]
+
+  platform-provisioner:
+    image: ${E2E_PLATFORM_PROVISIONER_IMAGE:-aven-e2e-platform-provisioner:local}
+    depends_on:
+      api-migrate:
+        condition: service_completed_successfully
+      artifact-store-provisioner:
+        condition: service_healthy
+    environment:
+      CLUSTER_DATABASE_URL: postgres://aven_customer_provisioner:customer-provisioner-e2e@platform-database/postgres
+      CONTROL_DATABASE_URL: postgres://aven_api_reconciler:api-reconciler-e2e@platform-database/aven_api
+      INTENTS_API_DB_CREDENTIAL_ROOT: intent-root-00000000000000000000000000000001
+      ACTOR_API_DB_CREDENTIAL_ROOT: actor-api-root-000000000000000000000000000001
+      ACTOR_WORKER_DB_CREDENTIAL_ROOT: actor-worker-root-000000000000000000000000001
+      ARTIFACT_API_DB_CREDENTIAL_ROOT: BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ
+      ARTIFACT_STORE_PROVISIONER_URL: http://artifact-store-provisioner:8088
+      ARTIFACT_STORE_PROVISIONER_TOKEN: artifact-provisioner-token-for-e2e-0001
+      ARTIFACT_STORE_PROVISIONER_DATABASE_ROLE: aven_artifact_store_provisioner
+      BACKUP_DATABASE_ROLE: aven_backup
+      PROVISIONER_POLL_INTERVAL_MS: "100"
+      PROVISIONER_LEASE_SECONDS: "15"
+    networks: [platform-private]
+
+  artifact-store-provisioner:
+    image: ${E2E_ARTIFACT_STORE_IMAGE:-aven-e2e-artifact-store:local}
+    depends_on:
+      platform-database-roles:
+        condition: service_completed_successfully
+    command: [serve-provisioner]
+    environment:
+      ARTIFACT_STORE_PROVISIONER_DATABASE_URL: postgres://aven_artifact_store_provisioner:artifact-store-provisioner-db-e2e@platform-database/postgres
+      ARTIFACT_STORE_PROVISIONER_BEARER_TOKEN: artifact-provisioner-token-for-e2e-0001
+      ARTIFACT_STORE_PROVISIONER_LISTEN: 0.0.0.0:8088
+      ARTIFACT_STORE_HEALTH_PORT: "8088"
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --show-error, http://127.0.0.1:8088/health/ready]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    networks: [platform-private]
+
+  artifact-store:
+    image: ${E2E_ARTIFACT_STORE_IMAGE:-aven-e2e-artifact-store:local}
+    depends_on:
+      artifact-store-provisioner:
+        condition: service_healthy
+    environment:
+      ARTIFACT_STORE_DATABASE_URL: postgres://unused:unused@platform-database/postgres
+      ARTIFACT_STORE_API_DB_CREDENTIAL_ROOT: BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ
+      ARTIFACT_STORE_BEARER_TOKEN: artifact-store-service-token-for-e2e-0001
+      ARTIFACT_STORE_ACTOR_RUNNER_BEARER_TOKEN: actor-runner-artifact-token-for-e2e-01
+      ARTIFACT_STORE_PUBLISHER_ISSUER: api.aven.ceo
+      ARTIFACT_STORE_PUBLISHER_SUBJECT: service:aven-api
+      ARTIFACT_STORE_TENANT_MODE: "true"
+      ARTIFACT_STORE_LISTEN: 0.0.0.0:8087
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --show-error, http://127.0.0.1:8087/health/ready]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    networks: [platform-private]
+
+  artifact-store-conformance-migrate:
+    image: ${E2E_ARTIFACT_STORE_IMAGE:-aven-e2e-artifact-store:local}
+    depends_on:
+      platform-database-roles:
+        condition: service_completed_successfully
+    command: [migrate]
+    environment: &artifact-conformance-environment
+      ARTIFACT_STORE_DATABASE_URL: postgres://postgres:platform-admin-e2e@platform-database/aven_artifact_conformance
+      ARTIFACT_STORE_SCOPE_ID: 99999999-9999-4999-8999-999999999999
+      ARTIFACT_STORE_BEARER_TOKEN: artifact-store-runtime-conformance-token
+      ARTIFACT_STORE_PUBLISHER_ISSUER: api.aven.ceo
+      ARTIFACT_STORE_PUBLISHER_SUBJECT: service:actor-runner
+      ARTIFACT_STORE_LISTEN: 0.0.0.0:8089
+      ARTIFACT_STORE_HEALTH_PORT: "8089"
+    networks: [platform-private]
+
+  artifact-store-conformance:
+    image: ${E2E_ARTIFACT_STORE_IMAGE:-aven-e2e-artifact-store:local}
+    depends_on:
+      artifact-store-conformance-migrate:
+        condition: service_completed_successfully
+    environment: *artifact-conformance-environment
+    ports:
+      - 127.0.0.1:${E2E_ARTIFACT_STORE_HOST_PORT:-18089}:8089
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --show-error, http://127.0.0.1:8089/health/ready]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    # The service remains isolated from production-facing containers, but the
+    # test process on the host must reach its dynamically published port.
+    networks: [platform-private, public-test]
+
+  llm-mock:
+    image: oven/bun:1.3.13
+    command: [bun, /repo/deploy/e2e/llm-mock.ts]
+    volumes:
+      - ./llm-mock.ts:/repo/deploy/e2e/llm-mock.ts:ro
+      - ../../services/actor-runner/tests/support/golden-document-model.ts:/repo/services/actor-runner/tests/support/golden-document-model.ts:ro
+    healthcheck:
+      test: [CMD, bun, -e, "fetch('http://127.0.0.1:8090/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    networks: [platform-private]
+
+  intent-service:
+    image: ${E2E_INTENT_SERVICE_IMAGE:-aven-e2e-intent-service:local}
+    depends_on:
+      platform-provisioner:
+        condition: service_started
+      identity:
+        condition: service_healthy
+    environment:
+      PORT: "3010"
+      CUSTOMER_DATABASE_HOST: platform-database
+      CUSTOMER_DATABASE_PORT: "5432"
+      CUSTOMER_DATABASE_SSL: "false"
+      INTENT_DATABASE_CREDENTIAL_ROOT: intent-root-00000000000000000000000000000001
+      INTENT_SERVICE_BEARER_TOKEN: intent-service-token-for-e2e-0001
+      IDENTITY_ISSUER: http://localhost:${E2E_IDENTITY_HOST_PORT:-13100}
+      IDENTITY_JWKS_URL: http://identity:13100/api/auth/jwks
+      IDENTITY_AUDIENCE: aven-services
+      TENANT_GRANT_ISSUER: http://localhost:${E2E_API_HOST_PORT:-13000}
+      TENANT_GRANT_PUBLIC_KEY: ${E2E_TENANT_PUBLIC_KEY}
+    networks: [platform-private, public-test]
+
+  actor-runner:
+    image: ${E2E_ACTOR_RUNNER_IMAGE:-aven-e2e-actor-runner:local}
+    depends_on:
+      platform-provisioner:
+        condition: service_started
+      identity:
+        condition: service_healthy
+    environment:
+      PORT: "3010"
+      CUSTOMER_DATABASE_HOST: platform-database
+      CUSTOMER_DATABASE_PORT: "5432"
+      CUSTOMER_DATABASE_SSL: "false"
+      ACTOR_API_DB_CREDENTIAL_ROOT: actor-api-root-000000000000000000000000000001
+      ACTOR_WORKER_DB_CREDENTIAL_ROOT: actor-worker-root-000000000000000000000000001
+      ACTOR_RUNNER_SERVICE_BEARER_TOKEN: actor-runner-token-for-e2e-000001
+      IDENTITY_ISSUER: http://localhost:${E2E_IDENTITY_HOST_PORT:-13100}
+      IDENTITY_JWKS_URL: http://identity:13100/api/auth/jwks
+      IDENTITY_AUDIENCE: aven-services
+      TENANT_GRANT_ISSUER: http://localhost:${E2E_API_HOST_PORT:-13000}
+      TENANT_GRANT_PUBLIC_KEY: ${E2E_TENANT_PUBLIC_KEY}
+      ARTIFACT_STORE_BASE_URL: http://artifact-store:8087
+      ARTIFACT_STORE_BEARER_TOKEN: actor-runner-artifact-token-for-e2e-01
+      LLM_GATEWAY_BASE_URL: http://api:13000/internal/v1/llm
+      LLM_GATEWAY_BEARER_TOKEN: actor-runner-llm-gateway-token-e2e-01
+    networks: [platform-private, public-test]
+
+  mailpit:
+    image: axllent/mailpit:v1.30.4
+    environment:
+      MP_DATABASE: /data/mailpit.db
+      MP_MAX_MESSAGES: "100"
+    ports:
+      - 127.0.0.1:${E2E_MAILPIT_HOST_PORT:-18025}:8025
+    volumes:
+      - mailpit-data:/data
+    networks: [platform-private, public-test]
+
+  email-worker:
+    image: ${E2E_CHECKOUT_IMAGE:-aven-e2e-checkout:local}
+    depends_on:
+      checkout-migrate:
+        condition: service_completed_successfully
+      mailpit:
+        condition: service_started
+    command: [bun, build/scripts/email-worker.js]
+    healthcheck:
+      test: [CMD, bun, -e, "import pg from 'pg'; const pool = new pg.Pool({ connectionString: process.env.EMAIL_WORKER_DATABASE_URL }); const result = await pool.query(\"SELECT last_heartbeat_at > now() - interval '30 seconds' AS healthy FROM worker_heartbeats WHERE worker_name = 'email-worker'\"); await pool.end(); process.exit(result.rows[0]?.healthy ? 0 : 1)"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    environment:
+      NODE_ENV: test
+      PUBLIC_BASE_URL: http://localhost:${E2E_CHECKOUT_HOST_PORT:-13200}
+      DATABASE_URL: postgres://aven_checkout_email:checkout-email-e2e@platform-database/aven_checkout
+      EMAIL_WORKER_DATABASE_URL: postgres://aven_checkout_email:checkout-email-e2e@platform-database/aven_checkout
+      EMAIL_QUEUE_ENCRYPTION_KEY: BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=
+      SMTP_URL: smtp://mailpit:1025
+      SMTP_FROM: Aven E2E <no-reply@aven.test>
+      EMAIL_WORKER_POLL_INTERVAL_MS: "100"
+      EMAIL_WORKER_HEARTBEAT_SECONDS: "1"
+    networks: [platform-private]
+
+  static-sites-init:
+    profiles: [hosting]
+    image: alpine:3.22.3
+    command: [sh, -c, "chown 10003:10003 /data && chmod 0750 /data"]
+    volumes:
+      - static-sites:/data
+    networks: [platform-private]
+
+  api:
+    image: ${E2E_API_IMAGE:-aven-e2e-api:local}
+    depends_on:
+      api-migrate:
+        condition: service_completed_successfully
+      identity:
+        condition: service_healthy
+      checkout:
+        condition: service_healthy
+      artifact-store:
+        condition: service_healthy
+      llm-mock:
+        condition: service_healthy
+    environment: *api-environment
+    ports:
+      - 127.0.0.1:${E2E_API_HOST_PORT:-13000}:13000
+    healthcheck:
+      test: [CMD, bun, -e, "fetch('http://127.0.0.1:13000/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    networks: [platform-private, public-test]
+
+  static-site-host:
+    profiles: [hosting]
+    image: ${E2E_STATIC_SITE_HOST_IMAGE:-aven-e2e-static-site-host:local}
+    command: [bun, /e2e/static-host.ts]
+    depends_on:
+      api:
+        condition: service_healthy
+      static-sites-init:
+        condition: service_completed_successfully
+    environment:
+      SITE_HOST_LISTEN: 0.0.0.0:18093
+      SITE_HOST_DATA_ROOT: /data
+      SITE_HOST_DIRECTORY_URL: http://api:13000/internal/v1/static-sites/bindings
+      SITE_HOST_STATUS_URL: http://api:13000/internal/v1/static-sites/status
+      SITE_HOST_DIRECTORY_BEARER_TOKEN: site-host-directory-token-for-e2e-only
+      SITE_HOST_ALLOWED_IPV4: ${E2E_AVEN_CEO_IPV4:-127.0.0.1}
+      SITE_HOST_ALLOWED_IPV6: ${E2E_AVEN_CEO_IPV6:-}
+      SITE_HOST_DNS_SERVERS: 127.0.0.1:5353
+      SITE_HOST_POLL_SECONDS: "2"
+      SITE_HOST_DNS_GRACE_SECONDS: "2"
+    ports:
+      - 127.0.0.1:${E2E_STATIC_HOST_PORT:-18093}:18093
+    volumes:
+      - static-sites:/data
+      - ./dns-mock.ts:/e2e/dns-mock.ts:ro
+      - ./static-host.ts:/e2e/static-host.ts:ro
+    healthcheck:
+      test: [CMD, bun, -e, "fetch('http://127.0.0.1:18093/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 100
+    networks: [platform-private, public-test]
+
+networks:
+  identity-private:
+    internal: true
+  platform-private:
+    internal: true
+  public-test:
+
+volumes:
+  identity-postgres:
+  platform-postgres:
+  static-sites:
+  mailpit-data:

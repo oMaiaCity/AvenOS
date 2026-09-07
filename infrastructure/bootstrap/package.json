@@ -1,0 +1,13 @@
+{
+	"name": "@avenos/deployment-bootstrap",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"test": "node --test tests/*.test.mjs && node tests/check-gitignore.mjs && bun test ../../scripts/lib/redpill-model-catalog.test.ts ../../scripts/lib/deployment-bootstrap-tui.test.ts ../../scripts/lib/polar-catalog.test.ts ../../scripts/lib/united-domains-dns.test.ts ../../scripts/lib/release-rules.test.ts"
+	},
+	"dependencies": {
+		"@pulumi/minio": "0.17.1",
+		"@pulumi/pulumi": "3.256.0"
+	}
+}

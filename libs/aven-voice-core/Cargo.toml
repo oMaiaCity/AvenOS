@@ -1,0 +1,13 @@
+[package]
+name = "aven-voice-core"
+version = "26.8.28-next.9"
+edition = "2021"
+rust-version = "1.93"
+
+[dependencies]
+aven-voice-protocol = { path = "../aven-voice-protocol" }
+serde = { version = "1.0.219", features = ["derive"] }
+unicode-normalization = "=0.1.24"
+
+[dev-dependencies]
+proptest = "=1.7.0"

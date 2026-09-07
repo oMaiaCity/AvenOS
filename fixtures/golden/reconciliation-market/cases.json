@@ -1,0 +1,428 @@
+{
+	"version": 1,
+	"purpose": "Invented market-layout fixtures; no real persons, accounts, liabilities or payments. Expected fields are independently authored, not copied from model output.",
+	"documents": [
+		{
+			"id": "de-business-invoice",
+			"country": "DE",
+			"layout": "invoice",
+			"title": "Rechnung",
+			"subtitle": "Musterwerk Bürobedarf GmbH",
+			"lines": [
+				"Musterwerk Bürobedarf GmbH | Beispielweg 17 | 00000 Musterort",
+				"Kunde: Beispielbetrieb Nord GmbH | Testallee 2 | 00000 Musterort",
+				"Rechnungsnummer: RE-DE-1001 | Rechnungsdatum: 01.09.2026",
+				"Leistungsdatum: 01.09.2026 | Fällig am: 15.09.2026",
+				"10 Archivboxen à 10,00 EUR netto",
+				"Nettobetrag: 100,00 EUR",
+				"Umsatzsteuer 19 %: 19,00 EUR",
+				"Rechnungsbetrag: 119,00 EUR",
+				"Verwendungszweck: RE-DE-1001",
+				"Zahlungskonto: TEST-KONTO-DE-001 (keine echte Bankverbindung)"
+			],
+			"expected": {
+				"documentKind": "invoice",
+				"candidate": {
+					"supplier": "Musterwerk Bürobedarf GmbH",
+					"invoiceNumber": "RE-DE-1001",
+					"currency": "EUR",
+					"netMinor": 10000,
+					"taxMinor": 1900,
+					"grossMinor": 11900,
+					"dueDate": "2026-09-15"
+				}
+			}
+		},
+		{
+			"id": "de-credit-note",
+			"country": "DE",
+			"layout": "invoice",
+			"title": "Gutschrift / Rechnungskorrektur",
+			"subtitle": "Musterwerk Bürobedarf GmbH",
+			"lines": [
+				"Musterwerk Bürobedarf GmbH | Beispielweg 17 | 00000 Musterort",
+				"Kunde: Beispielbetrieb Nord GmbH",
+				"Gutschriftnummer: GS-DE-1001 | Datum: 03.09.2026",
+				"Bezug: Rechnung RE-DE-1001 vom 01.09.2026",
+				"Rückgabe von 2 Archivboxen: -20,00 EUR netto",
+				"Umsatzsteuerkorrektur 19 %: -3,80 EUR",
+				"Gutschrift gesamt: -23,80 EUR",
+				"Die Erstattung von 23,80 EUR erfolgt am 04.09.2026.",
+				"Verwendungszweck: GS-DE-1001"
+			],
+			"expected": {
+				"documentKind": "credit-note",
+				"candidate": {
+					"invoiceNumber": "GS-DE-1001",
+					"currency": "EUR",
+					"netMinor": -2000,
+					"taxMinor": -380,
+					"grossMinor": -2380
+				}
+			}
+		},
+		{
+			"id": "de-supermarket-cash",
+			"country": "DE",
+			"layout": "receipt",
+			"title": "KASSENBON",
+			"subtitle": "Musterladen Lebensmittel",
+			"lines": [
+				"Musterladen Lebensmittel",
+				"Testgasse 4, 00000 Musterort",
+				"Bon-Nr.: BON-DE-2201",
+				"Datum: 02.09.2026 12:14",
+				"Brot und Lebensmittel (A): 10,70 EUR",
+				"Haushaltswaren (B): 11,90 EUR",
+				"SUMME: 22,60 EUR",
+				"BAR gegeben: 30,00 EUR",
+				"Rückgeld: 7,40 EUR",
+				"A: Netto 10,00 EUR | 7 % USt 0,70 EUR",
+				"B: Netto 10,00 EUR | 19 % USt 1,90 EUR",
+				"Gesamt netto 20,00 EUR | USt 2,60 EUR",
+				"Vollständig bezahlt. Keine weitere Forderung."
+			],
+			"expected": {
+				"documentKind": "receipt",
+				"candidate": {
+					"invoiceNumber": "BON-DE-2201",
+					"currency": "EUR",
+					"netMinor": 2000,
+					"taxMinor": 260,
+					"grossMinor": 2260
+				}
+			}
+		},
+		{
+			"id": "de-restaurant-tip",
+			"country": "DE",
+			"layout": "receipt",
+			"title": "BEWIRTUNGSBELEG",
+			"subtitle": "Restaurant Musterküche",
+			"lines": [
+				"Restaurant Musterküche",
+				"Beispielplatz 8, 00000 Musterort",
+				"Belegnummer: GAST-DE-3301",
+				"Datum: 02.09.2026 19:48",
+				"Speisen und Getränke netto: 50,00 EUR",
+				"Ausgewiesene Umsatzsteuer 19 %: 9,50 EUR",
+				"Rechnungsbetrag brutto: 59,50 EUR",
+				"Freiwilliges Trinkgeld: 5,00 EUR",
+				"Mit Karte bezahlt: 64,50 EUR",
+				"Das Trinkgeld ist nicht Teil des Rechnungsbetrags.",
+				"Kartentransaktion: KART-TEST-3301",
+				"Steuersätze sind nur Daten dieser Testrechnung."
+			],
+			"expected": {
+				"documentKind": "receipt",
+				"candidate": {
+					"invoiceNumber": "GAST-DE-3301",
+					"currency": "EUR",
+					"netMinor": 5000,
+					"taxMinor": 950,
+					"grossMinor": 5950
+				}
+			}
+		},
+		{
+			"id": "de-utility-prepayments",
+			"country": "DE",
+			"layout": "invoice",
+			"title": "Jahresverbrauchsrechnung Strom",
+			"subtitle": "Testenergie Musterstadt GmbH",
+			"lines": [
+				"Testenergie Musterstadt GmbH | Teststraße 6 | 00000 Musterort",
+				"Kunde: Beispielbetrieb Nord GmbH",
+				"Rechnungsnummer: EN-DE-4401 | Datum: 01.09.2026",
+				"Abrechnungszeitraum: 01.09.2025 bis 31.08.2026",
+				"Energielieferung netto: 1.000,00 EUR",
+				"Umsatzsteuer 19 %: 190,00 EUR",
+				"Gesamtrechnungsbetrag brutto: 1.190,00 EUR",
+				"Bereits bezahlte Abschläge: 1.090,00 EUR",
+				"Noch zu zahlender Betrag: 100,00 EUR",
+				"Fällig am: 05.09.2026 | Verwendungszweck: EN-DE-4401",
+				"Der Restbetrag ist nicht der gesamte Rechnungsbetrag."
+			],
+			"expected": {
+				"documentKind": "invoice",
+				"candidate": {
+					"invoiceNumber": "EN-DE-4401",
+					"currency": "EUR",
+					"netMinor": 100000,
+					"taxMinor": 19000,
+					"grossMinor": 119000
+				},
+				"payment": { "amountPaidMinor": 109000, "totalOutstandingMinor": 10000 }
+			}
+		},
+		{
+			"id": "de-justice-cost-notice",
+			"country": "DE",
+			"layout": "official",
+			"title": "Kostenrechnung",
+			"subtitle": "Fiktive Justizkasse Musterland - TESTBEHÖRDE",
+			"lines": [
+				"TESTBEHÖRDE - kein echtes Gericht und kein amtlicher Bescheid",
+				"Empfänger: Beispielbetrieb Nord GmbH",
+				"Datum: 02.09.2026 | Geschäftszeichen: TEST 12 O 345/26",
+				"Kassenzeichen: 1412600000017",
+				"Verfahren: fiktive Registerangelegenheit",
+				"Festgesetzte Gebühr: 160,00 EUR",
+				"Auslagen: 13,00 EUR",
+				"Zu zahlender Gesamtbetrag: 173,00 EUR",
+				"Es wird keine Umsatzsteuer ausgewiesen.",
+				"Zahlungsfrist: 16.09.2026",
+				"Bei Zahlung ausschließlich Kassenzeichen 1412600000017 angeben.",
+				"Empfangskonto: TEST-JUSTIZKASSE (keine echte Bankverbindung)",
+				"Dieses Muster begründet keinerlei Forderung oder Rechtsmittelfrist."
+			],
+			"expected": {
+				"mode": "exploratory-official-notice",
+				"textIncludes": ["1412600000017", "173,00"],
+				"noAutomaticDecision": true
+			}
+		},
+		{
+			"id": "de-bank-statement",
+			"country": "DE",
+			"layout": "statement",
+			"title": "Kontoauszug September 2026",
+			"subtitle": "Musterbank - TESTINSTITUT",
+			"lines": [
+				"Musterbank | Testufer 1 | 00000 Musterort",
+				"Kontoinhaber: Beispielbetrieb Nord GmbH",
+				"Kontonummer: TEST-KONTO-DE-001 | Währung: EUR",
+				"Auszugsnummer: KA-DE-2026-09 | Zeitraum: 01.09.2026 bis 06.09.2026",
+				"Anfangssaldo: 2.000,00 EUR",
+				"02.09.2026 | TX-DE-01 | Musterwerk Bürobedarf GmbH | RE-DE-1001 | -119,00 EUR",
+				"04.09.2026 | TX-DE-02 | Musterwerk Bürobedarf GmbH | GS-DE-1001 | +23,80 EUR",
+				"05.09.2026 | TX-DE-03 | Testenergie Musterstadt GmbH | EN-DE-4401 | -100,00 EUR",
+				"05.09.2026 | TX-DE-04 | 示例精密设备有限公司 | CN-2026-8801 | -131,37 EUR",
+				"Originalbetrag TX-DE-04: -1.000,00 CNY | Wechselkurs: 7,73575 CNY/EUR",
+				"Im EUR-Buchungsbetrag enthaltene Fremdwährungsgebühr: 2,10 EUR",
+				"05.09.2026 | TX-DE-05 | Beispielberatung Wien GmbH | AT-2026-5501 Teil 1 | -100,00 EUR",
+				"06.09.2026 | TX-DE-06 | Beispielberatung Wien GmbH | AT-2026-5501 Teil 2 | -140,00 EUR",
+				"Buchungsdatum und Wertstellung sind bei allen Zeilen identisch.",
+				"Endsaldo: 1.433,43 EUR"
+			],
+			"expected": {
+				"documentKind": "bank-statement",
+				"statement": {
+					"currency": "EUR",
+					"openingBalanceMinor": 200000,
+					"closingBalanceMinor": 143343
+				},
+				"transactionAmounts": [-11900, 2380, -10000, -13137, -10000, -14000]
+			}
+		},
+		{
+			"id": "at-business-invoice",
+			"country": "AT",
+			"layout": "invoice",
+			"title": "Honorarnote",
+			"subtitle": "Beispielberatung Wien GmbH",
+			"lines": [
+				"Beispielberatung Wien GmbH | Mustergasse 5 | 0000 Musterort",
+				"Kunde: Beispielbetrieb Nord GmbH",
+				"Rechnungsnummer: AT-2026-5501 | Rechnungsdatum: 01.09.2026",
+				"Leistung am 01.09.2026: Beratung, 2 Stunden à 100,00 EUR",
+				"Nettobetrag: 200,00 EUR",
+				"Umsatzsteuer 20 %: 40,00 EUR",
+				"Rechnungsbetrag: 240,00 EUR",
+				"Fällig am: 06.09.2026",
+				"Vereinbarung: Teilzahlung 100,00 EUR, danach 140,00 EUR.",
+				"Verwendungszweck für beide Teilzahlungen: AT-2026-5501"
+			],
+			"expected": {
+				"documentKind": "invoice",
+				"candidate": {
+					"invoiceNumber": "AT-2026-5501",
+					"currency": "EUR",
+					"netMinor": 20000,
+					"taxMinor": 4000,
+					"grossMinor": 24000
+				}
+			}
+		},
+		{
+			"id": "fr-small-business-invoice",
+			"country": "FR",
+			"layout": "invoice",
+			"title": "FACTURE",
+			"subtitle": "Atelier Exemple",
+			"lines": [
+				"Atelier Exemple | 8 rue des Tests | 00000 Ville Exemple",
+				"Client : Société Exemple Europe",
+				"Facture n° FR-2026-6601 | Date : 03/09/2026",
+				"Prestation réalisée le 03/09/2026 : traduction technique",
+				"Montant hors taxes : 500,00 EUR",
+				"TVA : 0,00 EUR",
+				"TVA non applicable, art. 293 B du CGI",
+				"Total à payer : 500,00 EUR",
+				"Échéance : 17/09/2026",
+				"Référence du règlement : FR-2026-6601",
+				"Document entièrement fictif, aucune somme due."
+			],
+			"expected": {
+				"documentKind": "invoice",
+				"candidate": {
+					"invoiceNumber": "FR-2026-6601",
+					"currency": "EUR",
+					"netMinor": 50000,
+					"taxMinor": 0,
+					"grossMinor": 50000,
+					"dueDate": "2026-09-17"
+				}
+			}
+		},
+		{
+			"id": "nl-business-invoice",
+			"country": "NL",
+			"layout": "invoice",
+			"title": "FACTUUR",
+			"subtitle": "Voorbeeld Kantoor B.V.",
+			"lines": [
+				"Voorbeeld Kantoor B.V. | Teststraat 9 | 0000 AA Voorbeeldstad",
+				"Klant: Voorbeeld Europa B.V.",
+				"Factuurnummer: NL-2026-7701 | Factuurdatum: 03-09-2026",
+				"Kantoorartikelen, geleverd op 03-09-2026",
+				"Totaal exclusief btw: EUR 52,05",
+				"Btw 21%: EUR 10,93",
+				"Totaal inclusief btw: EUR 62,98",
+				"Te betalen vóór: 17-09-2026",
+				"Betalingskenmerk: NL-2026-7701",
+				"Fictieve testfactuur. Niet betalen."
+			],
+			"expected": {
+				"documentKind": "invoice",
+				"candidate": {
+					"invoiceNumber": "NL-2026-7701",
+					"currency": "EUR",
+					"netMinor": 5205,
+					"taxMinor": 1093,
+					"grossMinor": 6298
+				}
+			}
+		},
+		{
+			"id": "pl-vat-invoice",
+			"country": "PL",
+			"layout": "invoice",
+			"title": "FAKTURA VAT",
+			"subtitle": "Przykładowe Biuro Sp. z o.o.",
+			"lines": [
+				"Przykładowe Biuro Sp. z o.o. | ul. Testowa 3 | 00-000 Miasto Testowe",
+				"Nabywca: Firma Przykładowa",
+				"Numer faktury: FV/2026/09/17 | Data wystawienia: 04.09.2026",
+				"Data sprzedaży: 04.09.2026 | Waluta: PLN",
+				"Materiały biurowe - wartość netto: 100,00 PLN",
+				"VAT 23%: 23,00 PLN",
+				"Razem brutto: 123,00 PLN",
+				"Termin płatności: 18.09.2026",
+				"Dokument testowy. Nie dokonywać płatności."
+			],
+			"expected": {
+				"documentKind": "invoice",
+				"candidate": {
+					"invoiceNumber": "FV/2026/09/17",
+					"currency": "PLN",
+					"netMinor": 10000,
+					"taxMinor": 2300,
+					"grossMinor": 12300
+				}
+			}
+		},
+		{
+			"id": "cn-vat-invoice",
+			"country": "CN",
+			"layout": "invoice",
+			"title": "电子发票（增值税专用发票）",
+			"subtitle": "示例精密设备有限公司",
+			"lines": [
+				"完全虚构的测试文档 - 非真实发票，不可用于报销或付款",
+				"销售方：示例精密设备有限公司",
+				"地址：中国示例市测试路88号",
+				"购买方：欧洲示例贸易有限公司",
+				"发票号码：CN-2026-8801",
+				"开票日期：2026年09月04日",
+				"项目名称：精密连接器 | 数量：10 | 单位：件",
+				"金额（不含税）：CNY 884.96",
+				"税率：13% | 税额：CNY 115.04",
+				"价税合计（小写）：CNY 1,000.00",
+				"价税合计（大写）：壹仟元整",
+				"付款到期日：2026年09月18日",
+				"付款附言：CN-2026-8801",
+				"未提供纳税人识别号或真实银行账号。"
+			],
+			"expected": {
+				"documentKind": "invoice",
+				"candidate": {
+					"supplier": "示例精密设备有限公司",
+					"invoiceNumber": "CN-2026-8801",
+					"currency": "CNY",
+					"netMinor": 88496,
+					"taxMinor": 11504,
+					"grossMinor": 100000
+				}
+			}
+		},
+		{
+			"id": "cn-private-receipt",
+			"country": "CN",
+			"layout": "receipt",
+			"title": "购物小票 / 收据",
+			"subtitle": "示例便利店",
+			"lines": [
+				"示例便利店",
+				"中国示例市测试街6号",
+				"完全虚构的测试收据，不可报销",
+				"小票编号：CN-R-9901",
+				"日期：2026年09月05日 09:30",
+				"茶饮料 2瓶：CNY 12.00",
+				"面包 1个：CNY 8.00",
+				"合计：CNY 20.00",
+				"现金实收：CNY 50.00",
+				"找零：CNY 30.00",
+				"已付清。未单独列出税额。"
+			],
+			"expected": {
+				"documentKind": "receipt",
+				"candidate": {
+					"invoiceNumber": "CN-R-9901",
+					"currency": "CNY",
+					"grossMinor": 2000,
+					"taxMinor": null
+				}
+			}
+		}
+	],
+	"matching": [
+		{
+			"invoice": "de-business-invoice",
+			"transaction": "TX-DE-01",
+			"relationship": "exact-gross-reference",
+			"amountDistanceMinor": 0
+		},
+		{ "invoice": "de-credit-note", "transaction": "TX-DE-02", "relationship": "refund-reference" },
+		{
+			"invoice": "de-utility-prepayments",
+			"transaction": "TX-DE-03",
+			"relationship": "remaining-balance-only-not-exact-gross"
+		},
+		{
+			"invoice": "at-business-invoice",
+			"transactions": ["TX-DE-05", "TX-DE-06"],
+			"relationship": "two-part-payments-no-single-exact-booking"
+		},
+		{
+			"invoice": "cn-vat-invoice",
+			"transaction": "TX-DE-04",
+			"relationship": "foreign-currency-with-fee-review"
+		},
+		{ "invoice": "de-supermarket-cash", "relationship": "cash-receipt-no-bank-match" },
+		{
+			"invoice": "de-restaurant-tip",
+			"relationship": "card-total-includes-tip-no-exact-gross-match"
+		}
+	]
+}

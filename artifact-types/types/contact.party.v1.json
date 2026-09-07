@@ -1,0 +1,60 @@
+{
+  "typeKey": "contact.party",
+  "version": 1,
+  "tier": "T1",
+  "skill": "brain",
+  "blobPolicy": "forbidden",
+  "payloadSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "contact.party@1",
+    "description": "One person or organisation. The mock-up's 'WER' rail treats both identically, so they are one type with a discriminator.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["partyKey", "kind", "displayName", "aliases", "roles", "identifiers", "revision"],
+    "properties": {
+      "partyKey": { "type": "string", "maxLength": 128 },
+      "kind": { "enum": ["person", "organisation"] },
+      "displayName": { "type": "string", "minLength": 1, "maxLength": 255 },
+      "legalName": { "type": ["string", "null"], "maxLength": 255 },
+      "aliases": { "type": "array", "maxItems": 32, "items": { "type": "string", "maxLength": 255 } },
+      "roles": {
+        "type": "array",
+        "maxItems": 16,
+        "items": { "enum": ["supplier", "customer", "insurer", "landlord", "advisor", "authority", "employer", "other"] }
+      },
+      "sector": { "type": ["string", "null"], "maxLength": 128 },
+      "identifiers": {
+        "type": "array",
+        "maxItems": 32,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["scheme", "value"],
+          "properties": {
+            "scheme": { "enum": ["vat-id", "tax-number", "iban", "customer-number", "register-number", "email", "phone", "other"] },
+            "value": { "type": "string", "maxLength": 255 }
+          }
+        }
+      },
+      "revision": { "type": "integer", "minimum": 1 }
+    }
+  },
+  "referencesSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "array",
+    "maxItems": 0
+  },
+  "search": {
+    "fullText": ["/displayName", "/legalName", "/aliases"],
+    "fields": [
+      { "path": "/kind", "kind": "keyword" },
+      { "path": "/roles", "kind": "keyword" },
+      { "path": "/identifiers/value", "kind": "keyword" }
+    ]
+  },
+  "notes": [
+    "UI: 'Techniker Krankenkasse · Firma · Versicherung', 'Möbelhaus Nord GmbH · Firma · Lieferant', 'Anna Berger · Steuerberatung', and the contacts query source (shape 'person').",
+    "roles are intrinsic to the party. 'Lieferant OF THIS INVOICE' is a brain.assertion@1, not a role here.",
+    "A merge never deletes the merged party; brain.merge@1 records the survivor and the redirect is a projection."
+  ]
+}

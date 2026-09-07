@@ -1,3 +1,5 @@
+import { artifactDescription, artifactProcessingProgress } from '$lib/artifacts/processing'
+import { anonymousSpeakerFromPayload, anonymousSpeakerTone } from '$lib/chat/anonymous-speaker'
 import { Chat } from '$lib/chat/chat.svelte'
 import { complete, extractJsonObject } from '$lib/chat/redpill'
 import type { Activity } from './activity.svelte'
@@ -39,11 +41,25 @@ export class ChatActor extends Actor {
 	#project() {
 		const rows = this.core.turns.map((t) => {
 			const me = t.role === 'user'
+			const speakerTone = t.anonymousSpeaker
+				? ` ch-bubble--speaker-${anonymousSpeakerTone(t.anonymousSpeaker)}`
+				: ''
+			const attachment = t.attachment
+			const processing = attachment?.processing
+			const content = attachment
+				? attachment.status === 'committed'
+					? `${attachment.originalName} · artifact ${attachment.artifactId} · ${artifactDescription(attachment.originalName, processing)} · ${artifactProcessingProgress(processing).label}`
+					: attachment.status === 'failed'
+						? `${attachment.originalName} · upload failed`
+						: `${attachment.originalName} · ${attachment.progress}%`
+				: t.content === ''
+					? '…'
+					: t.content
 			return {
 				id: t.id,
-				content: t.content === '' ? '…' : t.content,
+				content,
 				rowClass: `ch-row${me ? ' ch-row--me' : ''}`,
-				bubbleClass: `ch-bubble${me ? ' ch-bubble--me' : ''}`
+				bubbleClass: `ch-bubble${me ? ` ch-bubble--me${speakerTone}` : ''}`
 			}
 		})
 		this.state = {
@@ -56,6 +72,9 @@ export class ChatActor extends Actor {
 	constructor() {
 		super({
 			id: 'chat',
+			authority: 'ceo.aven',
+			namespace: 'assistant.chat',
+			version: '1',
 			name: 'Chat',
 			description:
 				'The conversation: takes utterances, thinks with the model, calls tools ' +
@@ -130,7 +149,7 @@ export class ChatActor extends Actor {
 			// Not awaited: a turn runs long, and the mailbox must stay free for
 			// the barge-in that interrupts it.
 			utterance: (p) => {
-				void this.core.send(String(p.text ?? ''))
+				void this.core.send(String(p.text ?? ''), anonymousSpeakerFromPayload(p) ?? undefined)
 				return { record: '{"ok":true}', wire: 'ok' }
 			},
 			interrupted: () => {

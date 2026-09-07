@@ -28,9 +28,7 @@
 	<key>com.apple.developer.associated-domains</key>
 	<array>
 		<string>applinks:aven.ceo</string>
-		<string>webcredentials:aven.ceo</string>
-		<string>webcredentials:id.aven.ceo</string>
-		<string>webcredentials:id.next.aven.ceo</string>
+		<string>webcredentials:aven.id</string>
 	</array>
 </dict>
 </plist>

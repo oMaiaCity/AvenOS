@@ -1,0 +1,45 @@
+/*
+ * The app shell, and nothing else.
+ *
+ * This file was 797 lines: a `:root` block aliasing brand tokens back to short
+ * names an older stylesheet used, and 139 class selectors for a panel, an auth
+ * card, a step rail, a name field, a hosting board, site cards, DNS cards and
+ * an empty state. Every one of those is an actor now, and the hosting blocks
+ * had no call site left at all — they were dead before this pass began.
+ *
+ * What a shell legitimately owns: the page ground, the box model, and the one
+ * place a viewport unit is not a component reaching for the window.
+ */
+@import "./brand-theme.css";
+@import "./brand-components.css";
+@import "./brand-elements.css";
+
+* {
+	box-sizing: border-box;
+}
+
+body {
+	margin: 0;
+	min-inline-size: 20rem;
+	min-block-size: 100dvh;
+	font-family: var(--font-sans);
+	color: var(--color-foreground);
+	background:
+		radial-gradient(
+			circle at 90% 5%,
+			color-mix(in srgb, var(--color-anchor) 10%, transparent),
+			transparent 28rem
+		),
+		radial-gradient(
+			circle at 5% 95%,
+			color-mix(in srgb, var(--color-sunflower) 10%, transparent),
+			transparent 30rem
+		),
+		var(--color-surface-page);
+	font-synthesis: none;
+	-webkit-font-smoothing: antialiased;
+}
+
+a {
+	color: inherit;
+}

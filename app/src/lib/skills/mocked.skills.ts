@@ -14,6 +14,75 @@ export const docsSkill: SkillDef = {
 	tags: ['docs'],
 	workflows: [
 		{
+			id: 'ingest',
+			name: 'Ingest',
+			about:
+				'Client actors inspect, decompose, read and classify a document; every hop is an artifact run.',
+			nodes: [
+				{
+					id: 'inspect',
+					kind: 'trigger',
+					name: 'Inspect',
+					about: 'Detect the exact bytes and open a bounded document locally.',
+					type: 'op:client-inspect',
+					requires: ['file(F)'],
+					provides: ['file_inspection(F, I)'],
+					live: true
+				},
+				{
+					id: 'decompose',
+					kind: 'op',
+					name: 'Pages',
+					about: 'Create one stable logical artifact for every page.',
+					type: 'op:client-decompose',
+					requires: ['file(F)', 'file_inspection(F, I)'],
+					provides: ['page(F, P)'],
+					live: true
+				},
+				{
+					id: 'extract-native',
+					kind: 'op',
+					name: 'Native text',
+					about: 'Read embedded text and its normalized layout with pdf.js.',
+					type: 'op:client-native-text',
+					requires: ['file(F)', 'page(F, P)'],
+					provides: ['extracted_text(F, P, T)', 'text_layout(F, P, L)'],
+					live: true
+				},
+				{
+					id: 'classify-page',
+					kind: 'op',
+					name: 'Page signals',
+					about: 'Classify only what media and native text prove; missing OCR stays unknown.',
+					type: 'op:client-classify',
+					requires: ['extracted_text(F, P, T)'],
+					provides: ['content_classification(P, C)'],
+					live: true
+				},
+				{
+					id: 'assemble',
+					kind: 'op',
+					name: 'Assemble',
+					about: 'Combine bounded page representations into document text and layout.',
+					type: 'op:client-assemble',
+					requires: ['extracted_text(F, P, T)'],
+					provides: ['document_text(F, T)', 'document_layout(F, L)'],
+					live: true
+				},
+				{
+					id: 'aggregate',
+					kind: 'output',
+					name: 'Document',
+					about:
+						'Publish the honest whole-document classification and expose missing capabilities.',
+					type: 'op:client-aggregate',
+					requires: ['content_classification(P, C)', 'document_text(F, T)'],
+					provides: ['content_classification(F, C)'],
+					live: true
+				}
+			]
+		},
+		{
 			id: 'respond',
 			name: 'Bearbeiten',
 			about: 'Eine Anforderung wird zum Entwurf; freigegeben wird von Hand.',

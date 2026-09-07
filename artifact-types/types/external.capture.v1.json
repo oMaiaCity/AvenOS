@@ -1,0 +1,41 @@
+{
+  "typeKey": "external.capture",
+  "version": 1,
+  "tier": "T0",
+  "skill": null,
+  "blobPolicy": "optional",
+  "payloadSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "external.capture@1",
+    "description": "A snapshot of mutable external state at an observation time — an account balance, a supplier master record, a portal page.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["sourceSystem", "sourceRef", "observedAt", "valueDigest"],
+    "properties": {
+      "sourceSystem": { "type": "string", "maxLength": 128 },
+      "sourceRef": { "type": "string", "maxLength": 512 },
+      "sourceVersion": { "type": ["string", "null"], "maxLength": 128 },
+      "observedAt": { "type": "string", "format": "date-time" },
+      "valueDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+      "value": { "type": ["object", "null"] },
+      "mediaType": { "type": ["string", "null"], "maxLength": 255 }
+    }
+  },
+  "referencesSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "array",
+    "maxItems": 0
+  },
+  "search": {
+    "fullText": [],
+    "fields": [
+      { "path": "/sourceSystem", "kind": "keyword" },
+      { "path": "/sourceRef", "kind": "keyword" },
+      { "path": "/observedAt", "kind": "timestamp" }
+    ]
+  },
+  "notes": [
+    "The payment gate shows 'Von Konto · Giro · 4.120,55 €'. That balance must be captured, because the human decided against it.",
+    "A bare foreign id is not sufficient evidence for a consequential result — capture the value or an externally verifiable digest."
+  ]
+}

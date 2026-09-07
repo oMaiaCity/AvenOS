@@ -1,0 +1,38 @@
+{
+  "typeKey": "bookkeeping.invoice-validation",
+  "version": 1,
+  "schemaProfileId": "artifact-json-schema-profile-v1",
+  "payloadSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["rulesetVersion", "status", "coverageBps", "checks"],
+    "properties": {
+      "rulesetVersion": { "type": "string", "minLength": 1, "maxLength": 128 },
+      "status": { "enum": ["consistent", "inconsistent", "insufficient-coverage"] },
+      "coverageBps": { "type": "integer", "minimum": 0, "maximum": 10000 },
+      "checks": {
+        "type": "array",
+        "maxItems": 64,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ruleId", "outcome", "severity", "paths", "message"],
+          "properties": {
+            "ruleId": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "outcome": { "enum": ["PASS", "FAIL", "UNKNOWN"] },
+            "severity": { "enum": ["hard", "warning"] },
+            "paths": {
+              "type": "array",
+              "maxItems": 16,
+              "items": { "type": "string", "minLength": 1, "maxLength": 255 }
+            },
+            "message": { "type": "string", "minLength": 1, "maxLength": 512 }
+          }
+        }
+      }
+    }
+  },
+  "blobPolicy": "forbidden",
+  "referenceRules": []
+}

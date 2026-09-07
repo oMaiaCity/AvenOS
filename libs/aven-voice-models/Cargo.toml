@@ -1,0 +1,30 @@
+[package]
+name = "aven-voice-models"
+version = "26.8.28-next.9"
+edition = "2021"
+rust-version = "1.93"
+
+[dependencies]
+anyhow = "1"
+aven-voice-protocol = { path = "../aven-voice-protocol" }
+aven-voice-runtime = { path = "../aven-voice-runtime" }
+hound = "3.5"
+log = "0.4"
+ndarray = { version = "0.17", features = ["rayon"] }
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "ndarray", "api-28"] }
+parakeet-rs = { version = "=0.3.7", default-features = false, features = ["cpu", "api-28"] }
+rand = "0.8"
+rand_distr = "0.4"
+regex = "1.10"
+rustfft = "6.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+unicode-normalization = "0.1"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["load-dynamic", "cuda"] }
+parakeet-rs = { version = "=0.3.7", default-features = false, features = ["load-dynamic"] }
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+ort = "=2.0.0-rc.13"
+parakeet-rs = "=0.3.7"

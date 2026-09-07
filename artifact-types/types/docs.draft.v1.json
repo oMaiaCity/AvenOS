@@ -1,0 +1,66 @@
+{
+  "typeKey": "docs.draft",
+  "version": 1,
+  "tier": "T1",
+  "skill": "docs",
+  "blobPolicy": "optional",
+  "payloadSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "docs.draft@1",
+    "description": "A proposed outbound document. A candidate, never an approval: approval is a separate review.decision@1 and sending is a request/receipt pair.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["channel", "recipient", "body", "language", "draftedAt"],
+    "properties": {
+      "channel": { "enum": ["email", "letter", "message"] },
+      "recipient": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string", "maxLength": 255 },
+          "address": { "type": ["string", "null"], "maxLength": 1024 }
+        }
+      },
+      "subject": { "type": ["string", "null"], "maxLength": 1024 },
+      "body": { "type": "string", "minLength": 1, "maxLength": 65536 },
+      "language": { "type": "string", "pattern": "^[a-z]{2}(-[A-Z]{2})?$" },
+      "templateKey": { "type": ["string", "null"], "maxLength": 128 },
+      "draftedAt": { "type": "string", "format": "date-time" }
+    }
+  },
+  "referencesSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "array",
+    "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "ordinal", "targetArtifactId", "targetArtifactSha256", "locator", "attributes"],
+      "properties": {
+        "role": { "const": "attachment" },
+        "ordinal": { "type": "integer", "minimum": 0 },
+        "targetArtifactId": { "type": "string", "format": "uuid" },
+        "targetArtifactSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "locator": { "type": ["object", "null"] },
+        "attributes": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "displayName": { "type": "string", "maxLength": 255 } }
+        }
+      }
+    }
+  },
+  "search": {
+    "fullText": ["/subject", "/body", "/recipient/name"],
+    "fields": [
+      { "path": "/channel", "kind": "keyword" },
+      { "path": "/draftedAt", "kind": "timestamp" }
+    ]
+  },
+  "notes": [
+    "UI: the draft_approve gate — 'Entwurf: Antwort an die TK' with einkommensnachweis.pdf riding along.",
+    "Attachments are structural references: the draft's value contains them, and the digest must change if the attachment changes.",
+    "Blob is optional and holds the rendered PDF/DOCX once one exists; the text stays in the payload so it is searchable and diffable.",
+    "Field evidence maps /body back to the OCR spans the draft answers."
+  ]
+}

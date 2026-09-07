@@ -18,46 +18,45 @@ import { confirmHeld, rejectHeld } from '$lib/actors/hitl.svelte'
 const { held }: { held: HeldMessage } = $props()
 </script>
 
-<div
-	class="w-full overflow-hidden rounded-2xl border-2 border-primary bg-surface-raised shadow-[0_4px_16px_rgba(30,41,59,0.12)]"
->
-	<div class="px-5 pt-4 pb-4">
-		<div class="flex items-baseline gap-2">
+<!--
+  The `gate-card` actor: the human gate, where an autonomous process stops and
+  asks. Its own description is this component. The frame, the head and the
+  footer are the actor's; the four preview LAYOUTS below stay, because they are
+  content shapes and `gate-card-preview` is the box that holds whatever they are.
+-->
+<div class="gate-card" data-held-id={held.id}>
+	<div class="gate-card-body">
+		<div class="gate-card-head">
 			{#if held.preview}
-				<span
-					class="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 font-mono text-[0.5625rem] text-primary uppercase tracking-wide"
-				>
-					{held.preview.kind}
-				</span>
+				<span class="gate-card-kind">{held.preview.kind}</span>
 			{/if}
-			<p class="min-w-0 flex-1 font-medium text-sm">{held.label}</p>
-			<span class="shrink-0 font-mono text-[0.625rem] text-foreground/40">
-				{held.actor}
-				· {held.method}
-			</span>
+			<p class="gate-card-question">{held.label}</p>
+			<span class="gate-card-asked">{held.actor}· {held.method}</span>
 		</div>
 
 		{#if held.preview}
 			{@const p = held.preview}
-			<p class="pt-2 pb-3 text-foreground/60 text-xs">{p.title}</p>
+			<p class="gate-card-detail">{p.title}</p>
 
 			{#if p.layout === 'document'}
 				<!-- paper: the text as it would go out -->
 				<div class="rounded-xl border border-border bg-white px-5 py-4">
 					{#if p.body}
-						<p class="whitespace-pre-wrap text-[13px] text-foreground/80 leading-relaxed">
+						<p
+							class="whitespace-pre-wrap text-[length:var(--fs-body)] text-foreground/80 leading-relaxed"
+						>
 							{p.body}
 						</p>
 					{/if}
 					{#if p.attachments}
-						<div class="mt-3 flex flex-wrap gap-1.5 border-border/60 border-t pt-3">
+						<div class="mt-3 flex flex-wrap gap-1.5 border-border/25 border-t pt-3">
 							{#each p.attachments as file (file)}
 								<span
-									class="flex items-center gap-1.5 rounded-lg bg-surface-soft px-2 py-1 font-mono text-[0.625rem]"
+									class="flex items-center gap-1.5 rounded-lg bg-surface-sunken px-2 py-1 font-mono text-[length:var(--fs-micro)]"
 								>
 									<svg
 										viewBox="0 0 24 24"
-										class="size-3 text-foreground/40"
+										class="size-3 text-foreground/35"
 										fill="none"
 										stroke="currentColor"
 										stroke-width="1.5"
@@ -72,18 +71,20 @@ const { held }: { held: HeldMessage } = $props()
 				</div>
 			{:else if p.layout === 'ledger'}
 				<!-- figures: the first row is the amount, in full size -->
-				<div class="rounded-xl border border-border bg-surface-card px-5 py-4">
+				<div class="surface">
 					{#each p.rows ?? [] as row, i (row.label)}
 						{#if i === 0}
 							<div class="flex items-baseline justify-between pb-3">
-								<span class="text-[0.6875rem] text-foreground/45 uppercase tracking-wide">
+								<span
+									class="text-[length:var(--fs-eyebrow)] text-foreground/50 uppercase tracking-wide"
+								>
 									{row.label}
 								</span>
 								<span class="font-semibold text-2xl tabular-nums">{row.value}</span>
 							</div>
 						{:else}
-							<div class="flex items-baseline justify-between border-border/50 border-t py-1.5">
-								<span class="text-[0.6875rem] text-foreground/45">{row.label}</span>
+							<div class="flex items-baseline justify-between border-border/25 border-t py-1.5">
+								<span class="text-[length:var(--fs-eyebrow)] text-foreground/50">{row.label}</span>
 								<span class="font-mono text-xs">{row.value}</span>
 							</div>
 						{/if}
@@ -95,13 +96,13 @@ const { held }: { held: HeldMessage } = $props()
 					{#each p.options ?? [] as option (option.label)}
 						<div
 							class="flex items-center gap-3 rounded-xl border px-4 py-2.5 {option.chosen
-							? 'border-primary/40 bg-primary/[0.06]'
+							? 'border-primary/25 bg-primary/[0.06]'
 							: 'border-border bg-surface-card'}"
 						>
 							<span
 								class="flex size-4 shrink-0 items-center justify-center rounded-full border-2 {option.chosen
 								? 'border-primary bg-primary'
-								: 'border-foreground/20'}"
+								: 'border-foreground/15'}"
 							>
 								{#if option.chosen}
 									<span class="size-1.5 rounded-full bg-primary-foreground"></span>
@@ -109,7 +110,7 @@ const { held }: { held: HeldMessage } = $props()
 							</span>
 							<span class="min-w-0 flex-1 font-medium text-xs">{option.label}</span>
 							{#if option.note}
-								<span class="shrink-0 font-mono text-[0.625rem] text-foreground/45">
+								<span class="shrink-0 font-mono text-[length:var(--fs-micro)] text-foreground/50">
 									{option.note}
 								</span>
 							{/if}
@@ -121,11 +122,11 @@ const { held }: { held: HeldMessage } = $props()
 				<div class="flex items-stretch gap-3">
 					{#each p.sides ?? [] as side, i (side.heading)}
 						{#if i > 0}
-							<span class="self-center font-mono text-foreground/30 text-sm">↔</span>
+							<span class="self-center font-mono text-foreground/35 text-sm">↔</span>
 						{/if}
-						<div class="min-w-0 flex-1 rounded-xl border border-border bg-surface-card px-4 py-3">
+						<div class="min-w-0 flex-1 surface surface--size-sm">
 							<p
-								class="pb-1.5 font-mono text-[0.5625rem] text-foreground/45 uppercase tracking-wide"
+								class="pb-1.5 font-mono text-[length:var(--fs-nano)] text-foreground/50 uppercase tracking-wide"
 							>
 								{side.heading}
 							</p>
@@ -143,7 +144,7 @@ const { held }: { held: HeldMessage } = $props()
 							class="flex items-center gap-3 rounded-xl border border-border bg-surface-card px-4 py-2"
 						>
 							<span
-								class="font-mono text-[0.625rem] {item.struck
+								class="font-mono text-[length:var(--fs-micro)] {item.struck
 								? 'text-error-ink'
 								: 'text-success-ink'}"
 							>
@@ -153,7 +154,7 @@ const { held }: { held: HeldMessage } = $props()
 								{item.text}
 							</span>
 							{#if item.note}
-								<span class="shrink-0 font-mono text-[0.625rem] text-foreground/45">
+								<span class="shrink-0 font-mono text-[length:var(--fs-micro)] text-foreground/50">
 									{item.note}
 								</span>
 							{/if}
@@ -162,24 +163,16 @@ const { held }: { held: HeldMessage } = $props()
 				</ul>
 			{/if}
 		{:else}
-			<p class="pt-1 font-mono text-[0.6875rem] text-foreground/45">{held.detail}</p>
+			<p class="gate-card-detail">{held.detail}</p>
 		{/if}
 	</div>
 
 	<!-- the footer: the only place the gate opens -->
-	<div class="flex items-center justify-center gap-3 bg-primary px-5 py-3">
-		<button
-			type="button"
-			onclick={() => rejectHeld(held.id)}
-			class="rounded-full border border-primary-foreground/30 px-5 py-1.5 font-medium text-primary-foreground/70 text-sm transition-colors hover:bg-primary-foreground/10"
-		>
+	<div class="gate-card-actions">
+		<button class="btn btn--ghost" type="button" onclick={() => rejectHeld(held.id)}>
 			Reject
 		</button>
-		<button
-			type="button"
-			onclick={() => confirmHeld(held.id)}
-			class="rounded-full bg-primary-foreground px-6 py-1.5 font-medium text-primary text-sm transition-opacity hover:opacity-90"
-		>
+		<button class="btn btn--primary" type="button" onclick={() => confirmHeld(held.id)}>
 			Confirm
 		</button>
 	</div>

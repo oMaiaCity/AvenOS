@@ -1,0 +1,41 @@
+{
+  "typeKey": "todos.status-transition",
+  "version": 1,
+  "tier": "T1",
+  "skill": "todos",
+  "blobPolicy": "forbidden",
+  "payloadSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "todos.status-transition@1",
+    "description": "One movement of a task through the machine. The exact task revision and, where applicable, the payment that caused it are declared run inputs.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["taskKey", "from", "to", "occurredAt", "trigger"],
+    "properties": {
+      "taskKey": { "type": "string", "maxLength": 128 },
+      "from": { "enum": ["open", "doing", "done"] },
+      "to": { "enum": ["open", "doing", "done"] },
+      "occurredAt": { "type": "string", "format": "date-time" },
+      "trigger": { "enum": ["human", "match", "sweep", "agent"] },
+      "reason": { "type": ["string", "null"], "maxLength": 1000 }
+    }
+  },
+  "referencesSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "array",
+    "maxItems": 0
+  },
+  "search": {
+    "fullText": [],
+    "fields": [
+      { "path": "/to", "kind": "keyword" },
+      { "path": "/trigger", "kind": "keyword" },
+      { "path": "/occurredAt", "kind": "timestamp" }
+    ]
+  },
+  "notes": [
+    "UI: the list checkbox (send TOGGLE), the kanban columns, and '6 Rechnungs-Todos → erledigt' in the kontoauszug intent.",
+    "trigger 'match' is what makes 'der nächste Kontoauszug hakt das Todo automatisch ab' auditable: the run names the reconciliation.match-candidate@1 that caused it.",
+    "Legal transitions are enforced by the producer's machine, not by the store. The store only records that this transition was published."
+  ]
+}

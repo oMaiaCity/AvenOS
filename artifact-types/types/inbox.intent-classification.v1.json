@@ -1,0 +1,52 @@
+{
+  "typeKey": "inbox.intent-classification",
+  "version": 1,
+  "tier": "T1",
+  "skill": "inbox",
+  "blobPolicy": "forbidden",
+  "payloadSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "inbox.intent-classification@1",
+    "description": "Where a case goes. One intent per case, measured against a snapshotted threshold; below it, unknown.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["class", "confidence", "threshold", "belowThresholdBehaviour", "reason", "alternatives"],
+    "properties": {
+      "class": { "enum": ["todo", "document", "entity", "unknown"] },
+      "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+      "threshold": { "type": "number", "minimum": 0, "maximum": 1 },
+      "belowThresholdBehaviour": { "const": "unknown" },
+      "reason": { "type": "string", "maxLength": 2000 },
+      "alternatives": {
+        "type": "array",
+        "maxItems": 8,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["class", "confidence"],
+          "properties": {
+            "class": { "enum": ["todo", "document", "entity"] },
+            "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        }
+      }
+    }
+  },
+  "referencesSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "array",
+    "maxItems": 0
+  },
+  "search": {
+    "fullText": ["/reason"],
+    "fields": [
+      { "path": "/class", "kind": "keyword" },
+      { "path": "/confidence", "kind": "number" }
+    ]
+  },
+  "notes": [
+    "UI: the classify node — classes ['todo','document','entity'], threshold 0.8, belowThreshold 'unknown'.",
+    "Distinct from core.document-classification@1: that says what a document IS, this says where the case GOES. Different vocabularies, different consumers, different types.",
+    "The threshold is copied into the payload so the artifact is self-explaining, and the policy.snapshot@1 it came from is a declared run input. Both, not one."
+  ]
+}

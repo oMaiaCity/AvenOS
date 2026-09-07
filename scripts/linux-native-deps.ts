@@ -2,6 +2,7 @@
 import { spawnSync } from 'node:child_process'
 
 const REQUIRED_PKG_CONFIG_PACKAGES = [
+	'alsa',
 	'dbus-1',
 	'gtk+-3.0',
 	'librsvg-2.0',
@@ -29,6 +30,7 @@ function installHint(): string {
 			'sudo apt update',
 			'sudo apt install -y \\',
 			'  pkg-config \\',
+			'  libasound2-dev \\',
 			'  libdbus-1-dev \\',
 			'  libgtk-3-dev \\',
 			'  librsvg2-dev \\',
@@ -47,6 +49,7 @@ function installHint(): string {
 		return [
 			'sudo dnf install \\',
 			'  pkgconf-pkg-config \\',
+			'  alsa-lib-devel \\',
 			'  dbus-devel \\',
 			'  gtk3-devel \\',
 			'  librsvg2-devel \\',

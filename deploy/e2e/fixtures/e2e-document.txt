@@ -1,0 +1,5 @@
+Invoice E2E-2026-0001
+Supplier: Aven Test GmbH
+Customer: Local Passkey User
+Total: EUR 42.00
+This document proves that the Tauri client uploaded bytes and ran the portable document actors.

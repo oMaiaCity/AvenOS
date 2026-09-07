@@ -1,0 +1,65 @@
+{
+  "typeKey": "core.manifest",
+  "version": 1,
+  "tier": "T0",
+  "skill": null,
+  "blobPolicy": "forbidden",
+  "payloadSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "core.manifest@1",
+    "description": "A frozen value that packages exact members in order. Nothing more is claimed.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["purpose"],
+    "properties": {
+      "purpose": { "enum": ["handover", "period-bundle", "email-package", "export", "renditions"] },
+      "displayName": { "type": ["string", "null"], "maxLength": 255 },
+      "format": { "type": ["string", "null"], "maxLength": 64 },
+      "profile": { "type": ["string", "null"], "maxLength": 64 },
+      "coverage": {
+        "type": ["object", "null"],
+        "additionalProperties": false,
+        "required": ["from", "to"],
+        "properties": {
+          "from": { "type": "string", "format": "date" },
+          "to": { "type": "string", "format": "date" }
+        }
+      }
+    }
+  },
+  "referencesSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "array",
+    "minItems": 1,
+    "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "ordinal", "targetArtifactId", "targetArtifactSha256", "locator", "attributes"],
+      "properties": {
+        "role": { "const": "member" },
+        "ordinal": { "type": "integer", "minimum": 0 },
+        "targetArtifactId": { "type": "string", "format": "uuid" },
+        "targetArtifactSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "locator": { "type": ["object", "null"] },
+        "attributes": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "path": { "type": "string", "maxLength": 512 },
+            "label": { "type": "string", "maxLength": 255 },
+            "memberRole": { "type": "string", "maxLength": 64 }
+          }
+        }
+      }
+    }
+  },
+  "search": {
+    "fullText": ["/displayName"],
+    "fields": [{ "path": "/purpose", "kind": "keyword" }]
+  },
+  "notes": [
+    "Membership is not derivation: a manifest says 'is a member of', a run input says 'was used to produce'.",
+    "A collection that still grows is a projection over brain.assertion@1, not a manifest.",
+    "Use a domain type when membership carries stronger semantics than packaging."
+  ]
+}

@@ -1,7 +1,7 @@
 {
 	"name": "@AvenOS/app",
 	"private": true,
-	"version": "26.8.22-next.6",
+	"version": "26.8.28-next.9",
 	"type": "module",
 	"scripts": {
 		"predev": "bun ../scripts/free-dev-server-port.ts",
@@ -13,6 +13,8 @@
 		"tauri": "bun --bun x tauri",
 		"tauri:dev": "bun --bun x tauri dev",
 		"tauri:ios:dev:sim": "bun --bun x tauri ios dev",
+		"tauri:android:dev": "bun --bun x tauri android dev",
+		"tauri:android:build": "bun --bun x tauri android build --apk",
 		"tauri:build:macos": "bun --bun x tauri build",
 		"tauri:build:linux": "bun --bun x tauri build --bundles deb,appimage",
 		"tauri:ios:build:asc": "bun ../scripts/tauri-ios-asc.ts"
@@ -21,24 +23,24 @@
 		"@sveltejs/adapter-static": "^3.0.10",
 		"@sveltejs/kit": "^2.57.0",
 		"@sveltejs/vite-plugin-svelte": "^7.0.0",
-		"@tailwindcss/vite": "^4.2.4",
 		"@tauri-apps/cli": "^2",
 		"@types/bun": "^1.3.14",
 		"@types/node": "^22.13.9",
 		"svelte": "^5.55.2",
 		"svelte-check": "^4.4.6",
-		"tailwindcss": "^4.2.4",
 		"typescript": "^6.0.2",
 		"vite": "^8.0.7"
 	},
 	"dependencies": {
-		"@avenos/aven-skills": "workspace:*",
-		"@avenos/aven-ui": "workspace:*",
-		"@avenos/aven-website": "workspace:*",
+		"@avenos/actors": "workspace:*",
+		"@avenos/artifact-store": "workspace:*",
+		"@avenos/document-ingest": "workspace:*",
+		"@avenos/llm-client": "workspace:*",
+		"@myavenceo/aven-ceo": "^0.12.2",
 		"@tauri-apps/api": "^2",
 		"@tauri-apps/plugin-opener": "^2.5.4",
 		"@xyflow/svelte": "^1.6.2",
-		"quickjs-emscripten": "^0.31.0",
+		"pdfjs-dist": "^6.2.108",
 		"three": "^0.185.1"
 	}
 }

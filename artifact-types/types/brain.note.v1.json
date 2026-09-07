@@ -1,0 +1,48 @@
+{
+  "typeKey": "brain.note",
+  "version": 1,
+  "tier": "T1",
+  "skill": "brain",
+  "blobPolicy": "optional",
+  "payloadSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "brain.note@1",
+    "description": "One markdown note in the brain — the Obsidian-style page the entity preview renders. Wikilinks stay as written; resolved edges are brain.assertion@1.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["noteKey", "title", "tags", "sourceChannel", "authoredAt", "format", "revision"],
+    "properties": {
+      "noteKey": { "type": "string", "maxLength": 128 },
+      "title": { "type": "string", "minLength": 1, "maxLength": 255 },
+      "tags": {
+        "type": "array",
+        "maxItems": 32,
+        "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "maxLength": 64 }
+      },
+      "sourceChannel": { "enum": ["inbox", "chat", "agent", "human", "import"] },
+      "authoredAt": { "type": "string", "format": "date-time" },
+      "body": { "type": ["string", "null"], "maxLength": 32768 },
+      "format": { "const": "markdown" },
+      "revision": { "type": "integer", "minimum": 1 }
+    }
+  },
+  "referencesSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "array",
+    "maxItems": 0
+  },
+  "search": {
+    "fullText": ["/title", "/body", "blob:text"],
+    "fields": [
+      { "path": "/tags", "kind": "keyword" },
+      { "path": "/sourceChannel", "kind": "keyword" },
+      { "path": "/authoredAt", "kind": "timestamp" }
+    ]
+  },
+  "notes": [
+    "UI: the entity preview at IntentsPlaceholder.svelte:1294 — front matter (tags, erstellt, quelle), an H1, prose with [[wikilinks]], '## Offen' checkboxes, '## Verknüpft', 'Backlinks · 3'.",
+    "Backlinks are never stored on the note. They are a projection over brain.assertion@1 — that is the whole reason assertions are their own type.",
+    "body is inline up to the bound; longer notes move the markdown into the blob. Both forms are searched.",
+    "The '## Offen' checkboxes in the mock-up render todos.task@1 rows; they are not note content."
+  ]
+}

@@ -1,4 +1,4 @@
-import type { ViewDef } from '@avenos/aven-ui'
+import type { ViewDef } from '@myavenceo/aven-vibes'
 
 /**
  * The two views of todo, as validated JSON: the list and the board —

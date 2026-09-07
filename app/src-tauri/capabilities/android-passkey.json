@@ -1,0 +1,8 @@
+{
+	"$schema": "../gen/schemas/mobile-schema.json",
+	"identifier": "android-passkey",
+	"description": "Allow the main window to use Android Credential Manager for passkeys",
+	"windows": ["main"],
+	"platforms": ["android"],
+	"permissions": ["android-passkey:default"]
+}

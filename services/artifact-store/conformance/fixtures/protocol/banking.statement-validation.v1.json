@@ -1,0 +1,32 @@
+{
+  "typeKey": "banking.statement-validation",
+  "version": 1,
+  "schemaProfileId": "artifact-json-schema-profile-v1",
+  "payloadSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["rulesetVersion", "status", "coverageBps", "checks"],
+    "properties": {
+      "rulesetVersion": { "type": "string", "minLength": 1, "maxLength": 128 },
+      "status": { "enum": ["consistent", "inconsistent", "incomplete"] },
+      "coverageBps": { "type": "integer", "minimum": 0, "maximum": 10000 },
+      "checks": {
+        "type": "array", "maxItems": 256,
+        "items": {
+          "type": "object", "additionalProperties": false,
+          "required": ["ruleId", "outcome", "severity", "paths", "message"],
+          "properties": {
+            "ruleId": { "type": "string", "minLength": 1, "maxLength": 255 },
+            "outcome": { "enum": ["PASS", "FAIL", "UNKNOWN"] },
+            "severity": { "enum": ["hard", "soft"] },
+            "paths": { "type": "array", "maxItems": 32, "items": { "type": "string", "maxLength": 512 } },
+            "message": { "type": "string", "minLength": 1, "maxLength": 2000 }
+          }
+        }
+      }
+    }
+  },
+  "blobPolicy": "forbidden",
+  "referenceRules": []
+}

@@ -1,0 +1,39 @@
+{
+  "typeKey": "reconciliation.match-candidate",
+  "version": 1,
+  "schemaProfileId": "artifact-json-schema-profile-v1",
+  "payloadSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["matcherVersion", "openItemBusinessKey", "transactionDedupKey", "rank", "rankScore", "amountMatchBasis", "amountDistanceMinor", "matchedTransactionAmountMinor", "matchedTransactionCurrency", "issueDateDistanceDays", "dueDateDistanceDays", "referenceMatch", "counterpartyMatch", "ibanMatch", "signMatch", "duplicateCount", "reasons", "blockers", "pairEligible", "recommendation"],
+    "properties": {
+      "matcherVersion": { "const": "invoice-transaction-v1" },
+      "openItemBusinessKey": { "type": "string", "minLength": 1, "maxLength": 1024 },
+      "transactionDedupKey": { "type": "string", "minLength": 1, "maxLength": 512 },
+      "rank": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+      "rankScore": { "type": "integer", "minimum": 0, "maximum": 10000 },
+      "amountMatchBasis": { "enum": ["account", "original", null] },
+      "amountDistanceMinor": { "$ref": "#/$defs/nonnegativeMoney" },
+      "matchedTransactionAmountMinor": { "$ref": "#/$defs/money" },
+      "matchedTransactionCurrency": { "type": ["string", "null"], "pattern": "^[A-Z]{3}$" },
+      "issueDateDistanceDays": { "type": ["integer", "null"], "minimum": 0, "maximum": 1000000 },
+      "dueDateDistanceDays": { "type": ["integer", "null"], "minimum": 0, "maximum": 1000000 },
+      "referenceMatch": { "enum": ["exact", "none"] },
+      "counterpartyMatch": { "enum": ["exact", "token-overlap", "none"] },
+      "ibanMatch": { "type": "boolean" },
+      "signMatch": { "enum": ["match", "conflict", "unknown"] },
+      "duplicateCount": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+      "reasons": { "type": "array", "maxItems": 32, "items": { "type": "string", "minLength": 1, "maxLength": 255 } },
+      "blockers": { "type": "array", "maxItems": 32, "items": { "type": "string", "minLength": 1, "maxLength": 255 } },
+      "pairEligible": { "type": "boolean" },
+      "recommendation": { "enum": ["review", "reject", "eligible-for-assignment"] }
+    },
+    "$defs": {
+      "money": { "type": ["integer", "null"], "minimum": -9007199254740991, "maximum": 9007199254740991 },
+      "nonnegativeMoney": { "type": ["integer", "null"], "minimum": 0, "maximum": 9007199254740991 }
+    }
+  },
+  "blobPolicy": "forbidden",
+  "referenceRules": []
+}

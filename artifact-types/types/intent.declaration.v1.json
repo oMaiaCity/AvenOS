@@ -1,0 +1,64 @@
+{
+  "typeKey": "intent.declaration",
+  "version": 1,
+  "tier": "T1",
+  "skill": "inbox",
+  "blobPolicy": "forbidden",
+  "payloadSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "intent.declaration@1",
+    "description": "What was asked for. Carries no status: the intent card's working/waiting/done/error/archive is a projection keyed by this artifact.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["intentType", "title", "sourceChannel", "observedAt", "requestedActions", "language"],
+    "properties": {
+      "intentType": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$", "maxLength": 64 },
+      "title": { "type": "string", "minLength": 1, "maxLength": 512 },
+      "summary": { "type": ["string", "null"], "maxLength": 4000 },
+      "sourceChannel": { "enum": ["postal-scan", "upload", "email", "chat", "standing-order"] },
+      "observedAt": { "type": "string", "format": "date-time" },
+      "deadline": {
+        "type": ["object", "null"],
+        "additionalProperties": false,
+        "required": ["dueAt"],
+        "properties": {
+          "dueAt": { "type": "string", "format": "date-time" },
+          "label": { "type": ["string", "null"], "maxLength": 128 }
+        }
+      },
+      "requestedActions": {
+        "type": "array",
+        "maxItems": 16,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": {
+            "kind": { "enum": ["todo", "calendar", "draft", "link", "match", "other"] },
+            "note": { "type": ["string", "null"], "maxLength": 512 }
+          }
+        }
+      },
+      "language": { "type": "string", "pattern": "^[a-z]{2}(-[A-Z]{2})?$" }
+    }
+  },
+  "referencesSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "array",
+    "maxItems": 0
+  },
+  "search": {
+    "fullText": ["/title", "/summary"],
+    "fields": [
+      { "path": "/intentType", "kind": "keyword" },
+      { "path": "/sourceChannel", "kind": "keyword" },
+      { "path": "/deadline/dueAt", "kind": "timestamp" },
+      { "path": "/observedAt", "kind": "timestamp" }
+    ]
+  },
+  "notes": [
+    "UI: the whole left column. intentType covers the mock-up's frist | bezahlen | steuer | auftrag | abgleich, kept as an open pattern rather than an enum because new intent types must not require a type version bump.",
+    "requestedActions is the extraction's own reading — 'ein Todo, ein Termin, ein Entwurf'. Whether those actions happened is answered by the run graph, not by this payload.",
+    "No status field. Adding one because the card shows one is the single most likely mistake in this catalog."
+  ]
+}

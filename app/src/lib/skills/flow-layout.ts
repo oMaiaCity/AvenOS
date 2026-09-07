@@ -30,8 +30,11 @@ export interface FlowLayout {
 }
 
 export function layoutWorkflow(w: WorkflowDef): FlowLayout {
-	const wires = workflowEdges(w)
+	return layoutFlow(w.nodes, workflowEdges(w))
+}
 
+/** Lay out a runtime DAG whose edges are already authoritative. */
+export function layoutFlow(nodesToLayout: FlowNodeDef[], wires: FlowEdge[]): FlowLayout {
 	// Longest path from any unfed node — the column a node belongs in.
 	const preds = new Map<string, string[]>()
 	for (const e of wires) preds.set(e.to, [...(preds.get(e.to) ?? []), e.from])
@@ -48,10 +51,10 @@ export function layoutWorkflow(w: WorkflowDef): FlowLayout {
 		depth.set(id, d)
 		return d
 	}
-	for (const n of w.nodes) visit(n.id)
+	for (const n of nodesToLayout) visit(n.id)
 
 	const columns: FlowNodeDef[][] = []
-	for (const n of w.nodes) {
+	for (const n of nodesToLayout) {
 		const c = depth.get(n.id) ?? 0
 		if (!columns[c]) columns[c] = []
 		columns[c].push(n)

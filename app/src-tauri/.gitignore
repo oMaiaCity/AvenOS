@@ -8,6 +8,8 @@ vendor/sherpa-ios/
 gen/*
 !gen/schemas/
 !gen/schemas/**
+!gen/android/
+!gen/android/**
 
 profiles/*.provisionprofile
 *.mobileprovision

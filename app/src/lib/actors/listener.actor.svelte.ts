@@ -1,4 +1,5 @@
 import { Listener } from '$lib/asr/listener.svelte'
+import { anonymousSpeaker } from '$lib/chat/anonymous-speaker'
 import { Actor } from './actor'
 import { bus } from './bus'
 import listenerMachineSource from './listener-machine.pl?raw'
@@ -12,18 +13,26 @@ import { singleton } from './singleton'
  */
 export class ListenerActor extends Actor {
 	readonly core = new Listener({
-		// Barge-in fires on voice activity alone, ~64ms in.
+		// Candidate UI is immediate; interruption fires only after lexical ASR
+		// evidence has been confirmed safe by the native echo state.
 		onSpeechStart: () => {
 			void bus.emit('interrupted()', {}, 'listener')
 		},
-		onUtterance: (text) => {
-			void bus.emit('utterance(T)', { text }, 'listener')
+		onUtterance: (text, attribution, sessionId) => {
+			void bus.emit(
+				'utterance(T)',
+				{ text, anonymousSpeaker: anonymousSpeaker(sessionId, attribution) },
+				'listener'
+			)
 		}
 	})
 
 	constructor() {
 		super({
 			id: 'listener',
+			authority: 'os.aven',
+			namespace: 'voice',
+			version: '1',
 			name: 'Listener',
 			description:
 				'The ears: Silero VAD and Nemotron recognition on-device. Finished utterances ' +
@@ -33,6 +42,11 @@ export class ListenerActor extends Actor {
 			// Flow AND contracts from the one `.pl` — produces(utterance(T)) etc.
 			machine: listenerMachineSource
 		})
+	}
+
+	override dispose(): void {
+		this.core.dispose()
+		super.dispose()
 	}
 
 	override instanceState(): Record<string, unknown> {

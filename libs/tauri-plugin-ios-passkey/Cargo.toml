@@ -1,6 +1,6 @@
 [package]
 name = "tauri-plugin-ios-passkey"
-version = "26.8.22-next.6"
+version = "26.8.28-next.9"
 description = "Native iOS passkey assertions for avenOS"
 authors = ["Aven"]
 license = "MIT OR Apache-2.0"

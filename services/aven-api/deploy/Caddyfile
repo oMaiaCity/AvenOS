@@ -1,5 +1,0 @@
-# TLS terminator for VPS deployments (compose profile "prod").
-# Caddy provisions Let's Encrypt certificates automatically for $DOMAIN.
-{$DOMAIN} {
-	reverse_proxy app:3000
-}

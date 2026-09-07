@@ -1,4 +1,4 @@
-//! QuickJS session manager for @avenos/aven-ui fixture logic.
+//! QuickJS session manager for actor fixture logic.
 
 use rquickjs::{Context, Runtime};
 use serde::Deserialize;

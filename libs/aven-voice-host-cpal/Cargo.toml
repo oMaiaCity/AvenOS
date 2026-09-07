@@ -1,0 +1,41 @@
+[package]
+name = "aven-voice-host-cpal"
+version = "26.8.28-next.9"
+edition = "2021"
+rust-version = "1.93"
+
+[features]
+default = []
+cpal-host = ["dep:cpal"]
+duplex-lab = [
+    "cpal-host",
+    "aven-voice-runtime/software-aec",
+    "dep:anyhow",
+    "dep:aven-voice-models",
+    "dep:env_logger",
+    "dep:hound",
+    "dep:serde",
+    "dep:serde_json",
+]
+
+[dependencies]
+aven-voice-core = { path = "../aven-voice-core" }
+aven-voice-protocol = { path = "../aven-voice-protocol" }
+aven-voice-runtime = { path = "../aven-voice-runtime" }
+aven-voice-models = { path = "../aven-voice-models", optional = true }
+anyhow = { version = "1", optional = true }
+cpal = { version = "=0.18.2", default-features = false, features = ["pulseaudio"], optional = true }
+env_logger = { version = "0.11.10", optional = true }
+hound = { version = "3.5", optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+
+[[bin]]
+name = "aven-voice-duplex-probe"
+path = "src/bin/duplex_probe.rs"
+required-features = ["cpal-host"]
+
+[[bin]]
+name = "aven-voice-duplex-lab"
+path = "src/bin/duplex_lab.rs"
+required-features = ["duplex-lab"]

@@ -1,4 +1,4 @@
-//! `tauri-plugin-sandbox-quickjs` — QuickJS sandbox for @avenos/aven-ui fixture logic.
+//! `tauri-plugin-sandbox-quickjs` — QuickJS sandbox for actor fixture logic.
 
 mod commands;
 mod session;

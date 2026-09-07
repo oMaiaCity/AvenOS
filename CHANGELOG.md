@@ -1,3 +1,501 @@
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.28-next.8...v) (2026-08-28)
+
+
+### Features
+
+* **app:** hide the avenCEO subscription during alpha ([dc41730](https://github.com/MyAvenCEO/avenOS/commit/dc41730f7a28921118d9840a849d63efa2151e0f))
+* **aven-api:** tell buyers what happens after the name purchase ([a4cf951](https://github.com/MyAvenCEO/avenOS/commit/a4cf9519201de718a887435ecfa86c81bec3d174))
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.28-next.7...v) (2026-08-28)
+
+
+### Bug Fixes
+
+* **release:** wait for Caddy ports before restart ([12902ee](https://github.com/MyAvenCEO/avenOS/commit/12902ee9852d8ba18f6cb9591fdfe948014e0943))
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.28-next.6...v) (2026-08-28)
+
+
+### Bug Fixes
+
+* **release:** recreate Caddy before verification ([c10b09e](https://github.com/MyAvenCEO/avenOS/commit/c10b09e20161266430220c72b748e1ab264d5fa1))
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.28-next.5...v) (2026-08-28)
+
+
+### Features
+
+* **billing:** weekly interval and MIND credits from the 0.9.0 SSOT ([a71de6f](https://github.com/MyAvenCEO/avenOS/commit/a71de6ff36e7c6455fe973cec5ea2b1668d85e48))
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.28-next.4...v) (2026-08-28)
+
+
+### Bug Fixes
+
+* **android:** exclude desktop ONNX runtime assets ([31ca816](https://github.com/MyAvenCEO/avenOS/commit/31ca8160a0ddd8176578077888fd9ed44a17cdcd))
+
+
+### Features
+
+* **voice:** add anonymous speaker diarization ([7fa44f6](https://github.com/MyAvenCEO/avenOS/commit/7fa44f6dea350f8cbce4c1d18d196f8664b3c35d))
+* **voice:** add autonomous duplex refinement lab ([1a372a6](https://github.com/MyAvenCEO/avenOS/commit/1a372a6d043f03b63c49c8c190f17bd5b8d22424))
+* **voice:** add guarded tester barge-in fallback ([936989b](https://github.com/MyAvenCEO/avenOS/commit/936989bd25c8400c1d42df9447f91058a8ca8a2f))
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.28-next.3...v) (2026-08-28)
+
+
+### Features
+
+* **billing:** source avenNAME product id from AVEN_TIER_NAME secret ([980e453](https://github.com/MyAvenCEO/avenOS/commit/980e453d847460ca9fbcdbf7c956f2c56ccfeb7f))
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.28-next.2...v) (2026-08-28)
+
+
+### Bug Fixes
+
+* **ios:** link native audio frameworks ([97b573a](https://github.com/MyAvenCEO/avenOS/commit/97b573aa34f8e48874f731c701ada9d1730f91b9))
+* **release:** keep Rust lockfiles versioned ([3b40d32](https://github.com/MyAvenCEO/avenOS/commit/3b40d32088c9e0ffccc0a7b9d130a4d863e9d4fa))
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.28-next.1...v) (2026-08-28)
+
+
+### Bug Fixes
+
+* clear stale output levels after cancellation ([7ae5086](https://github.com/MyAvenCEO/avenOS/commit/7ae5086d3e8ee6fc4c3d925f665c09471a8078eb))
+* **voice:** prevent guarded-mode feedback promotion ([1309454](https://github.com/MyAvenCEO/avenOS/commit/130945466b7b6055b339da78fefd6a409dbd2116))
+* **voice:** stabilize and calibrate duplex routes ([234f55e](https://github.com/MyAvenCEO/avenOS/commit/234f55e78766c22896b2c111a90de28c6e798293))
+
+
+### Features
+
+* **android:** build APK with native passkeys ([4764fc8](https://github.com/MyAvenCEO/avenOS/commit/4764fc8672230dad5bdab94e3073c4406cc13673))
+* **voice:** add full-duplex qualification opt-in ([dedd515](https://github.com/MyAvenCEO/avenOS/commit/dedd515401d233cd3c33d0eb02ba30a70660c2dc))
+* **voice:** enable full duplex for testers ([9ecc263](https://github.com/MyAvenCEO/avenOS/commit/9ecc263697bf663d1a9157466a3fffb3f574cf44))
+* **voice:** implement software-first duplex pipeline ([c75b37e](https://github.com/MyAvenCEO/avenOS/commit/c75b37e528a1771c1aaf1f818933603559b03d59))
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.27-next.6...v) (2026-08-28)
+
+
+### Features
+
+* **aven-api:** accept client actor publications ([5a3ad0e](https://github.com/MyAvenCEO/avenOS/commit/5a3ad0e9338aab6ced3179edc53387541b6efa61))
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.27-next.5...v) (2026-08-27)
+
+
+### Bug Fixes
+
+* **release:** preserve LLM credential JSON ([9e4647b](https://github.com/MyAvenCEO/avenOS/commit/9e4647b6fc30ad2fb3a08646f7f615e26e6893c0))
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.27-next.4...v) (2026-08-27)
+
+
+### Bug Fixes
+
+* **auth:** race IPv4 and IPv6, so sign-in works on whichever one answers ([c5342ce](https://github.com/MyAvenCEO/avenOS/commit/c5342ce17f7550e9f2054c7eb3a37f45690e28db))
+* **ui:** restore floating dock hit targets ([16d703e](https://github.com/MyAvenCEO/avenOS/commit/16d703e42a125edf7c7b6efc416f8d4126f71e1a))
+
+
+### Features
+
+* add authenticated LLM gateway ([b4af651](https://github.com/MyAvenCEO/avenOS/commit/b4af651283f92dd28aa98f5bbc281a6575f25f68))
+
+
+### Performance Improvements
+
+* **asr:** let idle ONNX workers sleep ([77ec98e](https://github.com/MyAvenCEO/avenOS/commit/77ec98ef8fecd288f3818c6599473cf5d6a0cae6))
+* **tts:** bound and park ONNX worker pools ([c3b789c](https://github.com/MyAvenCEO/avenOS/commit/c3b789c4faf5b42974451c6b8f6c44086c0d63ef))
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.27-next.3...v) (2026-08-27)
+
+
+### Bug Fixes
+
+* **auth:** race IPv4 and IPv6, so sign-in works on whichever one answers ([16d0050](https://github.com/MyAvenCEO/avenOS/commit/16d005037bb2705492aaad54feccfd3e3652a111))
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.27-next.2...v) (2026-08-27)
+
+
+### Features
+
+* **pricing:** avenNAME + one avenCEO, on kebab-case wire keys ([08adc25](https://github.com/MyAvenCEO/avenOS/commit/08adc253f0f8166f20eeee9fad15ae5bdc60071f))
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.27-next.1...v) (2026-08-27)
+
+
+### Features
+
+* **pricing:** avenNAME + one avenCEO, on kebab-case wire keys ([1693432](https://github.com/MyAvenCEO/avenOS/commit/1693432901433c39f940d311c1581222e2478140))
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.26-next.3...v) (2026-08-27)
+
+
+### Bug Fixes
+
+* **intents:** keep chat messages out of the activity log ([27fcaad](https://github.com/MyAvenCEO/avenOS/commit/27fcaad08d933a4a7056079d9a45cd7ffbe933b2))
+
+
+### Features
+
+* **chat:** add debug view of the model's exact request context and tools ([dd6e194](https://github.com/MyAvenCEO/avenOS/commit/dd6e194e5a7e13124a15dd72f7a2dd5ce2c12fd1)), closes [Chat.#round](https://github.com/Chat./issues/round)
+* **intents:** give the model bounded artifact awareness ([0bb7842](https://github.com/MyAvenCEO/avenOS/commit/0bb78425c40ab287aed6b40221d06973397a1702))
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.26-next.2...v) (2026-08-26)
+
+
+### Bug Fixes
+
+* **release:** a release cannot commit a registry token ([e582962](https://github.com/MyAvenCEO/avenOS/commit/e5829624562a2d91eb524f5a62dd30f3d696a3a7))
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.26-next.1...v) (2026-08-26)
+
+
+### Bug Fixes
+
+* **app:** recover the styles a class scanner could not see ([164ce0c](https://github.com/MyAvenCEO/avenOS/commit/164ce0c76a6382e7456328b46d43b444b09a70ca))
+* **ci:** put the registry token back where bun reads it ([83e33d6](https://github.com/MyAvenCEO/avenOS/commit/83e33d6dae2df2b96ceea0c3a9a9efb22619a492))
+
+
+### Features
+
+* **app:** drop Tailwind for the brand's own utility layer ([9eb1460](https://github.com/MyAvenCEO/avenOS/commit/9eb1460b458824259fe42179e8cde04f959f5fb7))
+* **aven-ui:** render a view to HTML text, not only to DOM ([1ee973b](https://github.com/MyAvenCEO/avenOS/commit/1ee973b87c12e5906bb939dbb022e14bc0ad6240))
+* **design:** adopt stack + stack-center on the purchase screens ([4a3e91b](https://github.com/MyAvenCEO/avenOS/commit/4a3e91b16f84ba00d1dcffebb3af525895c9ee70))
+* **design:** adopt the id service's card, and drop dead imports ([443057d](https://github.com/MyAvenCEO/avenOS/commit/443057d2489c6afb2264bf6096bf3520eef846a5))
+* **design:** adopt the structural components across the app ([b5c08ac](https://github.com/MyAvenCEO/avenOS/commit/b5c08ac2ecaf64e220557f72e05478e634336935))
+* **design:** put every surface on the shared scales, and the id service on the brand ([055508e](https://github.com/MyAvenCEO/avenOS/commit/055508e2d77ce0816b628453fe4457e0cebb9dfc)), closes [#2f5d50](https://github.com/MyAvenCEO/avenOS/issues/2f5d50)
+* **design:** regenerate onto nested CSS with states and container queries ([7e68daa](https://github.com/MyAvenCEO/avenOS/commit/7e68daa68ef3f542a3cdf1c4820c6d03c36fbf0f))
+* **design:** restyle the purchase flow onto the passkey card ([c983abb](https://github.com/MyAvenCEO/avenOS/commit/c983abb645e3eb9d27897c49d0c781ccf4235bab))
+* **hosting:** allow admin apex bindings ([c06195e](https://github.com/MyAvenCEO/avenOS/commit/c06195e5664bb07121b7cd3d5439d298b1b8957a))
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.25-next.6...v) (2026-08-26)
+
+
+### Features
+
+* **auth:** add guarded account administration ([54064e7](https://github.com/MyAvenCEO/avenOS/commit/54064e76e415d9d6b879e54974f386ffc30fc7e4))
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.25-next.5...v) (2026-08-25)
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.25-next.4...v) (2026-08-25)
+
+
+### Bug Fixes
+
+* **aven-api:** stop copying a workspace dir that no longer exists ([e4a1ade](https://github.com/MyAvenCEO/avenOS/commit/e4a1ade524b8748603864625b869276e91f2915a))
+* **brand:** resolve the logo through the module graph, not a node_modules path ([ddd2ee7](https://github.com/MyAvenCEO/avenOS/commit/ddd2ee70827c3271ad56ac62acf9a79507161268))
+* **shell:** give the left rail one source of truth, and CI a registry token ([8452f43](https://github.com/MyAvenCEO/avenOS/commit/8452f430d4bf9b856f8d94bde2073e4dd7908315))
+
+
+### Features
+
+* **artifacts:** one store, one ingest door, and a file-first browser ([d7e73f6](https://github.com/MyAvenCEO/avenOS/commit/d7e73f6779b9e72f22e3a8f5dc05691f62023be1))
+* **brand:** consume @myavenceo/aven-ceo as the single source of truth ([2e7069d](https://github.com/MyAvenCEO/avenOS/commit/2e7069d8c49732eed53bc7e62521e3fb11259b9b)), closes [#e6b34d](https://github.com/MyAvenCEO/avenOS/issues/e6b34d) [#2e7d52](https://github.com/MyAvenCEO/avenOS/issues/2e7d52) [#17251d](https://github.com/MyAvenCEO/avenOS/issues/17251d)
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.25-next.3...v) (2026-08-25)
+
+
+### Features
+
+* **app:** add grounded artifact viewers ([5cf5759](https://github.com/MyAvenCEO/avenOS/commit/5cf575997198d02320fb7a25ed6669af66777fd4))
+* **app:** browse artifact lineage as a tree grid ([781cf89](https://github.com/MyAvenCEO/avenOS/commit/781cf8960ef4abafa179613a10b0a13f31da827f))
+* **artifact-store:** expose lineage evidence reads ([1f2339c](https://github.com/MyAvenCEO/avenOS/commit/1f2339c6dfe23090c6262f345eb7ae4fabb8cd2e))
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.25-next.2...v) (2026-08-25)
+
+
+### Features
+
+* **app:** add Artifact Store debugger ([de7d9b6](https://github.com/MyAvenCEO/avenOS/commit/de7d9b635bc9fdc9da7ea9031380db6421741977))
+* **app:** visualize file processing runs ([fb8434d](https://github.com/MyAvenCEO/avenOS/commit/fb8434d48dcf71060a3571f6d63f04ef227a5d0f))
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.25-next.1...v) (2026-08-25)
+
+
+### Bug Fixes
+
+* **deploy:** reload Caddy configuration ([b943ea9](https://github.com/MyAvenCEO/avenOS/commit/b943ea9fab4271a51f8ebb05515877b0050a5002))
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.24-next.8...v) (2026-08-25)
+
+
+### Bug Fixes
+
+* **hosting:** harden hosting boundaries ([2ca02b6](https://github.com/MyAvenCEO/avenOS/commit/2ca02b67ea0f64dd6c2a101f2128354be242d746))
+
+
+### Features
+
+* **hosting:** refine the static site manager ([ad1c4af](https://github.com/MyAvenCEO/avenOS/commit/ad1c4af1f53794de0e92b3be3efd9c303bb33b73))
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.24-next.7...v) (2026-08-24)
+
+
+### Bug Fixes
+
+* **hosting:** avoid replacing the protected host ([c135c45](https://github.com/MyAvenCEO/avenOS/commit/c135c45915d48d1f296486ac574b2fef2b820dec))
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.24-next.6...v) (2026-08-24)
+
+
+### Bug Fixes
+
+* **billing:** purge legacy provider ids (0017) + UUID self-heal; drop pause (Polar CannotPauseSubscription) ([f6ea63c](https://github.com/MyAvenCEO/avenOS/commit/f6ea63c33d0a82fb717b9c76a3ea7ced440b2eae))
+* **hosting:** scope site credentials to deployment ([b94d474](https://github.com/MyAvenCEO/avenOS/commit/b94d474ddf7bbce4a44669dec0ebad5d0826305e))
+
+
+### Features
+
+* **app:** Abrechnung cards list the FULL SSOT benefits incl. Aven Worker Minutes ([12a7ff4](https://github.com/MyAvenCEO/avenOS/commit/12a7ff489e262696585c1ecbade16e521c5e29d9))
+* **app:** artifacts split view — pdf.js inline rendering, square tiles, terracotta Kündigen ([0cc8b02](https://github.com/MyAvenCEO/avenOS/commit/0cc8b0255dee56b77f8b1acd1d5255e1abc6e842))
+* **app:** inline invoice flow + Artefakte page; per-card billing feedback; drop pause UI (0162 smoke fixes) ([4a0a78d](https://github.com/MyAvenCEO/avenOS/commit/4a0a78dd159e627039acd811e35a6bdaf6966be2))
+* **billing:** benefit titles default to English; verified attach on both tiers ([55d0e2e](https://github.com/MyAvenCEO/avenOS/commit/55d0e2e743c7bfe9961c1a007161edf90b74ace1))
+* **billing:** bilingual benefits SSOT in aven-brand → Polar benefits + descriptions; inline light checkout with locale (0162 r3) ([18d0165](https://github.com/MyAvenCEO/avenOS/commit/18d016589bbcfb11ac48e67bea91978812aea400))
+* **billing:** pause is back, in sync — pause_at_period_end mirrored (0018), Pausieren/Fortsetzen UI, collapsed larger benefit list ([657ad02](https://github.com/MyAvenCEO/avenOS/commit/657ad02485e1ac4ac77a479c0ab6011985fb6357))
+* **billing:** runtime benefit renamed to 'Aven Worker Minutes' + benefit title drift-correction ([e30a552](https://github.com/MyAvenCEO/avenOS/commit/e30a552e7209ae1347b1763654d4168bf78ee084))
+* **billing:** skill benefits prefixed 'SKILL - <english title>' ([3c406a9](https://github.com/MyAvenCEO/avenOS/commit/3c406a911ac647d17dac0d4e20a44eb8afb7f2cd))
+* **hosting:** manage multiple sites per Aven name ([074bc6c](https://github.com/MyAvenCEO/avenOS/commit/074bc6c24dda5c9705995598648631b7e8c60421))
+* **hosting:** serve verified static site deployments ([4fa100b](https://github.com/MyAvenCEO/avenOS/commit/4fa100bc61f2fd76c25aa941fbf17c3d6548ea7d))
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.24-next.5...v) (2026-08-24)
+
+
+### Features
+
+* **app:** Abrechnung cards list the FULL SSOT benefits incl. Aven Worker Minutes ([ec9962c](https://github.com/MyAvenCEO/avenOS/commit/ec9962cf8b06d762af92c867ad325495e8156e76))
+* **app:** artifacts split view — pdf.js inline rendering, square tiles, terracotta Kündigen ([a9ae063](https://github.com/MyAvenCEO/avenOS/commit/a9ae0636e7ba7258b08f25a71799afa7a1ff33b1))
+* **billing:** benefit titles default to English; verified attach on both tiers ([efe8e32](https://github.com/MyAvenCEO/avenOS/commit/efe8e32c5afe8784b50544155c927e0bec47268c))
+* **billing:** bilingual benefits SSOT in aven-brand → Polar benefits + descriptions; inline light checkout with locale (0162 r3) ([d97d6f1](https://github.com/MyAvenCEO/avenOS/commit/d97d6f194578b82f40ab2231d6561239e803e0a8))
+* **billing:** pause is back, in sync — pause_at_period_end mirrored (0018), Pausieren/Fortsetzen UI, collapsed larger benefit list ([2706bd5](https://github.com/MyAvenCEO/avenOS/commit/2706bd5dfab6efe4647116423e5b10c8b2002521))
+* **billing:** runtime benefit renamed to 'Aven Worker Minutes' + benefit title drift-correction ([fed5453](https://github.com/MyAvenCEO/avenOS/commit/fed5453b6a0a5c43d6342d847c6ced7ee738f8a7))
+* **billing:** skill benefits prefixed 'SKILL - <english title>' ([3a020b4](https://github.com/MyAvenCEO/avenOS/commit/3a020b4d84b11abc1d0d0e05e420a5e41f3a7934))
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.24-next.4...v) (2026-08-24)
+
+
+### Bug Fixes
+
+* **billing:** purge legacy provider ids (0017) + UUID self-heal; drop pause (Polar CannotPauseSubscription) ([189ba3d](https://github.com/MyAvenCEO/avenOS/commit/189ba3df24f8efc1ac48261f94e85fd909cb351b))
+
+
+### Features
+
+* **app:** inline invoice flow + Artefakte page; per-card billing feedback; drop pause UI (0162 smoke fixes) ([ef0533f](https://github.com/MyAvenCEO/avenOS/commit/ef0533f018e0ba68b6e8b86693270701c6d32b9c))
+* **billing:** Creem → Polar sandbox billing on the brand SSOT (0162) ([e30d31c](https://github.com/MyAvenCEO/avenOS/commit/e30d31c68e336a770f0d574705c87e7a0d2c4065))
+* **id-service:** link all legal pages in the footer ([120ec1e](https://github.com/MyAvenCEO/avenOS/commit/120ec1e396290e69e584fc918ed6215ed465039f))
+* **website:** centered mobile header, trim footer ([0241208](https://github.com/MyAvenCEO/avenOS/commit/0241208f139a2404fd0f0d112a2b79d2387a23a2))
+* **website:** social profile links in header + footer, updated privacy URLs ([6339d1f](https://github.com/MyAvenCEO/avenOS/commit/6339d1fcc4219f7252664a30ed27e69d85536778))
+* **website:** stacked header up to tablet, sovereign-founder slogan ([264a0dd](https://github.com/MyAvenCEO/avenOS/commit/264a0dd5e1c8126a6b4c3fdf762e65ad6eba1a56))
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.24-next.3...v) (2026-08-24)
+
+
+### Features
+
+* **billing:** Creem → Polar sandbox billing on the brand SSOT (0162) ([635e621](https://github.com/MyAvenCEO/avenOS/commit/635e621f606e65a12294a6231225344539434a87))
+* **id-service:** link all legal pages in the footer ([823e168](https://github.com/MyAvenCEO/avenOS/commit/823e1680c2aa86a8137f888f6d788d090d83cb26))
+* **website:** centered mobile header, trim footer ([7026c8b](https://github.com/MyAvenCEO/avenOS/commit/7026c8bd8f87ce543bf8667479513416f65f1398))
+* **website:** social profile links in header + footer, updated privacy URLs ([ca98f75](https://github.com/MyAvenCEO/avenOS/commit/ca98f750f9534294d200019d39efe1a86f7adffd))
+* **website:** stacked header up to tablet, sovereign-founder slogan ([111bd8d](https://github.com/MyAvenCEO/avenOS/commit/111bd8dccc98f57b429ae5cf012265a3c63c0a51))
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.24-next.2...v) (2026-08-24)
+
+
+### Bug Fixes
+
+* **ci:** unblock next promotion and intent deployment ([57dde40](https://github.com/MyAvenCEO/avenOS/commit/57dde4006a719c9df3762ad59f091bda8eb59bbc))
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.24-next.1...v) (2026-08-24)
+
+
+### Bug Fixes
+
+* **ci:** carry @avenos/aven-brand into the aven-api image ([935466b](https://github.com/MyAvenCEO/avenOS/commit/935466bfa706937ee7366d159c366afe20cf49ff))
+
+
+### Features
+
+* **app+website:** legal links in settings nav, withdrawal buttons unified ([3bccc94](https://github.com/MyAvenCEO/avenOS/commit/3bccc94e6f5cbd7b15542e9a7a6a0cdfbb38abb2))
+* **app:** persist intent lifecycle ([ac12de4](https://github.com/MyAvenCEO/avenOS/commit/ac12de4869574b570931f219c7292e50ba4df570))
+* **app:** restore persistent file intents ([a284e33](https://github.com/MyAvenCEO/avenOS/commit/a284e33a1ba522c5980175e915bd2f66a46094f5))
+* **app:** show live artifact processing status ([966d353](https://github.com/MyAvenCEO/avenOS/commit/966d353079d348ab88eeaa80123cfe6b119f3c92))
+* **intents:** add standalone intent service ([2d83107](https://github.com/MyAvenCEO/avenOS/commit/2d831077f97fe19772aebc69a9ef2d619f50c8ac))
+* **intents:** persist file-triggered intent projections ([b975a62](https://github.com/MyAvenCEO/avenOS/commit/b975a6209de4774a952dcf2612784671c65ba7d1))
+* **legal:** @avenos/aven-brand SSOT wired across every surface ([91b7cab](https://github.com/MyAvenCEO/avenOS/commit/91b7cabaa4ca4b3abdc90783cca0e6e642388123))
+* **legal:** statutory Widerrufsbelehrung on the withdrawal page, DE + EN ([de5f31b](https://github.com/MyAvenCEO/avenOS/commit/de5f31b4c110feca36453a177c9ea135d2c7b408))
+* **website:** Aven card meta row — Dahinter + weblink below the vision ([115b2d0](https://github.com/MyAvenCEO/avenOS/commit/115b2d05bad5a5a414749eba252672cb63c52f8c))
+* **website:** Aven card vision section splits 2/3 vision, 1/3 Dahinter+link ([98b6fbd](https://github.com/MyAvenCEO/avenOS/commit/98b6fbd7b3483d3c37faf65feebffba0dbeeb092))
+* **website:** Aven cards drop the Leistungen list, Mission becomes Vision ([7063fba](https://github.com/MyAvenCEO/avenOS/commit/7063fba3c1020c6bd8f0300c081a65221ec5a30f))
+* **website:** avenID sells the marketplace profile; Avens get link + bio ([3b9a0f6](https://github.com/MyAvenCEO/avenOS/commit/3b9a0f6174085f74825b428dc7120555913283b1))
+* **website:** english-first routing — EN at root, German under /de ([b783a83](https://github.com/MyAvenCEO/avenOS/commit/b783a8335867be71107b23a7ce85d3cbf4c31441))
+* **website:** price panel moves up — below runtime, above sovereignty ([e294168](https://github.com/MyAvenCEO/avenOS/commit/e2941689981ed4bac6de9c98113128001aff2f28))
+* **website:** revenue shares 8,2 % / 30 % (MoR), runtime joins the feature section ([3686b1b](https://github.com/MyAvenCEO/avenOS/commit/3686b1b8d1d04febb6834a118a34b1e0b0f8b728))
+* **website:** rework pricing tiers and landing story ([87892cd](https://github.com/MyAvenCEO/avenOS/commit/87892cd9f7f79896734529ceebd5ff0412d45a73))
+
+
+### Reverts
+
+* **legal:** drop the eRecht24 API sync — texts are maintained manually ([8025819](https://github.com/MyAvenCEO/avenOS/commit/8025819df7703f6011ecc4bf8f132e8451b74e83))
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.23-next.5...v) (2026-08-24)
+
+
+### Bug Fixes
+
+* **ci:** carry @avenos/aven-brand into the aven-api image ([cbac41d](https://github.com/MyAvenCEO/avenOS/commit/cbac41da639a242ecda08b878ee9d697d66e5527))
+
+
+### Features
+
+* **app+website:** legal links in settings nav, withdrawal buttons unified ([9f98b62](https://github.com/MyAvenCEO/avenOS/commit/9f98b6262783c9c951dc6a95bb5925c6e5b8f6be))
+* **legal:** @avenos/aven-brand SSOT wired across every surface ([df14a7d](https://github.com/MyAvenCEO/avenOS/commit/df14a7df3f5bef7d3e6d95b4f7cec1f0ec224651))
+* **legal:** statutory Widerrufsbelehrung on the withdrawal page, DE + EN ([0892745](https://github.com/MyAvenCEO/avenOS/commit/08927458b65987ead207af1a933b88494b61dfb3))
+* **website:** Aven card meta row — Dahinter + weblink below the vision ([5b0ed98](https://github.com/MyAvenCEO/avenOS/commit/5b0ed98cb577c317813130adadd18833b681b470))
+* **website:** Aven card vision section splits 2/3 vision, 1/3 Dahinter+link ([25b9e06](https://github.com/MyAvenCEO/avenOS/commit/25b9e06829c47fbddfa833558eb689fa1d3cdb66))
+* **website:** Aven cards drop the Leistungen list, Mission becomes Vision ([ee73ff9](https://github.com/MyAvenCEO/avenOS/commit/ee73ff91908f70e8d9c32934889a629572357411))
+* **website:** avenID sells the marketplace profile; Avens get link + bio ([7558b83](https://github.com/MyAvenCEO/avenOS/commit/7558b8315c7311d37a29700d5a99b9175adb06c5))
+* **website:** english-first routing — EN at root, German under /de ([9bb55b9](https://github.com/MyAvenCEO/avenOS/commit/9bb55b982360d9875e363777fc3c1840390fb5b4))
+* **website:** price panel moves up — below runtime, above sovereignty ([df64cce](https://github.com/MyAvenCEO/avenOS/commit/df64cce2c419da2a82d7ac42569feeb7d612e9f7))
+* **website:** revenue shares 8,2 % / 30 % (MoR), runtime joins the feature section ([d754b96](https://github.com/MyAvenCEO/avenOS/commit/d754b9688b4d4775260bb0256c0571caf6b97f4e))
+* **website:** rework pricing tiers and landing story ([ffc2366](https://github.com/MyAvenCEO/avenOS/commit/ffc2366cb3d9c18503a45fc5b19cf9f001c2a0e6))
+
+
+### Reverts
+
+* **legal:** drop the eRecht24 API sync — texts are maintained manually ([6967a09](https://github.com/MyAvenCEO/avenOS/commit/6967a09b50465c08be6e0f84e0717b951bf76dc1))
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.23-next.4...v) (2026-08-23)
+
+
+### Bug Fixes
+
+* **ci:** format artifact fixture harness ([6c79e9d](https://github.com/MyAvenCEO/avenOS/commit/6c79e9d60712f25306d9de39545ceaf0b221e6ed))
+
+
+### Features
+
+* **artifact-processing:** add durable processor pipeline ([2426fba](https://github.com/MyAvenCEO/avenOS/commit/2426fba76bd4539f161ed7a427703f651e44d0f8))
+* **aven-api:** provision artifact processing per tenant ([c439250](https://github.com/MyAvenCEO/avenOS/commit/c43925042f24328d7ef12c2f1fc5364509fbb5d5))
+* **deploy:** roll out artifact processor safely ([69466b7](https://github.com/MyAvenCEO/avenOS/commit/69466b736789c9443c306adfb576583b74d3dc7e))
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.23-next.3...v) (2026-08-23)
+
+
+### Bug Fixes
+
+* **deploy:** allow artifact upload request bodies ([44ed110](https://github.com/MyAvenCEO/avenOS/commit/44ed1102b142de308784447242c7ff958f0717d5))
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.23-next.2...v) (2026-08-23)
+
+
+### Bug Fixes
+
+* **app:** a request settles only after a tool-free round or a tool round — never on a first word before a tool call; the reply streams in the composer card meanwhile; composer field and send button centered ([58af7e8](https://github.com/MyAvenCEO/avenOS/commit/58af7e81d67f2669fa1d8cd06319bb83c9db28d1))
+* **app:** a request settles only when the answer round is complete — never between tool rounds ([0783b5e](https://github.com/MyAvenCEO/avenOS/commit/0783b5e3afbc95469a864f17ddf15451b5f77e6f))
+* **app:** a restored intent returns in the state it was archived from ([14c24f2](https://github.com/MyAvenCEO/avenOS/commit/14c24f2bb52fd05b0abd9cae34e5d6dd5c5f020c))
+* **app:** hide the Start-conversation chip while a human gate is open ([21379f1](https://github.com/MyAvenCEO/avenOS/commit/21379f11b496b197dfc0865f61a46765ee38adb7))
+* **app:** intent clicks no longer reopen the conversation modal ([f160027](https://github.com/MyAvenCEO/avenOS/commit/f160027236797753f92acb41f88d2fb2f450bbec))
+* **app:** mobile back/menu hug the screen edges, hidden in text mode; voice mock never starts the mic ([49886bb](https://github.com/MyAvenCEO/avenOS/commit/49886bbf49fda3c3c260db09dbf0e7b597bbd988))
+* **app:** notch never jumps between voice and text — orb overhangs without margin; hang-up is a quiet outlined ✕ ([7411626](https://github.com/MyAvenCEO/avenOS/commit/74116262e4932308205ed0f76fb10b713c25e9ba))
+* **app:** one notch size in voice and text mode — py-2 pill, 40px buttons, 72px orb, equal bottom gap ([7516374](https://github.com/MyAvenCEO/avenOS/commit/7516374531d726b3c57ea76167e3a937190e1591))
+* **app:** selected intent card keeps its size, corners and place in the list — only the fill marks it ([0d1b897](https://github.com/MyAvenCEO/avenOS/commit/0d1b897a05eb5d4c3f5beaca9c8b375da0548888))
+* **app:** session arrays are born as $state proxies — turns settling into a just-routed session were invisible ([eab4bf7](https://github.com/MyAvenCEO/avenOS/commit/eab4bf74715d42e6c4e329c49051705771d54225))
+* **app:** symmetric gaps between the intent list, the center card and the skills column ([0324845](https://github.com/MyAvenCEO/avenOS/commit/0324845b3859a893cd6560ec1359e15fb4c827a4))
+* **app:** the center card is a complete rounded card; gate and composer sit below it as their own cards ([6e09104](https://github.com/MyAvenCEO/avenOS/commit/6e0910465c1dd5a255c562fe70f08fb7f1850924))
+* **artifact-store:** harden tenant convergence ([9c0c283](https://github.com/MyAvenCEO/avenOS/commit/9c0c283a2635e1a2868e24f04a93b356e9945e18))
+* **deploy:** wait only for healthchecked services ([92e7f52](https://github.com/MyAvenCEO/avenOS/commit/92e7f524ae7cc397a9e98fe17499defc7d0c591b))
+* **release:** make main sync race-safe ([a72ac0a](https://github.com/MyAvenCEO/avenOS/commit/a72ac0aec9cbfc6b1b7f34f262447d96ccbb8d3d))
+* **website:** bundle note grammar for the person case ([66aa502](https://github.com/MyAvenCEO/avenOS/commit/66aa5027abbd382e8812a0fa085ac1e6e45213a7))
+* **website:** space before the dash in skill page titles ([58a3116](https://github.com/MyAvenCEO/avenOS/commit/58a31167c584cdacda73c1402c4311fea4092458))
+
+
+### Features
+
+* **app:** a request stays in a routing state until the model has understood it; cross-intent questions route themselves ([9fe01de](https://github.com/MyAvenCEO/avenOS/commit/9fe01de6af18ab111021e37dc4615da18f3a45f8))
+* **app:** an exchange that creates or opens an intent moves into that intent's stream ([355f460](https://github.com/MyAvenCEO/avenOS/commit/355f460364afe0981c9465bb75b5f2a4badd75db))
+* **app:** dev-only ?voice=<phase> mock so the voice pill renders in a browser tab ([cb820f6](https://github.com/MyAvenCEO/avenOS/commit/cb820f6badd08a0d0f75bbeae869452eeeb034e8))
+* **app:** intent_archive / intent_restore tools — put an intent away or bring it back by message ([0547aa9](https://github.com/MyAvenCEO/avenOS/commit/0547aa96e56ca126667c278debc99280a11c08b1))
+* **app:** intent_list names the intent on screen and nudges to switch before answering about another ([41fd832](https://github.com/MyAvenCEO/avenOS/commit/41fd832f65acfdd9518eb00446729d01d3a15097))
+* **app:** intent_update tool — title, type, source, deadline, status by message ([77d712a](https://github.com/MyAvenCEO/avenOS/commit/77d712a7274a0307a43cf3bac88f7e505a7f3de3))
+* **app:** intents are an actor with CRUD tools — list, switch, create, merge, delete ([b70ae71](https://github.com/MyAvenCEO/avenOS/commit/b70ae719a4c96ad46b4b9596a58657a11b187b13))
+* **app:** larger side buttons and orb in the notch, tighter bottom gap ([ffcc70f](https://github.com/MyAvenCEO/avenOS/commit/ffcc70fa6170fc44682fdba772994a803d11db41))
+* **app:** list-first mobile layout for the intents workspace ([3dfa376](https://github.com/MyAvenCEO/avenOS/commit/3dfa376a8b404002e8465d55b4bac540ddabdcd6))
+* **app:** merging intents merges their conversations too ([c1602b1](https://github.com/MyAvenCEO/avenOS/commit/c1602b17c03f1e0b1090bca28c932a37ec9ab130))
+* **app:** narrower voice notch, loading tooltip chip, dev tap-to-cycle phases ([9abac45](https://github.com/MyAvenCEO/avenOS/commit/9abac45e5196029a5fec0d24597ab3aa40b54d20))
+* **app:** notch chip for every informative phase; notch narrower and ~12% larger ([59efb99](https://github.com/MyAvenCEO/avenOS/commit/59efb991d10d206d244a40d527c46de65e267292))
+* **app:** one conversation — write, speak, or both; views render inline again ([0c9c0b3](https://github.com/MyAvenCEO/avenOS/commit/0c9c0b3ebceb184810452e120cb1e86d905dd9d6))
+* **app:** one top edge for all three columns; side headers wear the tab pill; the stream is a tool ([3e0964a](https://github.com/MyAvenCEO/avenOS/commit/3e0964ac320e442fdd23c9c2a9317b4fee13312d))
+* **app:** routing state lives in the composer card; compact card with a round send button; archiving routes the exchange into the archived intent ([251c3e4](https://github.com/MyAvenCEO/avenOS/commit/251c3e4c94d683cc0979f0284084d976676c3cbb))
+* **app:** tablets get the collapsed mobile layout too — breakpoint md → lg ([108aa7d](https://github.com/MyAvenCEO/avenOS/commit/108aa7d100d86454fb0e4a926043f930db5ae4ad))
+* **app:** the chat lives inline in the intent's stream, scoped per intent; modal gone ([e7eca31](https://github.com/MyAvenCEO/avenOS/commit/e7eca3121314ee8b9a0a5704b6326f6dd8d94a49))
+* **app:** the composer is a gate-styled card, shown only while writing or hearing; the gate yields meanwhile ([fe3f2cc](https://github.com/MyAvenCEO/avenOS/commit/fe3f2cc69fa277a4b22a87ed8d663386c1e6f10e))
+* **app:** the composer is the conversation's footer, not the notch; spotlight search parked ([0a4efc5](https://github.com/MyAvenCEO/avenOS/commit/0a4efc56b90eb5fac8eddd05d061335b87614e19))
+* **app:** the model sees the live intents and the one on screen with every request ([12b1440](https://github.com/MyAvenCEO/avenOS/commit/12b144008711bcd9de517c14abfe7b110f28c88d))
+* **app:** the selected intent card is filled with its state color ([b6ae160](https://github.com/MyAvenCEO/avenOS/commit/b6ae160778925ce84be43079148add0a609f3cb9))
+* **app:** the selected intent leads the list and joins the center panel as one surface ([91c1055](https://github.com/MyAvenCEO/avenOS/commit/91c1055156d952abb6ecdc1225d92f201df84b75))
+* **app:** the system prompt teaches intent routing — switch first when a request is about another intent; create, archive, merge, update, delete by message ([83fa3d3](https://github.com/MyAvenCEO/avenOS/commit/83fa3d3b9d9388350055ce73e99ce27f33606b34))
+* **app:** upload dropped files as artifacts ([8efec72](https://github.com/MyAvenCEO/avenOS/commit/8efec722e705046c93dcd8a628f8b5529a5bd108))
+* **app:** upload placeholder on the notch's left, where the input switch was (not wired yet) ([b4e81c1](https://github.com/MyAvenCEO/avenOS/commit/b4e81c196671de3d633359eea1ca4361197d27cf))
+* **app:** view tabs top center in place of the status line; VIEWS section dropped from the right ([b268ccd](https://github.com/MyAvenCEO/avenOS/commit/b268ccdb9dbc0eeb2d928eb3fd1df5d8d83612f5))
+* **app:** views as tabs beside the activity stream, a VIEWS section on the right, voice-switched ([b6ea118](https://github.com/MyAvenCEO/avenOS/commit/b6ea11879d854667676fed8953b12751a3feffa7))
+* **app:** voice pill shows its state as an orb, not a label ([95bb55f](https://github.com/MyAvenCEO/avenOS/commit/95bb55ff99d294f40c3bb4a2514e12fe581ca846))
+* **app:** what is heard is written into the composer field, not beside it ([cf2a9a0](https://github.com/MyAvenCEO/avenOS/commit/cf2a9a08e6b448110580c71c0ac94056229006a0))
+* **artifact-store:** implement minimal core service ([fcb545c](https://github.com/MyAvenCEO/avenOS/commit/fcb545c08d39c8c77530223563ca04d47eb439ac))
+* **artifact-store:** route per customer databases ([31d71bf](https://github.com/MyAvenCEO/avenOS/commit/31d71bfb0f19e3e3d8e31291f5e0da7657bd65c5))
+* **dev:** add local artifact store stack ([22906d7](https://github.com/MyAvenCEO/avenOS/commit/22906d7eba0d6efeb51298c601791d443f2dc7e1))
+* scaffold artifact store service ([a6b401d](https://github.com/MyAvenCEO/avenOS/commit/a6b401db20c3fa8c567aed03855105833b58d16b))
+* **website:** /avens address book — mission over activity, avenMAIA added ([229f737](https://github.com/MyAvenCEO/avenOS/commit/229f737b185aee19d43985b0e1254a17650f1a2f))
+* **website:** Aven address book, avenFOUNDER ⊃ avenME skills, incl. VAT, clearer share split, 5 % avenID commission ([2b35236](https://github.com/MyAvenCEO/avenOS/commit/2b35236c62792c85fa9aa9c984dfe992aba57012))
+* **website:** avenFOUNDER + global skills, avenCEO is the Aven of the avenCEO GmbH ([820adc4](https://github.com/MyAvenCEO/avenOS/commit/820adc4493f3ded033d3544da19baa46e06ce203))
+* **website:** avenID is per person AND per company ([eb0b782](https://github.com/MyAvenCEO/avenOS/commit/eb0b782734ff967df03545e21e965491c1105279))
+* **website:** avenID sichern button, avenCEO-as-asset thesis, single avenCEO GmbH founders card ([b112de9](https://github.com/MyAvenCEO/avenOS/commit/b112de906040917f78705e77e209cde13823ea6e))
+* **website:** avenME + avenCEO as two roles, Sparks retired, avenCOOP full-width ([e66f0bb](https://github.com/MyAvenCEO/avenOS/commit/e66f0bb0c5f4551214c2d2d8f72139dfb7a6b3a2))
+* **website:** bilingual site — DE at root, EN under /en ([5a7509c](https://github.com/MyAvenCEO/avenOS/commit/5a7509cbf35a980297723367a1b1c701e2f1f882))
+* **website:** i18n core — DE at root, EN under /en, DE|EN switch in the header ([bc77c58](https://github.com/MyAvenCEO/avenOS/commit/bc77c58d2922805803ce5948f994278c8d55fe49))
+* **website:** inline '+ 8 % vom Umsatz', 4/4 split, skills capped at 7 on avenFOUNDER and avenCOOP ([dace879](https://github.com/MyAvenCEO/avenOS/commit/dace8793e03e6948a9cf8ceb155b48cefcdd057d))
+* **website:** landing page reworked around owning 10+ Aven and the compounding effect ([100d317](https://github.com/MyAvenCEO/avenOS/commit/100d3173040ae7e791a659660efb632cbdcd3526))
+* **website:** revenue terms as stacked rows — 4,8 % tx fees, 15 % / 10 % Reinvest, 8 % equity ([7b63256](https://github.com/MyAvenCEO/avenOS/commit/7b6325618f3d72976583275825ffe97db37de323))
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.23-next.1...v) (2026-08-23)
+
+
+### Bug Fixes
+
+* **release:** make main sync race-safe ([78c090b](https://github.com/MyAvenCEO/avenOS/commit/78c090be88526fb9e2539ddfb2adad27ffdd4d00))
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.22-next.7...v) (2026-08-23)
+
+
+### Bug Fixes
+
+* **app:** a request settles only after a tool-free round or a tool round — never on a first word before a tool call; the reply streams in the composer card meanwhile; composer field and send button centered ([109420d](https://github.com/MyAvenCEO/avenOS/commit/109420dcdcae3b3a2eb0a2b6fb6b591954ec761e))
+* **app:** a request settles only when the answer round is complete — never between tool rounds ([8ea5337](https://github.com/MyAvenCEO/avenOS/commit/8ea5337960b9cbd3125dc0f0341030cfdb676738))
+* **app:** a restored intent returns in the state it was archived from ([774b79f](https://github.com/MyAvenCEO/avenOS/commit/774b79f7744bcfaacab58b99903d4b25407dec43))
+* **app:** hide the Start-conversation chip while a human gate is open ([9dd67fa](https://github.com/MyAvenCEO/avenOS/commit/9dd67fac6284d96359996b8e1bf312a1765b2536))
+* **app:** intent clicks no longer reopen the conversation modal ([57c8577](https://github.com/MyAvenCEO/avenOS/commit/57c8577818e4ab0119a75d5003a3655b1335f5cc))
+* **app:** mobile back/menu hug the screen edges, hidden in text mode; voice mock never starts the mic ([24623d6](https://github.com/MyAvenCEO/avenOS/commit/24623d6c35f027aa5e99090cc6ed1eb0a8bcc72d))
+* **app:** notch never jumps between voice and text — orb overhangs without margin; hang-up is a quiet outlined ✕ ([50bd7cd](https://github.com/MyAvenCEO/avenOS/commit/50bd7cd5c7740f3c17425767257d9a2e00be98d3))
+* **app:** one notch size in voice and text mode — py-2 pill, 40px buttons, 72px orb, equal bottom gap ([3d2fa59](https://github.com/MyAvenCEO/avenOS/commit/3d2fa59c2c026c775c30b3f69dcc3311648927c1))
+* **app:** selected intent card keeps its size, corners and place in the list — only the fill marks it ([674f572](https://github.com/MyAvenCEO/avenOS/commit/674f5722c8ac8225dfe5b5035438b06fd23c25cd))
+* **app:** session arrays are born as $state proxies — turns settling into a just-routed session were invisible ([250724d](https://github.com/MyAvenCEO/avenOS/commit/250724dea3f67df63b80737372e226ab20c9a9bd))
+* **app:** symmetric gaps between the intent list, the center card and the skills column ([a737aa4](https://github.com/MyAvenCEO/avenOS/commit/a737aa492f46a1d1ef8e9ae18bd40c77e0acb29f))
+* **app:** the center card is a complete rounded card; gate and composer sit below it as their own cards ([6f5ae9f](https://github.com/MyAvenCEO/avenOS/commit/6f5ae9feac6b138175d139016dbf2f37ad69d0a3))
+* **artifact-store:** harden tenant convergence ([3e450e9](https://github.com/MyAvenCEO/avenOS/commit/3e450e983dc370b11010fb54eeb056a82cd45561))
+* **website:** bundle note grammar for the person case ([8811d2d](https://github.com/MyAvenCEO/avenOS/commit/8811d2d5d3d487ebe884a11087691586e4e9b921))
+* **website:** space before the dash in skill page titles ([23a9a18](https://github.com/MyAvenCEO/avenOS/commit/23a9a183a3d9f38b90d362d42bb42039251f5c48))
+
+
+### Features
+
+* **app:** a request stays in a routing state until the model has understood it; cross-intent questions route themselves ([99d1eb3](https://github.com/MyAvenCEO/avenOS/commit/99d1eb3cf1ef55b09940d7e073f59e5226f15531))
+* **app:** an exchange that creates or opens an intent moves into that intent's stream ([d164b43](https://github.com/MyAvenCEO/avenOS/commit/d164b43fac24a1d72264a2dec931b34da0c2c6ad))
+* **app:** dev-only ?voice=<phase> mock so the voice pill renders in a browser tab ([2f534bf](https://github.com/MyAvenCEO/avenOS/commit/2f534bf658832d0c84451037872f92e70979b973))
+* **app:** intent_archive / intent_restore tools — put an intent away or bring it back by message ([7bf61d7](https://github.com/MyAvenCEO/avenOS/commit/7bf61d7f1347c6cf64f44e1ba211d7e73116d289))
+* **app:** intent_list names the intent on screen and nudges to switch before answering about another ([6f1e7be](https://github.com/MyAvenCEO/avenOS/commit/6f1e7be12f3298713dd65908645dfa36efc325ec))
+* **app:** intent_update tool — title, type, source, deadline, status by message ([4ba96ca](https://github.com/MyAvenCEO/avenOS/commit/4ba96ca73ff9dabaf75e171c6409fd5377a2c889))
+* **app:** intents are an actor with CRUD tools — list, switch, create, merge, delete ([e7ec03d](https://github.com/MyAvenCEO/avenOS/commit/e7ec03d6f6affba78773c4c8332bd5681f5dfc73))
+* **app:** larger side buttons and orb in the notch, tighter bottom gap ([7994bd3](https://github.com/MyAvenCEO/avenOS/commit/7994bd3b5f6eadf9d2c81fee09c9874a112a01c8))
+* **app:** list-first mobile layout for the intents workspace ([78b5c57](https://github.com/MyAvenCEO/avenOS/commit/78b5c570c795734855584b63c5ab62220e557ca6))
+* **app:** merging intents merges their conversations too ([c30e54c](https://github.com/MyAvenCEO/avenOS/commit/c30e54ceb576e93d48f70498629765bee44c527d))
+* **app:** narrower voice notch, loading tooltip chip, dev tap-to-cycle phases ([ad608a6](https://github.com/MyAvenCEO/avenOS/commit/ad608a60197e341079947635aac983f8cea8c8ca))
+* **app:** notch chip for every informative phase; notch narrower and ~12% larger ([dc2bcb4](https://github.com/MyAvenCEO/avenOS/commit/dc2bcb43aba3c6a08941e5288276e7671f8972ab))
+* **app:** one conversation — write, speak, or both; views render inline again ([1bd62a1](https://github.com/MyAvenCEO/avenOS/commit/1bd62a19f6450ffe0ae6d6e46b1d130fb83ea471))
+* **app:** one top edge for all three columns; side headers wear the tab pill; the stream is a tool ([d173284](https://github.com/MyAvenCEO/avenOS/commit/d17328462d3789b4a4763f77f528a40ae72ee4c6))
+* **app:** routing state lives in the composer card; compact card with a round send button; archiving routes the exchange into the archived intent ([da76a59](https://github.com/MyAvenCEO/avenOS/commit/da76a5942542333a409b8511e89641b1534ecef4))
+* **app:** tablets get the collapsed mobile layout too — breakpoint md → lg ([d41a034](https://github.com/MyAvenCEO/avenOS/commit/d41a03418b726cf3a886acdad50b448a9e28f0f8))
+* **app:** the chat lives inline in the intent's stream, scoped per intent; modal gone ([3e31be6](https://github.com/MyAvenCEO/avenOS/commit/3e31be654a094db6792bb43f26929ffa159a410f))
+* **app:** the composer is a gate-styled card, shown only while writing or hearing; the gate yields meanwhile ([d753206](https://github.com/MyAvenCEO/avenOS/commit/d753206a9e0ca7c025558ecbd62fce9a74e92c37))
+* **app:** the composer is the conversation's footer, not the notch; spotlight search parked ([0a5a665](https://github.com/MyAvenCEO/avenOS/commit/0a5a6653fa5bf1ff77fb1ae36ed2b71967b859bb))
+* **app:** the model sees the live intents and the one on screen with every request ([ce69d6f](https://github.com/MyAvenCEO/avenOS/commit/ce69d6f990d4b10c718fa45aed9d742e9301cac7))
+* **app:** the selected intent card is filled with its state color ([0c998b2](https://github.com/MyAvenCEO/avenOS/commit/0c998b2ff2f68be8c629b12f33731805db20b51e))
+* **app:** the selected intent leads the list and joins the center panel as one surface ([2faee06](https://github.com/MyAvenCEO/avenOS/commit/2faee06849299c97b00845625e0affbd4c2c671b))
+* **app:** the system prompt teaches intent routing — switch first when a request is about another intent; create, archive, merge, update, delete by message ([7a08a04](https://github.com/MyAvenCEO/avenOS/commit/7a08a04b9e9f254504294edfa8628e417182d48f))
+* **app:** upload dropped files as artifacts ([2672487](https://github.com/MyAvenCEO/avenOS/commit/2672487282aa771f0e675f5cd8af69d66d19f9ec))
+* **app:** upload placeholder on the notch's left, where the input switch was (not wired yet) ([2ebdb8b](https://github.com/MyAvenCEO/avenOS/commit/2ebdb8bb05715e230318dbd01eeac8508cae93d6))
+* **app:** view tabs top center in place of the status line; VIEWS section dropped from the right ([9608906](https://github.com/MyAvenCEO/avenOS/commit/9608906d56666b8e77b311d38430e9a66343d98a))
+* **app:** views as tabs beside the activity stream, a VIEWS section on the right, voice-switched ([d4e4bdf](https://github.com/MyAvenCEO/avenOS/commit/d4e4bdf2bcf0a6869b7a2d8bf0ae5fdabbbea46f))
+* **app:** voice pill shows its state as an orb, not a label ([9bc8b37](https://github.com/MyAvenCEO/avenOS/commit/9bc8b37a360d6ee62265e340f151739c793b0622))
+* **app:** what is heard is written into the composer field, not beside it ([f0d8d5c](https://github.com/MyAvenCEO/avenOS/commit/f0d8d5c0d778f51962dc711ecf201f2f69b07804))
+* **artifact-store:** implement minimal core service ([e2feb16](https://github.com/MyAvenCEO/avenOS/commit/e2feb16772de100b347c5354c771f7c357aada08))
+* **artifact-store:** route per customer databases ([24c25da](https://github.com/MyAvenCEO/avenOS/commit/24c25da02154756adaa2dfcb8432813d81ad3939))
+* **dev:** add local artifact store stack ([4329822](https://github.com/MyAvenCEO/avenOS/commit/432982223ec696d12713ba372f6464bffd867ac2))
+* scaffold artifact store service ([eb04041](https://github.com/MyAvenCEO/avenOS/commit/eb040414ae5e3131e2b945ed7ec5bfd1ca79a067))
+* **website:** /avens address book — mission over activity, avenMAIA added ([19b2c58](https://github.com/MyAvenCEO/avenOS/commit/19b2c58d9e54f5663bb668ad08cba1537065b689))
+* **website:** Aven address book, avenFOUNDER ⊃ avenME skills, incl. VAT, clearer share split, 5 % avenID commission ([9380dd8](https://github.com/MyAvenCEO/avenOS/commit/9380dd8c5319d9632b1872785fc28593b35f507d))
+* **website:** avenFOUNDER + global skills, avenCEO is the Aven of the avenCEO GmbH ([2c57cf6](https://github.com/MyAvenCEO/avenOS/commit/2c57cf67d9aa25f7c4118873b95ee11c0b8cfca6))
+* **website:** avenID is per person AND per company ([a890b0d](https://github.com/MyAvenCEO/avenOS/commit/a890b0de1dc4c8de37354d036e1ee7a59485a2c8))
+* **website:** avenID sichern button, avenCEO-as-asset thesis, single avenCEO GmbH founders card ([22dd6f9](https://github.com/MyAvenCEO/avenOS/commit/22dd6f9ba029d8fcbdeb7ff51fdd6f68164127d2))
+* **website:** avenME + avenCEO as two roles, Sparks retired, avenCOOP full-width ([30bd8fd](https://github.com/MyAvenCEO/avenOS/commit/30bd8fd1f185d963ce95e60d4ba639864f3edc0e))
+* **website:** bilingual site — DE at root, EN under /en ([3e5704b](https://github.com/MyAvenCEO/avenOS/commit/3e5704b2729cbb182566c725338a0f035f1e43ca))
+* **website:** i18n core — DE at root, EN under /en, DE|EN switch in the header ([cae53c0](https://github.com/MyAvenCEO/avenOS/commit/cae53c029ff9ba0c666128193e7bff7c9ffb6cdb))
+* **website:** inline '+ 8 % vom Umsatz', 4/4 split, skills capped at 7 on avenFOUNDER and avenCOOP ([33da932](https://github.com/MyAvenCEO/avenOS/commit/33da932eeb634cdcf3ba77825a378a1c1007a555))
+* **website:** landing page reworked around owning 10+ Aven and the compounding effect ([d59fca7](https://github.com/MyAvenCEO/avenOS/commit/d59fca7f3b0eb49098d1d62622f8bbcb39ed6778))
+* **website:** revenue terms as stacked rows — 4,8 % tx fees, 15 % / 10 % Reinvest, 8 % equity ([18eab1a](https://github.com/MyAvenCEO/avenOS/commit/18eab1a1a2aed3d0bced1a9d7d83139d622027c1))
+# [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.22-next.6...v) (2026-08-22)
 # [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.22-next.5...v) (2026-08-22)
 # [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.22-next.4...v) (2026-08-22)
 # [](https://github.com/MyAvenCEO/avenOS/compare/v26.8.22-next.3...v) (2026-08-22)

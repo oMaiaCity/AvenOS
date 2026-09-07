@@ -1,3 +1,8 @@
+import type {
+	ArtifactProcessingPresentation,
+	ArtifactProcessingView
+} from '$lib/artifacts/processing'
+import type { AnonymousSpeaker } from './anonymous-speaker'
 import { type ChatMessage, repairCall, streamChat, type ToolSpec } from './redpill'
 
 /**
@@ -50,6 +55,18 @@ const SYSTEM_PROMPT =
 	'list" means list_window_toggle, "show the board" means board_window_toggle ' +
 	'— each with open=true. todo_show only switches the spark. All of these ' +
 	'are view changes, never data changes. ' +
+	'The conversation is scoped to ONE intent — the matter on screen. The ' +
+	"user's intents are their open matters; intent_list names them. If a " +
+	'request is about another intent than the one on screen, call ' +
+	'intent_switch FIRST and only then answer — the request and your answer ' +
+	'move to that intent. Something new that belongs to no intent gets ' +
+	'intent_create; "done with" or "put away" is intent_archive; combining is ' +
+	'intent_merge; renaming, re-dating or changing the state is intent_update; ' +
+	'deleting is intent_delete and needs an explicit request. ' +
+	'The files in this conversation are listed under ARTIFACTS in your context, ' +
+	'one line each with kind and current state. When a question is about a ' +
+	'file, call artifact_detail with its name or id first and answer only ' +
+	'from what it returns — never guess file contents or figures. ' +
 	'Call registry_list when you are unsure which actors exist. ' +
 	'Destructive actions are HELD: the call returns held=..., a bar appears ' +
 	'for the human, and only their button press executes it. Say that you ' +
@@ -118,8 +135,46 @@ export interface Turn {
 	id: string
 	role: 'user' | 'assistant'
 	content: string
+	/** Local, anonymous diarization metadata; never added to the model prompt. */
+	anonymousSpeaker?: AnonymousSpeaker
+	attachment?: ArtifactAttachment
 	/** Every tool call this turn ran, with its result, for the transcript. */
 	calls?: { name: string; result: string }[]
+}
+
+export type ArtifactUploadStatus =
+	| 'queued'
+	| 'preparing'
+	| 'uploading'
+	| 'finalizing'
+	| 'committed'
+	| 'failed'
+
+export interface ArtifactAttachment {
+	readonly uploadId: string
+	readonly publicationId: string
+	originalName: string
+	length: number
+	status: ArtifactUploadStatus
+	progress: number
+	artifactId?: string
+	mediaType?: string
+	sha256?: string
+	error?: string
+	processing?: ArtifactProcessingView
+}
+
+export interface UploadedArtifactReceipt {
+	publicationId: string
+	intentId: string
+	intentDeclarationArtifactId: string
+	artifactId: string
+	originalName: string
+	mediaType: string
+	sha256: string
+	length: number
+	scopeSequence: number
+	replayed: boolean
 }
 
 /** Hooks for anything that wants the reply as it arrives — the speaker, today. */
@@ -146,32 +201,142 @@ export interface ChatTools {
 	) => { record: string; wire: string } | Promise<{ record: string; wire: string }>
 }
 
-let nextId = 0
-const id = () => `t${nextId++}`
+const id = () => crypto.randomUUID()
+
+/** One conversation: what a person sees, and what the model saw. */
+interface Session {
+	turns: Turn[]
+	wire: ChatMessage[]
+}
 
 export class Chat {
 	turns = $state<Turn[]>([])
 	streaming = $state(false)
 	failure = $state<string | null>(null)
+	/**
+	 * Which conversation `turns` currently shows. The chat is scoped per
+	 * intent: every intent has its own session stream, and selecting an
+	 * intent switches to it (`use`). Sessions are kept in memory for the
+	 * lifetime of the chat; a reply in flight keeps writing into the session
+	 * it started in, even if the view has moved on.
+	 */
+	session = $state('')
+	#sessions = new Map<string, Session>()
+	#uploads = new Map<string, { attachment: ArtifactAttachment; session: string }>()
+	#artifacts = new Map<string, ArtifactAttachment>()
+	/**
+	 * The turn in flight: which session's arrays it writes to, and where in
+	 * them it began. A tool may move the whole turn to another session
+	 * (`relocateTurn`) — creating an intent puts the question and its answer
+	 * into the new intent's stream, not the one it was asked from.
+	 */
+	#live: {
+		turns: Turn[]
+		wire: ChatMessage[]
+		fromTurn: number
+		fromWire: number
+		session: string
+	} | null = null
+	onExchange: ((session: string, user: Turn, assistant: Turn) => void) | null = null
+	/**
+	 * The request while it is being ROUTED: sent, but not yet a bubble in any
+	 * stream. It stays here — shown as a working state in the composer card
+	 * wherever you are, with the reply streaming under it — until the answer
+	 * round is complete; the tool rounds before it may have moved the turn
+	 * to another intent. Then it settles into the stream it belongs to.
+	 */
+	routing = $state<string | null>(null)
+	/**
+	 * Live context for every request, appended to the system prompt: what the
+	 * world looks like right now (the intents, which one is on screen), so
+	 * routing decisions are made with the facts in view rather than after a
+	 * tool call. Set by whoever owns those facts.
+	 */
+	context: (() => string) | null = null
+	/** What the model has said so far while the request is still routing. */
+	routingReply = $state('')
+	/**
+	 * The last request to the model, exactly as sent: the system prompt with
+	 * the live context appended, the full message history, and the tool set.
+	 * Captured per round in `#round`; the debug view renders this, so what is
+	 * shown is byte-for-byte what the model saw, never a reconstruction.
+	 */
+	lastRequest = $state<{
+		at: string
+		session: string
+		messages: ChatMessage[]
+		tools: ToolSpec[]
+	} | null>(null)
+	#pending: { user: Turn; reply: Turn } | null = null
+	#reply: Turn | null = null
 
 	// The system prompt is NOT stored here — it is prepended per request, so a
 	// long-lived singleton Chat always speaks with the current prompt instead
 	// of whatever was compiled in when the instance was born.
 	#wire: ChatMessage[] = []
 	#abort: AbortController | null = null
+	#sendTail: Promise<void> = Promise.resolve()
+	#sendEpoch = 0
 	#sink: ChatSink
 	#tools: ChatTools
+	#stream: typeof streamChat
 
 	constructor(
 		sink: ChatSink = {},
-		tools: ChatTools = { specs: [], run: () => ({ record: '', wire: '' }) }
+		tools: ChatTools = { specs: [], run: () => ({ record: '', wire: '' }) },
+		stream: typeof streamChat = streamChat
 	) {
 		this.#sink = sink
 		this.#tools = tools
+		this.#stream = stream
 	}
 
 	get canSend(): boolean {
 		return !this.streaming
+	}
+
+	/**
+	 * A new session. Its `turns` is born as a `$state` proxy: every array that
+	 * can end up in `this.turns` must be one, because a plain array assigned
+	 * to the field gets wrapped on the way in — and pushes through the plain
+	 * reference afterwards (a turn settling in the background) never reach
+	 * the wrapper's signals. The stream then shows a stale length: turns that
+	 * exist and are invisible.
+	 */
+	#fresh(): Session {
+		const turns = $state<Turn[]>([])
+		return { turns, wire: [] }
+	}
+
+	/** Switch the visible conversation to `key`, creating it on first use. */
+	use(key: string): void {
+		if (key === this.session) return
+		this.#sessions.set(this.session, { turns: this.turns, wire: this.#wire })
+		const next = this.#sessions.get(key) ?? this.#fresh()
+		this.session = key
+		this.turns = next.turns
+		this.#wire = next.wire
+		this.failure = null
+		this.#sink.onTurn?.()
+	}
+
+	hydrate(key: string, turns: Turn[]): void {
+		const existing =
+			key === this.session ? { turns: this.turns, wire: this.#wire } : this.#sessions.get(key)
+		if (existing && existing.turns.length > 0) return
+		const session = this.#fresh()
+		session.turns.push(...turns)
+		session.wire.push(
+			...turns
+				.filter((turn) => turn.content !== '')
+				.map((turn) => ({ role: turn.role, content: turn.content }) as ChatMessage)
+		)
+		this.#sessions.set(key, session)
+		if (key === this.session) {
+			this.turns = session.turns
+			this.#wire = session.wire
+			this.#sink.onTurn?.()
+		}
 	}
 
 	/**
@@ -184,13 +349,202 @@ export class Chat {
 		return this.#abort?.signal
 	}
 
-	async send(text: string): Promise<void> {
-		const prompt = text.trim()
-		if (prompt === '' || this.streaming) return
-
+	beginArtifactUpload(uploadId: string, publicationId: string, originalName: string): void {
 		this.failure = null
-		this.turns.push({ id: id(), role: 'user', content: prompt })
-		this.#wire.push({ role: 'user', content: prompt })
+		this.turns.push({
+			id: id(),
+			role: 'user',
+			content: '',
+			attachment: {
+				uploadId,
+				publicationId,
+				originalName,
+				length: 0,
+				status: 'queued',
+				progress: 0
+			}
+		})
+		const attachment = this.turns.at(-1)?.attachment
+		if (attachment) this.#uploads.set(uploadId, { attachment, session: this.session })
+
+		this.#sink.onTurn?.()
+	}
+
+	updateArtifactUpload(
+		uploadId: string,
+		status: Exclude<ArtifactUploadStatus, 'queued' | 'committed' | 'failed'>,
+		sent: number,
+		total: number
+	): void {
+		const attachment = this.#uploads.get(uploadId)?.attachment
+		if (!attachment || attachment.status === 'committed' || attachment.status === 'failed') return
+		attachment.status = status
+		attachment.length = total
+		attachment.progress = total === 0 ? 0 : Math.min(100, Math.floor((sent / total) * 100))
+		this.#sink.onTurn?.()
+	}
+
+	commitArtifactUpload(uploadId: string, receipt: UploadedArtifactReceipt): void {
+		const upload = this.#uploads.get(uploadId)
+		if (!upload) return
+		const { attachment } = upload
+		attachment.originalName = receipt.originalName
+		attachment.length = receipt.length
+		attachment.status = 'committed'
+		attachment.progress = 100
+		attachment.artifactId = receipt.artifactId
+		attachment.mediaType = receipt.mediaType
+		attachment.sha256 = receipt.sha256
+		attachment.error = undefined
+		attachment.processing = {
+			availability: 'discovering',
+			caseId: '',
+			state: 'active',
+			projectionVersion: '',
+			preferredType: 'file',
+			label: 'File',
+			summary: null,
+			metadata: {},
+			warnings: [],
+			stages: [],
+			derivedArtifacts: []
+		}
+		this.#artifacts.set(receipt.artifactId, attachment)
+
+		const content =
+			`Attached file:\n` +
+			`originalName=${JSON.stringify(receipt.originalName)}\n` +
+			`artifactId=${JSON.stringify(receipt.artifactId)}`
+		// Transient uploads never enter model history. Only the authoritative
+		// committed reference is appended, and it does not trigger inference.
+		const wire =
+			upload.session === this.session ? this.#wire : this.#sessions.get(upload.session)?.wire
+		wire?.push({ role: 'user', content })
+		this.#uploads.delete(uploadId)
+		this.#sink.onTurn?.()
+	}
+
+	hasArtifact(artifactId: string): boolean {
+		return this.#artifacts.has(artifactId)
+	}
+
+	markArtifactProcessingPending(artifactId: string): void {
+		const attachment = this.#artifacts.get(artifactId)
+		if (!attachment?.processing) return
+		attachment.processing.availability = 'discovering'
+		attachment.processing.lookupError = undefined
+		this.#sink.onTurn?.()
+	}
+
+	updateArtifactProcessing(artifactId: string, presentation: ArtifactProcessingPresentation): void {
+		const attachment = this.#artifacts.get(artifactId)
+		if (!attachment) return
+		attachment.processing = {
+			...presentation,
+			availability: 'available',
+			lookupError: undefined
+		}
+		this.#sink.onTurn?.()
+	}
+
+	markArtifactProcessingUnavailable(artifactId: string, error: string): void {
+		const attachment = this.#artifacts.get(artifactId)
+		if (!attachment?.processing) return
+		attachment.processing.availability = 'unavailable'
+		attachment.processing.lookupError = error
+		this.#sink.onTurn?.()
+	}
+
+	/**
+	 * What the model can see of one committed artifact: name, size, media type
+	 * and its live processing view. The artifact manifest in the system
+	 * context and the artifact_detail tool both read through here, so the
+	 * in-memory registry — not the rendered turns — is the source of truth.
+	 */
+	artifactInfo(artifactId: string): ArtifactAttachment | undefined {
+		return this.#artifacts.get(artifactId)
+	}
+
+	/**
+	 * Adopt a persisted artifact into the in-memory registry without a turn —
+	 * the restart path. `commitArtifactUpload` does this for fresh uploads;
+	 * this brings back what the backend already knows, so the processing
+	 * watcher (and the model's artifact view) have something to hold onto.
+	 */
+	adoptArtifact(
+		artifactId: string,
+		originalName: string,
+		mediaType?: string,
+		length?: number,
+		processing?: ArtifactProcessingView
+	): void {
+		const existing = this.#artifacts.get(artifactId)
+		if (existing) {
+			if (mediaType) existing.mediaType = mediaType
+			if (length) existing.length = length
+			if (processing)
+				existing.processing = { ...processing, availability: 'available', lookupError: undefined }
+			return
+		}
+		this.#artifacts.set(artifactId, {
+			uploadId: '',
+			publicationId: '',
+			originalName,
+			length: length ?? 0,
+			status: 'committed',
+			progress: 100,
+			artifactId,
+			mediaType,
+			processing: processing ? { ...processing, availability: 'available' } : undefined
+		})
+	}
+
+	failArtifactUpload(uploadId: string, error: string): void {
+		const attachment = this.#uploads.get(uploadId)?.attachment
+		if (!attachment || attachment.status === 'committed') return
+		attachment.status = 'failed'
+		attachment.error = error
+		this.#uploads.delete(uploadId)
+
+		this.#sink.onTurn?.()
+	}
+
+	/**
+	 * Serialize user turns across an asynchronous barge-in.
+	 *
+	 * Aborting a native/model stream is not instantaneous. The confirmed voice
+	 * candidate can become a final utterance while the old request is still
+	 * unwinding; dropping sends while `streaming` loses exactly that utterance.
+	 * Stop the old request and queue the new turn behind it instead.
+	 */
+	send(text: string, anonymousSpeaker?: AnonymousSpeaker): Promise<void> {
+		const prompt = text.trim()
+		if (prompt === '') return Promise.resolve()
+		if (this.streaming) this.stop()
+		const epoch = this.#sendEpoch
+		const operation = this.#sendTail.then(async () => {
+			if (epoch !== this.#sendEpoch) return
+			await this.#send(prompt, anonymousSpeaker)
+		})
+		this.#sendTail = operation.catch(() => {})
+		return operation
+	}
+
+	async #send(prompt: string, anonymousSpeaker?: AnonymousSpeaker): Promise<void> {
+		this.failure = null
+		// Pinned for the whole turn: `use()` may swap the visible session while
+		// the reply streams, and the reply must land where it was asked — unless
+		// a tool relocates the turn on purpose.
+		const live = {
+			turns: this.turns,
+			wire: this.#wire,
+			fromTurn: this.turns.length,
+			fromWire: this.#wire.length,
+			session: this.session
+		}
+		this.#live = live
+		live.wire.push({ role: 'user', content: prompt })
+		this.routing = prompt
 
 		// Push first, then take the reference back OUT of the array. `turns` is a
 		// `$state` proxy: it hands out a proxied view on read, and only writes
@@ -198,8 +552,19 @@ export class Chat {
 		// pushed and mutating it would update the data and tell no one — the
 		// reply would stream into a bubble that never re-renders.
 		const replyId = id()
-		this.turns.push({ id: replyId, role: 'assistant', content: '', calls: [] })
-		const reply = this.turns[this.turns.length - 1]
+		// The bubbles wait in `#pending` until the request is routed; `#settle`
+		// pushes them into the stream they belong to and re-points `#reply` at
+		// the proxied copy the array hands back — writes through the original
+		// literal would update the data and tell no one.
+		this.#pending = {
+			user: { id: id(), role: 'user', content: prompt, anonymousSpeaker },
+			reply: { id: replyId, role: 'assistant', content: '', calls: [] }
+		}
+		this.#reply = this.#pending.reply
+		const dropStub = () => {
+			const at = live.turns.findIndex((t) => t.id === replyId)
+			if (at >= 0) live.turns.splice(at, 1)
+		}
 
 		this.streaming = true
 		this.#sink.onTurn?.()
@@ -208,8 +573,14 @@ export class Chat {
 		try {
 			let nudged = false
 			for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-				const calls = await this.#round(reply)
+				const calls = await this.#round(live.wire)
+				const reply = this.#reply as Turn
 				if (calls.length === 0) {
+					// The answer round is complete: the tools before it have had
+					// every chance to route the turn, so the stream it is in now is
+					// the right one. This is the ONE place a request settles (the
+					// safety net in `finally` aside) — settling any earlier put it
+					// into the origin stream for a moment before it moved.
 					// Said it did something, called nothing — in the WHOLE turn. The
 					// round alone is the wrong scope: the natural closing sentence
 					// after a successful tool round ("Fenster öffnen ist abgehakt.")
@@ -220,10 +591,12 @@ export class Chat {
 					if (!nudged && (reply.calls?.length ?? 0) === 0 && CLAIMS_ACTION.test(reply.content)) {
 						nudged = true
 						reply.content = ''
+						this.routingReply = ''
 						this.#sink.onRestart?.()
-						this.#wire.push({ role: 'user', content: NUDGE })
+						live.wire.push({ role: 'user', content: NUDGE })
 						continue
 					}
+					this.#settle()
 					break
 				}
 
@@ -234,58 +607,118 @@ export class Chat {
 				// unsaid by the speaker.
 				if (reply.content !== '') {
 					reply.content = ''
+					this.routingReply = ''
 					this.#sink.onRestart?.()
 				}
 
 				// One tool message per call, addressed by id — the format the model's
 				// own template expects, so nothing here reads as conversation.
 				for (const call of calls) {
-					const { record, wire } = await this.#tools.run(call.name, call.arguments)
-					reply.calls?.push({ name: call.name, result: record })
-					this.#wire.push({ role: 'tool', tool_call_id: call.id, content: wire })
+					const result = await this.#tools.run(call.name, call.arguments)
+					;(this.#reply as Turn).calls?.push({ name: call.name, result: result.record })
+					live.wire.push({ role: 'tool', tool_call_id: call.id, content: result.wire })
 				}
+				// NOT settled here: a tool round may be followed by another that
+				// moves the turn (intent_list, then intent_switch). The request
+				// stays in the card until the answer round is complete.
 			}
 			this.#sink.onDone?.()
 		} catch (err) {
+			this.#settle()
+			const reply = this.#reply as Turn
 			if (this.#abort?.signal.aborted) {
 				// Interrupted. The assistant turn still has to go into the history,
 				// even half-finished: the stream threw before `#round` could record
 				// it, which would leave two user turns back to back — the malformed
 				// shape that makes this model start improvising around the hole.
-				this.#wire.push({
+				live.wire.push({
 					role: 'assistant',
 					content: reply.content || '(unterbrochen)'
 				})
-				if (reply.content === '') this.turns = this.turns.filter((t) => t.id !== replyId)
+				if (reply.content === '') dropStub()
 			} else {
 				this.failure = err instanceof Error ? err.message : String(err)
 				// Drop the stub rather than leaving an empty bubble behind. A reply
 				// that got partway through is kept — it is still worth reading.
-				if (reply.content === '') this.turns = this.turns.filter((t) => t.id !== replyId)
+				if (reply.content === '') dropStub()
 			}
 		} finally {
+			this.#settle()
 			this.streaming = false
 			this.#abort = null
+			this.#live = null
+			this.#reply = null
 		}
+	}
+
+	/** The request becomes bubbles in the stream the turn lives in now. */
+	#settle(): void {
+		const pending = this.#pending
+		const live = this.#live
+		if (!pending || !live) return
+		this.#pending = null
+		this.routing = null
+		this.routingReply = ''
+		live.turns.push(pending.user, pending.reply)
+		this.#reply = live.turns[live.turns.length - 1]
+		this.onExchange?.(live.session, pending.user, pending.reply)
+	}
+
+	/**
+	 * Move the turn in flight — its question, its reply so far, and the wire
+	 * messages behind them — into session `key`, creating it if needed. Called
+	 * by tools that change which intent the conversation is about, so the
+	 * exchange lands where it belongs. A no-op outside a turn.
+	 */
+	relocateTurn(key: string): void {
+		const live = this.#live
+		if (!live) return
+		const target =
+			key === this.session
+				? { turns: this.turns, wire: this.#wire }
+				: (this.#sessions.get(key) ?? this.#fresh())
+		if (target.turns === live.turns) return
+		if (key !== this.session) this.#sessions.set(key, target)
+		const movedTurns = live.turns.splice(live.fromTurn)
+		const movedWire = live.wire.splice(live.fromWire)
+		live.fromTurn = target.turns.length
+		live.fromWire = target.wire.length
+		target.turns.push(...movedTurns)
+		target.wire.push(...movedWire)
+		live.turns = target.turns
+		live.wire = target.wire
+		live.session = key
+		this.#sink.onTurn?.()
 	}
 
 	/**
 	 * One request/response. Streams any prose into `reply` and returns the tool
 	 * calls the model asked for, which the caller runs before going round again.
 	 */
-	async #round(reply: Turn): Promise<{ id: string; name: string; arguments: string }[]> {
+	async #round(wire: ChatMessage[]): Promise<{ id: string; name: string; arguments: string }[]> {
 		let content = ''
 		// Keyed by the index the model assigns, since fragments interleave.
 		const calls = new Map<number, { id: string; name: string; arguments: string }>()
 
-		for await (const event of streamChat(
-			[{ role: 'system', content: SYSTEM_PROMPT }, ...this.#wire],
+		const system = this.context ? `${SYSTEM_PROMPT}\n\n${this.context()}` : SYSTEM_PROMPT
+		const messages: ChatMessage[] = [{ role: 'system', content: system }, ...wire]
+		this.lastRequest = {
+			at: new Date().toISOString(),
+			session: this.session,
+			messages,
+			tools: this.#tools.specs
+		}
+		for await (const event of this.#stream(
+			messages,
 			this.#tools.specs,
 			this.#abort?.signal ?? undefined
 		)) {
 			if (event.kind === 'text') {
+				const reply = this.#reply as Turn
 				content += event.text
 				reply.content += event.text
+				// Still routing: the words show in the composer card meanwhile.
+				if (this.#pending) this.routingReply += event.text
 				this.#sink.onDelta?.(event.text)
 				// The model sometimes collapses into emitting punctuation forever —
 				// `}` after `}` after `}` — and would keep going for its whole output
@@ -295,7 +728,7 @@ export class Chat {
 				const looped = loopStart(content)
 				if (DEGENERATE.test(content) || looped !== -1) {
 					content = (looped !== -1 ? content.slice(0, looped) : content).replace(TRAILING_JUNK, '')
-					reply.content = content
+					;(this.#reply as Turn).content = content
 					break
 				}
 				continue
@@ -322,7 +755,7 @@ export class Chat {
 		// content, calls in tool_calls. The synthetic fillers of the Gemma era
 		// ("Ich rufe X auf.", a bare "…") each ended up imitated as answers —
 		// what sits here is what the model learns a reply looks like.
-		this.#wire.push({
+		wire.push({
 			role: 'assistant',
 			content,
 			...(asked.length > 0 && {
@@ -353,13 +786,58 @@ export class Chat {
 		}
 	}
 
+	/**
+	 * Fold the conversations of `from` into `into`, in order, and forget the
+	 * sources — merging intents merges their streams. The turn in flight, if
+	 * it lives in one of the sources, moves along with it.
+	 */
+	mergeSessions(from: string[], into: string): void {
+		const grab = (key: string): Session | undefined => {
+			if (key === this.session) return { turns: this.turns, wire: this.#wire }
+			return this.#sessions.get(key)
+		}
+		const target = grab(into) ?? this.#fresh()
+		if (into !== this.session) this.#sessions.set(into, target)
+		for (const key of from) {
+			if (key === into) continue
+			for (const upload of this.#uploads.values()) {
+				if (upload.session === key) upload.session = into
+			}
+			const src = grab(key)
+			if (!src) continue
+			if (this.#live && this.#live.turns === src.turns) {
+				this.#live.fromTurn += target.turns.length
+				this.#live.fromWire += target.wire.length
+				this.#live.turns = target.turns
+				this.#live.wire = target.wire
+			}
+			target.turns.push(...src.turns.splice(0))
+			target.wire.push(...src.wire.splice(0))
+			this.#sessions.delete(key)
+			// The visible session was a source: show the target instead.
+			if (key === this.session) {
+				this.session = into
+				this.turns = target.turns
+				this.#wire = target.wire
+			}
+		}
+		this.#sink.onTurn?.()
+	}
+
 	/** Stop mid-reply. Whatever has arrived so far stays on screen. */
 	stop(): void {
 		this.#abort?.abort()
 	}
 
 	clear(): void {
+		this.#sendEpoch++
 		this.stop()
+		for (const [uploadId, upload] of this.#uploads) {
+			if (upload.session === this.session) this.#uploads.delete(uploadId)
+		}
+		for (const turn of this.turns) {
+			if (turn.attachment?.artifactId) this.#artifacts.delete(turn.attachment.artifactId)
+		}
 		this.turns = []
 		this.#wire = []
 		this.failure = null

@@ -1,0 +1,92 @@
+name: platform-deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Selected target; all installs identity, verifies next, then installs production
+        default: all
+        required: true
+        type: choice
+        options: [all, identity, next, production]
+      release_run_id:
+        description: Successful platform-release run from protected next (immutable images)
+        required: true
+        type: string
+      next_proof_run_id:
+        description: Successful platform-deploy run that verified this release in next (production-only)
+        required: false
+        type: string
+      recover_from_backup:
+        description: Restore the newest verified backup into a fresh empty target
+        default: false
+        required: true
+        type: boolean
+
+permissions:
+  contents: read
+  actions: read
+  packages: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      manifest: ${{ steps.release.outputs.manifest }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+      - name: Verify release provenance and target authority before requesting secrets
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_RUN_ID: ${{ inputs.release_run_id }}
+          NEXT_PROOF_RUN_ID: ${{ inputs.next_proof_run_id }}
+          DEPLOYMENT_TARGET: ${{ inputs.target }}
+          RECOVER_FROM_BACKUP: ${{ inputs.recover_from_backup }}
+          DEPLOYMENT_ENVIRONMENT_PREFIX: ${{ vars.DEPLOYMENT_ENVIRONMENT_PREFIX }}
+          DEPLOYMENT_TARGETS_JSON: ${{ vars.DEPLOYMENT_TARGETS_JSON }}
+        run: bun scripts/verify-platform-release.ts
+
+  identity:
+    needs: validate
+    if: inputs.target == 'all' || inputs.target == 'identity'
+    uses: ./.github/workflows/platform-deploy-target.yml
+    secrets: inherit
+    with:
+      target: identity
+      manifest: ${{ needs.validate.outputs.manifest }}
+      recover_from_backup: ${{ inputs.recover_from_backup }}
+
+  next:
+    needs: [validate, identity]
+    if: >-
+      ${{ !cancelled() && needs.validate.result == 'success' &&
+      (needs.identity.result == 'success' || needs.identity.result == 'skipped') &&
+      (inputs.target == 'all' || inputs.target == 'next') }}
+    uses: ./.github/workflows/platform-deploy-target.yml
+    secrets: inherit
+    with:
+      target: next
+      manifest: ${{ needs.validate.outputs.manifest }}
+      recover_from_backup: ${{ inputs.recover_from_backup }}
+
+  production:
+    needs: [validate, identity, next]
+    if: >-
+      ${{ !cancelled() && needs.validate.result == 'success' &&
+      (needs.identity.result == 'success' || needs.identity.result == 'skipped') &&
+      (needs.next.result == 'success' || needs.next.result == 'skipped') &&
+      (inputs.target == 'all' || inputs.target == 'production') }}
+    uses: ./.github/workflows/platform-deploy-target.yml
+    secrets: inherit
+    with:
+      target: production
+      manifest: ${{ needs.validate.outputs.manifest }}
+      recover_from_backup: ${{ inputs.recover_from_backup }}

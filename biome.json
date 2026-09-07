@@ -23,9 +23,23 @@
 			"// author. a11y rules want a <title> in them, which would mean editing the",
 			"// artwork to satisfy a linter.",
 			"!!**/*.svg",
-			"// Emscripten glue shipped beside its .wasm — vendored build output that",
+			"// Emscripten glue shipped beside its .wasm \u2014 vendored build output that",
 			"// happens to live under static/, not source anyone edits here.",
-			"!!app/static/webcm"
+			"!!app/static/webcm",
+			"// The Rust voice protocol generator owns both TypeScript copies and tests",
+			"// them byte-for-byte. Its ts-rs output is valid but not Biome-formatted.",
+			"!!libs/aven-voice-protocol/generated/voice-protocol.ts",
+			"!!app/src/lib/voice/protocol.ts",
+			"// Drizzle owns migration snapshots. Formatting them creates large semantic-free diffs.",
+			"!!**/migrations/meta/*.json",
+			"// The brand stylesheets are GENERATED from the aven-ceo brand definition by",
+			"// `bun run brand:generate`. Their shape comes from that definition and the",
+			"// generator's rules, so a stylistic complaint about one is a complaint about",
+			"// the generator \u2014 and fixing it in the output would survive exactly until the",
+			"// next run. aven-brands ignores the same three files for the same reason.",
+			"!!**/brand-theme.css",
+			"!!**/brand-components.css",
+			"!!**/brand-elements.css"
 		]
 	},
 	"formatter": {
@@ -73,7 +87,31 @@
 	},
 	"overrides": [
 		{
-			"includes": ["**/*.svelte"],
+			"includes": [
+				"app/src/app.css",
+				"services/aven-api/src/app.css"
+			],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noUnknownAtRules": "off"
+					}
+				}
+			}
+		},
+		{
+			"includes": [
+				"artifact-types/**/*.json",
+				"services/artifact-store/conformance/fixtures/**/*.json"
+			],
+			"formatter": {
+				"enabled": false
+			}
+		},
+		{
+			"includes": [
+				"**/*.svelte"
+			],
 			"linter": {
 				"rules": {
 					"correctness": {
@@ -88,7 +126,9 @@
 			}
 		},
 		{
-			"includes": ["scripts/tauri-ios-asc.ts"],
+			"includes": [
+				"scripts/tauri-ios-asc.ts"
+			],
 			"linter": {
 				"rules": {
 					"suspicious": {

@@ -1,0 +1,84 @@
+name: Install dependencies
+description: >-
+  Authenticate to GitHub Packages, then install with a frozen lockfile.
+  One place, because @myavenceo/* needs a registry token and four workflows
+  install — repeating the auth step in each is how they drift.
+
+  Assumes bun is already set up: every caller pins its own bun-version, so
+  installing it again here would only duplicate that decision.
+
+inputs:
+  token:
+    description: >-
+      Token used to read @myavenceo/* from GitHub Packages. Pass the calling
+      repository's PACKAGE_READ_TOKEN secret. It is a classic token scoped to
+      read:packages because the packages belong to another repository.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Restore the lockfile-scoped Bun download cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.bun/install/cache
+        key: bun-1.3.13-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+        restore-keys: |
+          bun-1.3.13-${{ runner.os }}-
+    - name: Install with temporary GitHub Packages authentication
+      shell: bash
+      env:
+        PACKAGE_READ_TOKEN: ${{ inputs.token }}
+      # Bun requires project-local registry authentication on these runners.
+      # Keep it owner-only and restore the original file in this same step,
+      # before any scanner, build, cache export or release command can run.
+      run: |
+        set -euo pipefail
+        umask 077
+        if [[ -z "$PACKAGE_READ_TOKEN" ]]; then
+          echo '::error::PACKAGE_READ_TOKEN is missing. Resume the deployment bootstrap to verify and configure it.'
+          exit 64
+        fi
+        [[ -f .npmrc && ! -L .npmrc ]]
+        auth_stage=$(mktemp -d)
+        original_mode=$(stat -c '%a' .npmrc 2>/dev/null || stat -f '%Lp' .npmrc)
+        cp .npmrc "$auth_stage/original"
+        restore_registry() {
+          result=$?
+          trap - EXIT
+          if ! cp "$auth_stage/original" .npmrc || ! chmod "$original_mode" .npmrc; then
+            echo '::error::Could not restore the registry configuration.' >&2
+            exit 1
+          fi
+          rm -rf "$auth_stage"
+          exit "$result"
+        }
+        trap restore_registry EXIT
+        trap 'exit 130' INT
+        trap 'exit 143' TERM
+        chmod 600 .npmrc
+        printf '//npm.pkg.github.com/:_authToken=%s\n' "$PACKAGE_READ_TOKEN" >> .npmrc
+        bun install --frozen-lockfile
+    - name: Refuse to proceed if a credential reached the checkout
+      shell: bash
+      # Belt and braces for the failure this repo already had: a token written
+      # into .npmrc, swept into a release commit by `git add -A`, pushed public.
+      # Authentication is already removed. Check the index as well as the
+      # restored file so subsequent release commands cannot commit a credential.
+      run: |
+        set -euo pipefail
+        git diff --exit-code -- .npmrc
+        # The pattern is written as a character class so this file does not
+        # match itself — a literal would make the guard permanently red.
+        pattern='_authToken=[a-z]\{2,4\}_'
+        if git diff --cached --name-only | grep -q .; then
+          if git diff --cached | grep -q "$pattern"; then
+            echo "::error::A registry token is staged for commit. It must never leave the runner."
+            exit 1
+          fi
+        fi
+        if git grep --cached -nI "$pattern" -- . >/dev/null 2>&1; then
+          echo "::error::A registry token is committed in a tracked file."
+          git grep --cached -nI "$pattern" -- . | sed 's/_authToken=.*/_authToken=***/'
+          exit 1
+        fi

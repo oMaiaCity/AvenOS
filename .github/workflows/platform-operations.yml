@@ -1,0 +1,27 @@
+name: platform-operations
+
+# GitHub schedules originate on main. It can dispatch fixed prod observer code,
+# but this workflow has no deployment Environment or infrastructure credentials.
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: aven-platform-observation-dispatch
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    if: vars.DEPLOYMENT_ENVIRONMENT_PREFIX != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Start protected read-only observation
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run platform-observe.yml --repo "$GITHUB_REPOSITORY" --ref prod

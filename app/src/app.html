@@ -6,8 +6,13 @@
 			name="viewport"
 			content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover"
 		>
-		<!-- Chillax (UI/display) + Ouroboros (brand wordmark) are self-hosted via
+		<!-- Inter (UI/display) + Ouroboros (brand wordmark) are self-hosted via
 		     @font-face in app.css, so no external font request is needed. -->
+		<!-- The one mark, generated from @myavenceo/aven-ceo by `bun run brand:generate`
+		     — the same file the id service and the website serve. -->
+		<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+		<link rel="alternate icon" href="/favicon.png" sizes="32x32">
+		<meta name="theme-color" content="#1e293b">
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="off">

@@ -1,0 +1,154 @@
+name: platform-infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: One target, or all three in identity → next → production order
+        type: choice
+        options: [all, identity, next, production]
+        default: all
+        required: true
+      command:
+        description: Preview or reconcile the selected replaceable host and protected data volume
+        type: choice
+        options: [preview, up]
+        default: preview
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate-environment-prefix:
+    runs-on: ubuntu-latest
+    outputs:
+      targets: ${{ steps.targets.outputs.targets }}
+    steps:
+      - name: Require an activated infrastructure generation
+        id: targets
+        env:
+          DEPLOYMENT_ENVIRONMENT_PREFIX: ${{ vars.DEPLOYMENT_ENVIRONMENT_PREFIX }}
+          DEPLOYMENT_TARGETS_JSON: ${{ vars.DEPLOYMENT_TARGETS_JSON }}
+          REQUESTED_TARGET: ${{ inputs.target }}
+          WORKFLOW_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_ACTOR" != *'[bot]' ]] || { echo 'Infrastructure changes require an operator dispatch.' >&2; exit 64; }
+          case "$WORKFLOW_REF:$REQUESTED_TARGET" in
+            refs/heads/prod:all|refs/heads/prod:identity|refs/heads/prod:next|refs/heads/prod:production|refs/heads/next:next) ;;
+            *) echo 'Infrastructure requires protected next (next only) or prod.' >&2; exit 64 ;;
+          esac
+          [[ "$DEPLOYMENT_ENVIRONMENT_PREFIX" =~ ^avenos-[0-9a-f]{10}$ ]]
+          if [[ "$REQUESTED_TARGET" == all ]]; then
+            targets='["identity","next","production"]'
+          else
+            targets=$(jq -cn --arg target "$REQUESTED_TARGET" '[$target]')
+          fi
+          jq -e --argjson requested "$targets" '
+            . as $prepared |
+            type == "array" and
+            ($requested | all(. as $target | $prepared | index($target) != null))
+          ' <<<"$DEPLOYMENT_TARGETS_JSON" >/dev/null || {
+            echo "One or more requested targets were not prepared by the active bootstrap" >&2
+            exit 64
+          }
+          echo "targets=$targets" >> "$GITHUB_OUTPUT"
+
+  infrastructure:
+    needs: validate-environment-prefix
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      max-parallel: 1
+      matrix:
+        target: ${{ fromJSON(needs.validate-environment-prefix.outputs.targets) }}
+    environment: ${{ format('{0}-{1}', vars.DEPLOYMENT_ENVIRONMENT_PREFIX, matrix.target) }}
+    concurrency:
+      group: aven-platform-infrastructure-${{ vars.DEPLOYMENT_ENVIRONMENT_PREFIX }}-${{ matrix.target }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+      - uses: ./.github/actions/bun-install
+        with:
+          token: ${{ secrets.PACKAGE_READ_TOKEN }}
+      - run: bun run test:infra
+      - name: Validate state settings
+        env:
+          STATE_BUCKET: ${{ vars.PULUMI_STATE_S3_BUCKET }}
+          STATE_REGION: ${{ vars.PULUMI_STATE_S3_REGION }}
+          STACK_NAME: ${{ vars.PULUMI_STACK }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          [[ "$STATE_BUCKET" =~ ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$ ]]
+          test "$STATE_REGION" = hel1
+          test "$STACK_NAME" = "organization/aven-platform/$TARGET"
+      - name: Install Pulumi CLI for DNS reconciliation
+        if: matrix.target != 'identity'
+        uses: pulumi/actions@8e5e406f4007fca908480587cb9893c07090f58d # v7
+        with:
+          pulumi-version: 3.256.0
+      - name: Reconcile managed DNS ownership
+        if: matrix.target != 'identity'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.PULUMI_STATE_S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PULUMI_STATE_S3_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ vars.PULUMI_STATE_S3_REGION }}
+          AWS_DEFAULT_REGION: ${{ vars.PULUMI_STATE_S3_REGION }}
+          AWS_EC2_METADATA_DISABLED: "true"
+          PULUMI_CONFIG_PASSPHRASE: ${{ secrets.PULUMI_CONFIG_PASSPHRASE }}
+          PULUMI_BACKEND_URL: "s3://${{ vars.PULUMI_STATE_S3_BUCKET }}/avenos/platform?endpoint=${{ vars.PULUMI_STATE_S3_REGION }}.your-objectstorage.com&region=${{ vars.PULUMI_STATE_S3_REGION }}&s3ForcePathStyle=true&awssdk=v2"
+          PULUMI_STACK: ${{ vars.PULUMI_STACK }}
+          HETZNER_COMPUTE_TOKEN: ${{ secrets.HETZNER_COMPUTE_TOKEN }}
+          HETZNER_DNS_TOKEN: ${{ secrets.HETZNER_DNS_TOKEN }}
+          HETZNER_LOCATION: ${{ vars.HETZNER_LOCATION }}
+          HETZNER_SERVER_TYPE: ${{ vars.HETZNER_SERVER_TYPE }}
+          HETZNER_SERVER_ARCHITECTURE: amd64
+          HETZNER_OS_IMAGE: ${{ vars.HETZNER_OS_IMAGE }}
+          IDENTITY_SERVER_TYPE: ${{ vars.IDENTITY_SERVER_TYPE }}
+          PLATFORM_SERVER_TYPE: ${{ vars.PLATFORM_SERVER_TYPE }}
+          IDENTITY_VOLUME_SIZE_GB: ${{ vars.IDENTITY_VOLUME_SIZE_GB }}
+          PLATFORM_VOLUME_SIZE_GB: ${{ vars.PLATFORM_VOLUME_SIZE_GB }}
+          SSH_ALLOWED_CIDRS: ${{ vars.SSH_ALLOWED_CIDRS }}
+          DEPLOYMENT_TARGET: platform
+          DEPLOYMENT_ENVIRONMENT: ${{ matrix.target }}
+          DNS_RECONCILIATION_MODE: ${{ inputs.command == 'preview' && 'state-only' || 'full' }}
+          PULUMI_SKIP_UPDATE_CHECK: "true"
+        run: node infrastructure/platform/src/adopt-dns.mjs
+      - name: ${{ inputs.command }} infrastructure
+        uses: pulumi/actions@8e5e406f4007fca908480587cb9893c07090f58d # v7
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.PULUMI_STATE_S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PULUMI_STATE_S3_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ vars.PULUMI_STATE_S3_REGION }}
+          AWS_DEFAULT_REGION: ${{ vars.PULUMI_STATE_S3_REGION }}
+          AWS_EC2_METADATA_DISABLED: "true"
+          PULUMI_CONFIG_PASSPHRASE: ${{ secrets.PULUMI_CONFIG_PASSPHRASE }}
+          HETZNER_COMPUTE_TOKEN: ${{ secrets.HETZNER_COMPUTE_TOKEN }}
+          HETZNER_DNS_TOKEN: ${{ secrets.HETZNER_DNS_TOKEN }}
+          HETZNER_LOCATION: ${{ vars.HETZNER_LOCATION }}
+          HETZNER_SERVER_TYPE: ${{ vars.HETZNER_SERVER_TYPE }}
+          HETZNER_SERVER_ARCHITECTURE: amd64
+          HETZNER_OS_IMAGE: ${{ vars.HETZNER_OS_IMAGE }}
+          IDENTITY_SERVER_TYPE: ${{ vars.IDENTITY_SERVER_TYPE }}
+          PLATFORM_SERVER_TYPE: ${{ vars.PLATFORM_SERVER_TYPE }}
+          IDENTITY_VOLUME_SIZE_GB: ${{ vars.IDENTITY_VOLUME_SIZE_GB }}
+          PLATFORM_VOLUME_SIZE_GB: ${{ vars.PLATFORM_VOLUME_SIZE_GB }}
+          SSH_ALLOWED_CIDRS: ${{ vars.SSH_ALLOWED_CIDRS }}
+          DEPLOYMENT_TARGET: ${{ matrix.target == 'identity' && 'identity' || 'platform' }}
+          DEPLOYMENT_ENVIRONMENT: ${{ matrix.target }}
+          PULUMI_SKIP_UPDATE_CHECK: "true"
+        with:
+          command: ${{ inputs.command }}
+          stack-name: ${{ vars.PULUMI_STACK }}
+          work-dir: infrastructure/platform
+          cloud-url: "s3://${{ vars.PULUMI_STATE_S3_BUCKET }}/avenos/platform?endpoint=${{ vars.PULUMI_STATE_S3_REGION }}.your-objectstorage.com&region=${{ vars.PULUMI_STATE_S3_REGION }}&s3ForcePathStyle=true&awssdk=v2"
+          secrets-provider: passphrase
+          upsert: true
+          refresh: true
+          diff: true
+          comment-on-summary: true

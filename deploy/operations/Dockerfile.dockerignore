@@ -1,0 +1,7 @@
+*
+!deploy/
+!deploy/operations/
+!deploy/operations/backup.sh
+!deploy/operations/restore.sh
+!deploy/operations/entrypoint.sh
+!deploy/operations/healthcheck.sh

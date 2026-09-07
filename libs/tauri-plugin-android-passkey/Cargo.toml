@@ -1,0 +1,17 @@
+[package]
+name = "tauri-plugin-android-passkey"
+version = "26.8.28-next.9"
+description = "Native Android passkey assertions for avenOS"
+authors = ["Aven"]
+license = "MIT OR Apache-2.0"
+edition = "2021"
+links = "tauri-plugin-android-passkey"
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }

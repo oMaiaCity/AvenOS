@@ -1,0 +1,21 @@
+{
+  "typeKey": "bookkeeping.invoice-candidate",
+  "version": 2,
+  "schemaProfileId": "artifact-json-schema-profile-v1",
+  "payloadSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object", "additionalProperties": false,
+    "required": ["supplier", "invoiceNumber", "currency", "netMinor", "taxMinor", "grossMinor", "dueDate", "summary"],
+    "properties": {
+      "supplier": {"type": ["string", "null"], "minLength": 1, "maxLength": 255},
+      "invoiceNumber": {"type": ["string", "null"], "minLength": 1, "maxLength": 128},
+      "currency": {"type": ["string", "null"], "pattern": "^[A-Z]{3}$"},
+      "netMinor": {"type": ["integer", "null"], "minimum": -9007199254740991, "maximum": 9007199254740991},
+      "taxMinor": {"type": ["integer", "null"], "minimum": -9007199254740991, "maximum": 9007199254740991},
+      "grossMinor": {"type": ["integer", "null"], "minimum": -9007199254740991, "maximum": 9007199254740991},
+      "dueDate": {"type": ["string", "null"], "maxLength": 32},
+      "summary": {"type": "string", "minLength": 1, "maxLength": 1000}
+    }
+  },
+  "blobPolicy": "forbidden", "referenceRules": []
+}

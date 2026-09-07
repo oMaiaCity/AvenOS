@@ -8,14 +8,14 @@ import { useNodesInitialized, useSvelteFlow } from '@xyflow/svelte'
  * parent passes the wrapper's live client size in; we fit once nodes AND
  * a real surface exist, and re-fit whenever that surface changes size.
  */
-const { w, h }: { w: number; h: number } = $props()
+const { w, h, revision = '' }: { w: number; h: number; revision?: string } = $props()
 
 const initialized = useNodesInitialized()
 const { fitView } = useSvelteFlow()
 
 let fittedFor = $state('')
 $effect(() => {
-	const key = `${w}x${h}`
+	const key = `${w}x${h}:${revision}`
 	if (initialized.current && w > 50 && h > 50 && fittedFor !== key) {
 		fittedFor = key
 		void fitView({ padding: 0.1 })

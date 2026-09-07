@@ -1,0 +1,34 @@
+{
+  "typeKey": "core.document-classification",
+  "version": 1,
+  "schemaProfileId": "artifact-json-schema-profile-v1",
+  "payloadSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["rawKind", "resolvedKind", "family", "confidenceBps", "reason", "resolutionMode", "alternatives"],
+    "properties": {
+      "rawKind": { "type": "string", "minLength": 1, "maxLength": 128 },
+      "resolvedKind": { "type": "string", "minLength": 1, "maxLength": 128 },
+      "family": { "type": "string", "minLength": 1, "maxLength": 128 },
+      "confidenceBps": { "type": "integer", "minimum": 0, "maximum": 10000 },
+      "reason": { "type": "string", "minLength": 1, "maxLength": 2000 },
+      "resolutionMode": { "enum": ["model", "rule", "human", "fallback"] },
+      "alternatives": {
+        "type": "array",
+        "maxItems": 16,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "confidenceBps"],
+          "properties": {
+            "kind": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "confidenceBps": { "type": "integer", "minimum": 0, "maximum": 10000 }
+          }
+        }
+      }
+    }
+  },
+  "blobPolicy": "forbidden",
+  "referenceRules": []
+}

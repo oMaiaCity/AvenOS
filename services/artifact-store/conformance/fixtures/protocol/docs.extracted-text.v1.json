@@ -1,0 +1,20 @@
+{
+  "typeKey": "docs.extracted-text",
+  "version": 1,
+  "schemaProfileId": "artifact-json-schema-profile-v1",
+  "payloadSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["method", "language", "pageCount", "characterCount", "complete"],
+    "properties": {
+      "method": { "enum": ["native", "ocr", "hybrid", "mock"] },
+      "language": { "type": "string", "minLength": 2, "maxLength": 32 },
+      "pageCount": { "type": "integer", "minimum": 1, "maximum": 256 },
+      "characterCount": { "type": "integer", "minimum": 0, "maximum": 2000000 },
+      "complete": { "type": "boolean" }
+    }
+  },
+  "blobPolicy": "required",
+  "referenceRules": []
+}

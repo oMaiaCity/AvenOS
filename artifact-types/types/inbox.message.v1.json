@@ -1,0 +1,75 @@
+{
+  "typeKey": "inbox.message",
+  "version": 1,
+  "tier": "T1",
+  "skill": "inbox",
+  "blobPolicy": "optional",
+  "payloadSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "inbox.message@1",
+    "description": "One received message. The raw RFC 5322 bytes may be the blob; attachments are structural references because the message value contains them.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["messageId", "from", "to", "subject", "receivedAt", "mailbox"],
+    "properties": {
+      "messageId": { "type": "string", "maxLength": 512 },
+      "from": { "$ref": "#/$defs/party" },
+      "to": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/party" } },
+      "cc": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/party" } },
+      "subject": { "type": "string", "maxLength": 1024 },
+      "receivedAt": { "type": "string", "format": "date-time" },
+      "sentAt": { "type": ["string", "null"], "format": "date-time" },
+      "bodyText": { "type": ["string", "null"], "maxLength": 16384 },
+      "mailbox": { "type": "string", "maxLength": 255 },
+      "folder": { "type": ["string", "null"], "maxLength": 255 }
+    },
+    "$defs": {
+      "party": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["address"],
+        "properties": {
+          "address": { "type": "string", "maxLength": 320 },
+          "name": { "type": ["string", "null"], "maxLength": 255 }
+        }
+      }
+    }
+  },
+  "referencesSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "array",
+    "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "ordinal", "targetArtifactId", "targetArtifactSha256", "locator", "attributes"],
+      "properties": {
+        "role": { "const": "attachment" },
+        "ordinal": { "type": "integer", "minimum": 0 },
+        "targetArtifactId": { "type": "string", "format": "uuid" },
+        "targetArtifactSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "locator": { "type": ["object", "null"] },
+        "attributes": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "contentId": { "type": "string", "maxLength": 255 },
+            "inline": { "type": "boolean" }
+          }
+        }
+      }
+    }
+  },
+  "search": {
+    "fullText": ["/subject", "/bodyText", "/from/name"],
+    "fields": [
+      { "path": "/from/address", "kind": "keyword" },
+      { "path": "/receivedAt", "kind": "timestamp" },
+      { "path": "/mailbox", "kind": "keyword" }
+    ]
+  },
+  "notes": [
+    "UI: the mail-trigger node ('dedupe: message-id') and the kita intent's 'E-Mail · Stadt'.",
+    "messageId dedupe is a producer-side idempotency key, never a store-level uniqueness constraint — the same message legitimately arrives twice through two mailboxes.",
+    "Full body goes to the blob; bodyText is a bounded convenience copy for search and preview."
+  ]
+}

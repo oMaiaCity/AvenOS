@@ -1,0 +1,48 @@
+{
+  "typeKey": "review.decision",
+  "version": 1,
+  "tier": "T1",
+  "skill": "human-reviewer",
+  "blobPolicy": "forbidden",
+  "payloadSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "review.decision@1",
+    "description": "One human decision at one gate. The output of every HITL in the app; downstream executors authorize against this artifact, never against the existence of a proposal.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["outcome", "gate", "decidedAt", "decidedVia"],
+    "properties": {
+      "outcome": { "enum": ["approved", "rejected", "abstained", "needs-changes", "escalated"] },
+      "gate": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*$",
+        "maxLength": 64,
+        "$comment": "The mock-up's nine methods: draft_approve, payment_release, classify_confirm, entity_merge, calendar_conflict, docs_delete, match_confirm, archive_confirm, upload_request. Kept as a pattern so a new gate does not need a type version."
+      },
+      "selection": { "type": ["string", "null"], "maxLength": 255 },
+      "rationale": { "type": ["string", "null"], "maxLength": 4000 },
+      "decidedAt": { "type": "string", "format": "date-time" },
+      "decidedVia": { "const": "button" },
+      "reviewerRole": { "type": ["string", "null"], "maxLength": 64 }
+    }
+  },
+  "referencesSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "array",
+    "maxItems": 0
+  },
+  "search": {
+    "fullText": ["/rationale"],
+    "fields": [
+      { "path": "/outcome", "kind": "keyword" },
+      { "path": "/gate", "kind": "keyword" },
+      { "path": "/decidedAt", "kind": "timestamp" }
+    ]
+  },
+  "notes": [
+    "The subject (draft, payment request, duplicate check, match candidate) is a declared run input with role 'subject'; the reviewer is the run executor and the authenticated publisher may differ.",
+    "decidedVia is a const so 'voice cannot confirm; only a physical button press' (GatePreview.svelte) is auditable rather than merely enforced in the UI.",
+    "Multiple reviewers produce multiple decisions. Adjudication consumes them; it never overwrites them.",
+    "A high confidence score is not a decision. Automatic acceptance still needs a policy-evaluation run that emits its own decision artifact against an exact policy.snapshot@1."
+  ]
+}

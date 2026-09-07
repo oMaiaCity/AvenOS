@@ -1,0 +1,22 @@
+[package]
+name = "aven-artifact-store-core"
+description = "Transport-neutral application kernel for the Aven artifact store"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+aven-artifact-store-contract = { path = "../contract" }
+jsonschema.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+time.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true

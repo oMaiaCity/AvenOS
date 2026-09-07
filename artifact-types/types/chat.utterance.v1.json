@@ -1,0 +1,49 @@
+{
+  "typeKey": "chat.utterance",
+  "version": 1,
+  "tier": "T1",
+  "skill": "chat",
+  "blobPolicy": "forbidden",
+  "payloadSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "chat.utterance@1",
+    "description": "One human utterance that started or changed durable work. Spoken or typed.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["text", "language", "modality", "spokenAt"],
+    "properties": {
+      "text": { "type": "string", "minLength": 1, "maxLength": 8192 },
+      "language": { "type": "string", "pattern": "^[a-z]{2}(-[A-Z]{2})?$" },
+      "modality": { "enum": ["voice", "text"] },
+      "spokenAt": { "type": "string", "format": "date-time" },
+      "asr": {
+        "type": ["object", "null"],
+        "additionalProperties": false,
+        "required": ["model"],
+        "properties": {
+          "model": { "type": "string", "maxLength": 128 },
+          "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+          "durationMs": { "type": ["integer", "null"], "minimum": 0 }
+        }
+      },
+      "conversationRef": { "type": ["string", "null"], "maxLength": 128 }
+    }
+  },
+  "referencesSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "array",
+    "maxItems": 0
+  },
+  "search": {
+    "fullText": ["/text"],
+    "fields": [
+      { "path": "/modality", "kind": "keyword" },
+      { "path": "/spokenAt", "kind": "timestamp" }
+    ]
+  },
+  "notes": [
+    "UI: 'Freitext · Chat' on the umzug and fitnessstudio intents, and the todos voice-trigger.",
+    "Only utterances that start or change durable work are published. Assistant deltas, tool rounds and the placeholder/discard dance stay operational.",
+    "conversationRef is an opaque projection key. The conversation itself is not an artifact — it is a mutable case."
+  ]
+}

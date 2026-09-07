@@ -1,8 +1,9 @@
+import fs from 'node:fs'
 import { createRequire } from 'node:module'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { avenUtilities } from '@myavenceo/aven-ceo/vite'
 import { sveltekit } from '@sveltejs/kit/vite'
-import tailwindcss from '@tailwindcss/vite'
 import { defineConfig, loadEnv } from 'vite'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -24,8 +25,38 @@ const appVersion =
 	process.env.PUBLIC_APP_VERSION?.trim() ||
 	(require('./package.json') as { version: string }).version
 
+/**
+ * The per-developer env file (`AVENOS_APP_ENV_FILE=../.env.samuel`), merged
+ * here because `bun --env-file=X x vite` does NOT hand the file to the vite it
+ * spawns — only plain environment variables cross that boundary. Vite's own
+ * `loadEnv` only reads `.env` / `.env.<mode>` / `.env.local`, so a personal
+ * `.env.<name>` was never seen by the dev server. Same rule as below: the
+ * process environment wins over the file.
+ */
+function loadPersonalEnv(): Record<string, string> {
+	const file = process.env.AVENOS_APP_ENV_FILE
+	if (!file) return {}
+	const full = path.resolve(__dirname, file)
+	if (!fs.existsSync(full)) return {}
+	const out: Record<string, string> = {}
+	for (const raw of fs.readFileSync(full, 'utf8').split(/\r?\n/)) {
+		const line = raw.trim()
+		if (line === '' || line.startsWith('#')) continue
+		const eq = line.indexOf('=')
+		if (eq < 1) continue
+		const key = line
+			.slice(0, eq)
+			.trim()
+			.replace(/^export\s+/, '')
+		let value = line.slice(eq + 1).trim()
+		if (/^(['"]).*\1$/.test(value)) value = value.slice(1, -1)
+		out[key] = value
+	}
+	return out
+}
+
 export default defineConfig(({ mode }) => {
-	const loaded = loadEnv(mode, repoRoot, '')
+	const loaded = { ...loadPersonalEnv(), ...loadEnv(mode, repoRoot, '') }
 	for (const key of Object.keys(loaded)) {
 		if (process.env[key] === undefined) process.env[key] = loaded[key]
 	}
@@ -49,14 +80,7 @@ export default defineConfig(({ mode }) => {
 		envPrefix: ['VITE_', 'PUBLIC_', 'TAURI_ENV_'],
 		cacheDir,
 		clearScreen: false,
-		// Pre-bundle @storagesdk/core (+ its /adapter subpath), used by the in-app composer. Without
-		// this, Vite discovers it at runtime (the composer view is behind auth/routing, not in the
-		// startup crawl), then re-optimizes + reloads — a reload the Tauri WKWebView fails to ride on
-		// a cold cache ("Importing a module script failed"). Eager pre-bundling avoids that churn.
-		optimizeDeps: {
-			include: ['@storagesdk/core', '@storagesdk/core/adapter']
-		},
-		plugins: [tailwindcss(), sveltekit()],
+		plugins: [avenUtilities({ content: ['src'] }), sveltekit()],
 		preview: {
 			headers: crossOriginIsolationHeaders
 		},

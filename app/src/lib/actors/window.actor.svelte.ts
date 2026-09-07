@@ -37,6 +37,9 @@ export class WindowActor extends Actor {
 		const name = view.name ?? `${subject.manifest.name} Window`
 		super({
 			id,
+			authority: 'ceo.aven',
+			namespace: 'ui.windows',
+			version: '1',
 			name,
 			description:
 				`The "${name}" window of ${subject.manifest.name}: renders its state as an ` +
@@ -52,8 +55,9 @@ export class WindowActor extends Actor {
 				{
 					name: `${key}_window_toggle`,
 					description:
-						`Shows "${name}" on the Views tab (open=true) or hides it. ` +
-						'Without an argument it toggles.',
+						`Shows the "${name}" view on screen (open=true) or hides it (open=false); ` +
+						'without an argument it toggles. Use it whenever the user asks to SEE or ' +
+						`show ${name} ("zeig mir …") — it puts the view in front of the activity stream.`,
 					parameters: {
 						type: 'object',
 						properties: {

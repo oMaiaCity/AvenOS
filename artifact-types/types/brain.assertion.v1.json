@@ -1,0 +1,44 @@
+{
+  "typeKey": "brain.assertion",
+  "version": 1,
+  "tier": "T1",
+  "skill": "brain",
+  "blobPolicy": "forbidden",
+  "payloadSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "brain.assertion@1",
+    "description": "One typed semantic claim between two artifacts. The knowledge graph the UI draws is a projection over accepted assertions — there is no mutable edge table.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["predicate", "subjectArtifactId", "objectArtifactId", "confidence", "assertedBy", "assertedAt"],
+    "properties": {
+      "predicate": { "enum": ["mentions", "belongs-to", "issued-by", "party-of", "same-as", "supersedes", "about"] },
+      "subjectArtifactId": { "type": "string", "format": "uuid" },
+      "objectArtifactId": { "type": "string", "format": "uuid" },
+      "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+      "assertedBy": { "enum": ["agent", "human"] },
+      "assertedAt": { "type": "string", "format": "date-time" },
+      "rationale": { "type": ["string", "null"], "maxLength": 2000 }
+    }
+  },
+  "referencesSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "array",
+    "maxItems": 0
+  },
+  "search": {
+    "fullText": ["/rationale"],
+    "fields": [
+      { "path": "/predicate", "kind": "keyword" },
+      { "path": "/subjectArtifactId", "kind": "keyword" },
+      { "path": "/objectArtifactId", "kind": "keyword" },
+      { "path": "/confidence", "kind": "number" }
+    ]
+  },
+  "notes": [
+    "UI: the link node ('Wikilinks in beide Richtungen — das Netz wächst'), '12 Artefakte im Brain', '[[Umzug 2025]] · 9 Verknüpfungen', 'Backlinks · 3'.",
+    "Both endpoints are also declared run inputs. The ids in the payload make the claim self-contained; the run inputs make it authorizable and traversable.",
+    "same-as must never be inferred from a duplicate check. It needs its own assertion, normally after a review.decision@1.",
+    "Retraction publishes a new assertion with predicate 'supersedes' pointing at the old one; assertions are never edited or deleted."
+  ]
+}

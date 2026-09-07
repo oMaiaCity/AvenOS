@@ -1,0 +1,32 @@
+services:
+  actor-runner:
+    healthcheck:
+      start_period: 180s
+      retries: 40
+
+  api-migrate:
+    environment:
+      SITE_HOST_PUBLIC_IPV4: ""
+      SITE_HOST_PUBLIC_IPV6: ""
+      SYSTEM_SITES_JSON: '[]'
+
+  api:
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    environment:
+      SITE_HOST_PUBLIC_IPV4: ""
+      SITE_HOST_PUBLIC_IPV6: ""
+      SYSTEM_SITES_JSON: '[]'
+      LLM_GATEWAY_ENABLED: ${LLM_GATEWAY_ENABLED:?required}
+      LLM_GATEWAY_MODELS_JSON: ${LLM_GATEWAY_MODELS_JSON:?required}
+      LLM_GATEWAY_CREDENTIALS_JSON: ${LLM_GATEWAY_CREDENTIALS_JSON:?required}
+      LLM_GATEWAY_TIMEOUT_SECONDS: ${LLM_GATEWAY_TIMEOUT_SECONDS:-180}
+      LLM_GATEWAY_ALLOW_INSECURE_HTTP: ${LLM_GATEWAY_ALLOW_INSECURE_HTTP:?required}
+
+  checkout:
+    environment:
+      ALLOW_FAKE_PAYMENTS: ${ALLOW_FAKE_PAYMENTS:-true}
+      POLAR_API_KEY: ${POLAR_API_KEY:-}
+      POLAR_SERVER: ${POLAR_SERVER:-sandbox}
+      POLAR_WEBHOOK_SECRET: ${POLAR_WEBHOOK_SECRET:-polar-webhook-e2e}
+      AVEN_TIER_NAME: ${AVEN_TIER_NAME:-}

@@ -1,0 +1,51 @@
+{
+  "typeKey": "core.file",
+  "version": 1,
+  "tier": "T0",
+  "skill": "inbox",
+  "blobPolicy": "required",
+  "payloadSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "core.file@1",
+    "description": "One exact received or produced file occurrence. The bytes live in the blob; this payload is the occurrence metadata.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["originalName", "declaredMediaType", "detectedMediaType", "sizeBytes", "source"],
+    "properties": {
+      "originalName": { "type": "string", "minLength": 1, "maxLength": 512 },
+      "declaredMediaType": { "type": "string", "maxLength": 255 },
+      "detectedMediaType": { "type": "string", "maxLength": 255 },
+      "sizeBytes": { "type": "integer", "minimum": 0 },
+      "pageCount": { "type": ["integer", "null"], "minimum": 0 },
+      "source": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["channel", "receivedAt"],
+        "properties": {
+          "channel": { "enum": ["upload", "email", "postal-scan", "share-sheet", "connector"] },
+          "label": { "type": ["string", "null"], "maxLength": 255 },
+          "receivedAt": { "type": "string", "format": "date-time" },
+          "externalRef": { "type": ["string", "null"], "maxLength": 512 }
+        }
+      }
+    }
+  },
+  "referencesSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "array",
+    "maxItems": 0
+  },
+  "search": {
+    "fullText": ["/originalName", "/source/label"],
+    "fields": [
+      { "path": "/detectedMediaType", "kind": "keyword" },
+      { "path": "/source/channel", "kind": "keyword" },
+      { "path": "/source/receivedAt", "kind": "timestamp" }
+    ]
+  },
+  "notes": [
+    "Detected media type comes from the bytes; declaredMediaType is retained as provenance and never trusted.",
+    "Identical bytes arriving twice are two occurrences sharing one blob — that is what makes 'drei identische Scans' representable.",
+    "originalName is never interpreted as a path."
+  ]
+}

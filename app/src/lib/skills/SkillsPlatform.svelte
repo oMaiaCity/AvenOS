@@ -119,7 +119,7 @@ const nodeTypes = { flow: FlowNode }
 <div class="flex min-h-0 flex-1 gap-2">
 	<!-- The catalog: a skill is a collection of composable workflows. -->
 	<nav
-		class="flex w-56 shrink-0 flex-col overflow-y-auto rounded-2xl border border-border bg-surface-card/50"
+		class="flex w-56 shrink-0 flex-col overflow-y-auto rounded-2xl border border-border bg-surface-card/25"
 	>
 		<h3
 			class="border-border border-b px-4 pt-3 pb-2 font-semibold text-foreground/50 text-xs uppercase tracking-wide"
@@ -130,13 +130,13 @@ const nodeTypes = { flow: FlowNode }
 			<button
 				type="button"
 				onclick={() => pickSkill(s.id)}
-				class="border-border/50 border-b px-4 py-2.5 text-left transition-colors {skillId === s.id
-					? 'bg-surface-cream'
+				class="border-border/25 border-b px-4 py-2.5 text-left transition-colors {skillId === s.id
+					? 'bg-surface-sunken'
 					: 'hover:bg-surface-card'}"
 			>
 				<div class="flex items-baseline gap-2">
 					<span class="font-semibold text-sm">{s.name}</span>
-					<span class="font-mono text-[0.625rem] text-foreground/40">
+					<span class="text text--mono-meta">
 						{s.workflows.length}
 						{s.workflows.length === 1 ? 'workflow' : 'workflows'}
 					</span>
@@ -144,7 +144,7 @@ const nodeTypes = { flow: FlowNode }
 				<p class="pt-0.5 text-foreground/50 text-xs leading-snug">{s.about}</p>
 			</button>
 		{/each}
-		<p class="px-4 py-3 text-[0.625rem] text-foreground/40 leading-relaxed">
+		<p class="px-4 py-3 text-[length:var(--fs-micro)] text-foreground/35 leading-relaxed">
 			A skill is a collection of composable workflows; a workflow is triggers → nodes → outputs; a
 			node is an actor. Every wire is derived from provides ∩ requires — nothing stores a graph.
 		</p>
@@ -169,7 +169,7 @@ const nodeTypes = { flow: FlowNode }
 					</button>
 				{/each}
 			</div>
-			<span class="truncate font-mono text-[0.625rem] text-foreground/40">
+			<span class="truncate text text--mono-meta">
 				{boundary.requires.join(' · ')}
 				→ {boundary.produces.slice(0, 4).join(' · ')}
 			</span>
@@ -177,7 +177,7 @@ const nodeTypes = { flow: FlowNode }
 		<div
 			bind:clientWidth={canvasW}
 			bind:clientHeight={canvasH}
-			class="min-h-0 flex-1 overflow-hidden rounded-2xl border border-border bg-surface-soft/60"
+			class="min-h-0 flex-1 overflow-hidden rounded-2xl border border-border bg-surface-sunken/25"
 		>
 			{#key skillId + workflowId}
 				<SvelteFlow
@@ -213,21 +213,26 @@ const nodeTypes = { flow: FlowNode }
 			<div>
 				<div class="flex items-baseline gap-2">
 					<span class="font-semibold text-sm">{selected.name}</span>
-					<span class="font-mono text-[0.625rem] text-foreground/40">{selected.id}</span>
-					<span class="ml-auto rounded-md bg-surface-soft px-1.5 py-0.5 font-mono text-[0.625rem]">
+					<span class="text text--mono-meta">{selected.id}</span>
+					<span
+						class="ml-auto rounded-md bg-surface-sunken px-1.5 py-0.5 font-mono text-[length:var(--fs-micro)]"
+					>
 						{selected.type}
 					</span>
 				</div>
-				<p class="pt-1 text-foreground/60 text-xs leading-relaxed">{selected.about}</p>
+				<p class="pt-1 text-foreground/65 text-xs leading-relaxed">{selected.about}</p>
 			</div>
 			<div class="flex flex-wrap gap-1">
 				{#each selected.requires ?? [] as r (r)}
-					<span class="rounded-md bg-surface-soft px-1.5 py-0.5 font-mono text-[0.625rem]"
+					<span
+						class="rounded-md bg-surface-sunken px-1.5 py-0.5 font-mono text-[length:var(--fs-micro)]"
 						>→ {r}</span
 					>
 				{/each}
 				{#each selected.provides ?? [] as p (p)}
-					<span class="rounded-md bg-surface-cream px-1.5 py-0.5 font-mono text-[0.625rem]">
+					<span
+						class="rounded-md bg-surface-sunken px-1.5 py-0.5 font-mono text-[length:var(--fs-micro)]"
+					>
 						{p}
 						→
 					</span>
@@ -243,7 +248,7 @@ const nodeTypes = { flow: FlowNode }
 				<div>
 					<h4 class="pb-1 font-semibold text-xs">Config</h4>
 					<pre
-						class="overflow-x-auto rounded-xl bg-surface-soft p-3 font-mono text-[0.625rem] leading-relaxed"
+						class="overflow-x-auto rounded-xl bg-surface-sunken p-3 font-mono text-[length:var(--fs-micro)] leading-relaxed"
 					>{JSON.stringify(
 							selected.config,
 							null,
@@ -254,7 +259,7 @@ const nodeTypes = { flow: FlowNode }
 			<div>
 				<h4 class="pb-1 font-semibold text-xs">JSON</h4>
 				<pre
-					class="overflow-x-auto rounded-xl bg-surface-soft p-3 font-mono text-[0.625rem] leading-relaxed"
+					class="overflow-x-auto rounded-xl bg-surface-sunken p-3 font-mono text-[length:var(--fs-micro)] leading-relaxed"
 				>{JSON.stringify(
 						{ ...selected, machine: selected.machine ? '…(.pl)' : undefined },
 						null,
@@ -262,19 +267,23 @@ const nodeTypes = { flow: FlowNode }
 					)}</pre>
 			</div>
 		{:else}
-			<p class="pt-6 text-center text-foreground/40 text-sm">
+			<p class="pt-6 text-center text-foreground/35 text-sm">
 				Click a node — its manifest, statechart and JSON render here.
 			</p>
 			<div>
 				<h4 class="pb-1 font-semibold text-xs">Skill boundary (derived)</h4>
 				<div class="flex flex-wrap gap-1">
 					{#each boundary.requires as r (r)}
-						<span class="rounded-md bg-surface-soft px-1.5 py-0.5 font-mono text-[0.625rem]">
+						<span
+							class="rounded-md bg-surface-sunken px-1.5 py-0.5 font-mono text-[length:var(--fs-micro)]"
+						>
 							→ {r}
 						</span>
 					{/each}
 					{#each boundary.produces as p (p)}
-						<span class="rounded-md bg-surface-cream px-1.5 py-0.5 font-mono text-[0.625rem]">
+						<span
+							class="rounded-md bg-surface-sunken px-1.5 py-0.5 font-mono text-[length:var(--fs-micro)]"
+						>
 							{p}
 							→
 						</span>

@@ -6,7 +6,7 @@ import { onMount } from 'svelte'
  * Account — who is signed in, and which aven is theirs.
  *
  * The app never said whose session it was running under. On a machine with
- * more than one avenID that is a real question, and the honest answer needs
+ * more than one avenNAME that is a real question, and the honest answer needs
  * both halves: the person (name, mail) and the aven they reserved.
  *
  * Everything here is read-only. Changing a mail address or releasing a name
@@ -51,84 +51,68 @@ onMount(async () => {
 })
 </script>
 
-<section class="flex flex-col gap-3">
-	<h2 class="text-sm">Account</h2>
-
+<!--
+  Settings screens are `surface` panels holding `row-list` rows and `avatar`.
+  Every box here spelled the same five utilities by hand — a rounded border, a
+  raised ground and a shadow — which is one `surface` with a variant.
+-->
+<section class="stack">
+	<h2 class="text text--label">Account</h2>
 	{#if !isTauri()}
-		<p
-			class="rounded-xl border border-foreground/5 bg-surface-raised px-4 py-3 text-xs opacity-60 shadow-[0_1px_3px_rgba(30,41,59,0.05)]"
-		>
+		<p class="surface surface--sunken text text--meta">
 			Die Anmeldung gibt es nur in der App — im Browser ist keine Sitzung zu zeigen.
 		</p>
 	{:else if loading}
-		<p
-			class="rounded-xl border border-foreground/5 bg-surface-raised px-4 py-3 text-xs opacity-50 shadow-[0_1px_3px_rgba(30,41,59,0.05)]"
-		>
-			Deine Sitzung wird gelesen …
-		</p>
+		<p class="surface surface--sunken text text--meta">Deine Sitzung wird gelesen …</p>
 	{:else if !signedIn}
-		<p
-			class="rounded-xl border border-foreground/5 bg-surface-raised px-4 py-3 text-xs opacity-60 shadow-[0_1px_3px_rgba(30,41,59,0.05)]"
-		>
-			Du bist gerade nicht angemeldet.
-		</p>
+		<p class="surface surface--sunken text text--meta">Du bist gerade nicht angemeldet.</p>
 	{:else}
-		<div
-			class="flex flex-col gap-4 rounded-xl border border-foreground/5 bg-surface-raised px-4 py-4 shadow-[0_1px_3px_rgba(30,41,59,0.05)]"
-		>
-			<div class="flex items-center gap-3">
+		<div class="surface surface--raised stack">
+			<div class="cluster">
 				<!-- Initials rather than an avatar: we have no picture, and a generic
 				     silhouette says less than the two letters of an actual name. -->
-				<span
-					class="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-medium"
-				>
-					{(user?.name || user?.email || '?').slice(0, 2).toUpperCase()}
+				<span class="avatar">
+					<span class="avatar-initials">
+						{(user?.name || user?.email || '?').slice(0, 2).toUpperCase()}
+					</span>
 				</span>
-				<div class="min-w-0">
-					<p class="truncate text-sm font-medium">{user?.name || 'Ohne Namen'}</p>
-					<p class="truncate text-xs opacity-50">{user?.email}</p>
+				<div class="stack">
+					<p class="text text--title">{user?.name || 'Ohne Namen'}</p>
+					<p class="text text--meta">{user?.email}</p>
 				</div>
 			</div>
-
-			<dl class="flex flex-col gap-2 text-xs">
-				{#if firstName}
-					<div class="flex items-baseline justify-between gap-4">
-						<dt class="opacity-40">Vorname</dt>
-						<dd class="truncate">{firstName}</dd>
-					</div>
-				{/if}
-				<div class="flex items-baseline justify-between gap-4">
-					<dt class="opacity-40">E-Mail</dt>
-					<dd class="truncate">{user?.email}</dd>
+			<!-- Label-and-value pairs are `setting-row`, not `row-list` rows with an
+			     empty lead column: row-list's grid is `auto 1fr auto` and wants a
+			     real fixed leading item. -->
+			{#if firstName}
+				<div class="setting-row">
+					<span class="setting-row-copy"><p class="setting-row-label">Vorname</p></span>
+					<span class="setting-row-control">{firstName}</span>
 				</div>
-				<div class="flex items-baseline justify-between gap-4">
-					<dt class="opacity-40">Konto-ID</dt>
-					<dd class="truncate font-mono opacity-60">{user?.id}</dd>
-				</div>
-			</dl>
+			{/if}
+			<div class="setting-row">
+				<span class="setting-row-copy"><p class="setting-row-label">E-Mail</p></span>
+				<span class="setting-row-control">{user?.email}</span>
+			</div>
+			<div class="setting-row">
+				<span class="setting-row-copy"><p class="setting-row-label">Konto-ID</p></span>
+				<span class="setting-row-control text text--mono-meta">{user?.id}</span>
+			</div>
 		</div>
-
-		<div
-			class="flex flex-col gap-2 rounded-xl border border-foreground/5 bg-surface-raised px-4 py-4 shadow-[0_1px_3px_rgba(30,41,59,0.05)]"
-		>
-			<p class="text-[0.625rem] uppercase tracking-[0.2em] opacity-35">
-				{names.length > 1 ? 'Deine Aven' : 'Dein Aven'}
-			</p>
+		<div class="surface surface--raised stack">
+			<p class="text text--eyebrow">{names.length > 1 ? 'Deine Aven' : 'Dein Aven'}</p>
 			{#if names.length}
-				<ul class="flex flex-col gap-1">
+				<ul class="stack">
 					{#each names as name (name)}
-						<li class="font-mono text-sm">{name}.aven.ceo</li>
+						<li class="text text--mono-meta">{name}.aven.ceo</li>
 					{/each}
 				</ul>
 			{:else}
-				<p class="text-xs opacity-50">Für dieses Konto ist noch kein Name reserviert.</p>
+				<p class="text text--meta">Für dieses Konto ist noch kein Name reserviert.</p>
 			{/if}
 		</div>
 	{/if}
-
 	{#if failure}
-		<p class="rounded-xl border border-error/30 bg-error-muted px-4 py-3 text-xs text-error-strong">
-			{failure}
-		</p>
+		<p class="flow-card-alert">{failure}</p>
 	{/if}
 </section>

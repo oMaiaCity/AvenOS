@@ -1,4 +1,12 @@
 fn main() {
+	for key in [
+		"AVEN_IDENTITY_BASE_URL",
+		"AVEN_API_BASE_URL",
+		"AVEN_PASSKEY_ORIGIN",
+		"AVEN_PASSKEY_RP_ID",
+	] {
+		println!("cargo:rerun-if-env-changed={key}");
+	}
 	// Card 0121 removed everything this script used to work around: the Google
 	// OAuth creds baked in via `option_env!`, the sherpa-onnx iOS link directives,
 	// and the llama.cpp static-archive dedupe (cargo bundles native libs into

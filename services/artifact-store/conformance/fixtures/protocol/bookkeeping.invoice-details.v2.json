@@ -1,0 +1,124 @@
+{
+  "typeKey": "bookkeeping.invoice-details",
+  "version": 2,
+  "schemaProfileId": "artifact-json-schema-profile-v1",
+  "payloadSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["documentKind", "category", "issueDate", "customerNumber", "orderNumber", "supplier", "buyer", "lineItems", "taxBreakdown", "payment", "payments", "referenceEntries"],
+    "properties": {
+      "documentKind": { "enum": ["invoice", "credit-note", "receipt", "self-issued-receipt", "mandate", "order-confirmation", "offer", "reminder"] },
+      "category": { "type": ["string", "null"], "maxLength": 64 },
+      "issueDate": { "type": ["string", "null"], "maxLength": 32 },
+      "customerNumber": { "type": ["string", "null"], "maxLength": 128 },
+      "orderNumber": { "type": ["string", "null"], "maxLength": 128 },
+      "supplier": { "$ref": "#/$defs/party" },
+      "buyer": { "$ref": "#/$defs/party" },
+      "lineItems": {
+        "type": "array", "maxItems": 128,
+        "items": {
+          "type": "object", "additionalProperties": false,
+          "required": ["position", "title", "description", "quantity", "unit", "unitPriceMinor", "netMinor", "taxRateBps", "taxMinor", "grossMinor", "servicePeriod"],
+          "properties": {
+            "position": { "type": ["string", "null"], "maxLength": 128 },
+            "title": { "type": ["string", "null"], "maxLength": 512 },
+            "description": { "type": ["string", "null"], "maxLength": 2000 },
+            "quantity": { "type": ["string", "null"], "maxLength": 64 },
+            "unit": { "type": ["string", "null"], "maxLength": 64 },
+            "unitPriceMinor": { "$ref": "#/$defs/money" },
+            "netMinor": { "$ref": "#/$defs/money" },
+            "taxRateBps": { "type": ["integer", "null"], "minimum": -100000, "maximum": 100000 },
+            "taxMinor": { "$ref": "#/$defs/money" },
+            "grossMinor": { "$ref": "#/$defs/money" },
+            "servicePeriod": { "type": ["string", "null"], "maxLength": 255 }
+          }
+        }
+      },
+      "taxBreakdown": {
+        "type": "array", "maxItems": 64,
+        "items": {
+          "type": "object", "additionalProperties": false,
+          "required": ["rateBps", "baseMinor", "taxMinor"],
+          "properties": {
+            "rateBps": { "type": ["integer", "null"], "minimum": -100000, "maximum": 100000 },
+            "baseMinor": { "$ref": "#/$defs/money" },
+            "taxMinor": { "$ref": "#/$defs/money" }
+          }
+        }
+      },
+      "payment": {
+        "type": ["object", "null"], "additionalProperties": false,
+        "required": ["iban", "bic", "beneficiary", "amountPaidMinor", "totalOutstandingMinor", "paymentTerms"],
+        "properties": {
+          "iban": { "type": ["string", "null"], "maxLength": 64 },
+          "bic": { "type": ["string", "null"], "maxLength": 32 },
+          "beneficiary": { "type": ["string", "null"], "maxLength": 255 },
+          "amountPaidMinor": { "$ref": "#/$defs/money" },
+          "totalOutstandingMinor": { "$ref": "#/$defs/money" },
+          "paymentTerms": { "type": ["string", "null"], "maxLength": 1000 }
+        }
+      },
+      "payments": {
+        "type": "array", "maxItems": 128,
+        "items": {
+          "type": "object", "additionalProperties": false,
+          "required": ["date", "amountMinor", "method", "reference"],
+          "properties": {
+            "date": { "type": ["string", "null"], "maxLength": 32 },
+            "amountMinor": { "$ref": "#/$defs/money" },
+            "method": { "type": ["string", "null"], "maxLength": 128 },
+            "reference": { "type": ["string", "null"], "maxLength": 512 }
+          }
+        }
+      },
+      "referenceEntries": {
+        "type": "array", "maxItems": 64,
+        "items": {
+          "type": "object", "additionalProperties": false,
+          "required": ["kind", "label", "value"],
+          "properties": {
+            "kind": { "type": ["string", "null"], "maxLength": 64 },
+            "label": { "type": ["string", "null"], "maxLength": 128 },
+            "value": { "type": ["string", "null"], "maxLength": 512 }
+          }
+        }
+      }
+    },
+    "$defs": {
+      "money": { "type": ["integer", "null"], "minimum": -9007199254740991, "maximum": 9007199254740991 },
+      "party": {
+        "type": ["object", "null"], "additionalProperties": false,
+        "required": ["name", "vatId", "taxNumber", "address", "street", "postalCode", "city", "country", "email", "phone", "website", "contactName", "bankingAccounts"],
+        "properties": {
+          "name": { "type": ["string", "null"], "maxLength": 255 },
+          "vatId": { "type": ["string", "null"], "maxLength": 64 },
+          "taxNumber": { "type": ["string", "null"], "maxLength": 128 },
+          "address": { "type": ["string", "null"], "maxLength": 2000 },
+          "street": { "type": ["string", "null"], "maxLength": 512 },
+          "postalCode": { "type": ["string", "null"], "maxLength": 64 },
+          "city": { "type": ["string", "null"], "maxLength": 255 },
+          "country": { "type": ["string", "null"], "maxLength": 128 },
+          "email": { "type": ["string", "null"], "maxLength": 320 },
+          "phone": { "type": ["string", "null"], "maxLength": 128 },
+          "website": { "type": ["string", "null"], "maxLength": 512 },
+          "contactName": { "type": ["string", "null"], "maxLength": 255 },
+          "bankingAccounts": {
+            "type": "array", "maxItems": 16,
+            "items": {
+              "type": "object", "additionalProperties": false,
+              "required": ["iban", "bic", "bankName"],
+              "properties": {
+                "iban": { "type": ["string", "null"], "maxLength": 64 },
+                "bic": { "type": ["string", "null"], "maxLength": 32 },
+                "bankName": { "type": ["string", "null"], "maxLength": 255 }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "blobPolicy": "forbidden",
+  "referenceRules": []
+}

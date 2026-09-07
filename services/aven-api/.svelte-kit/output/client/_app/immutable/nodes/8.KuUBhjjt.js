@@ -1,0 +1,1 @@
+import{N as e,_ as t,k as n,u as r,y as i}from"../chunks/BzqGBSpB.js";import"../chunks/xihTtKlq.js";import"../chunks/gJRYCMHS.js";var a=i(`<section class="panel"><h1>Checkout link expired</h1> <a href="/"><button>Back</button></a></section>`);function o(i){var o=a();r(`1si2s42`,t=>{n(()=>{e.title=`Checkout link expired`})}),t(i,o)}export{o as component};

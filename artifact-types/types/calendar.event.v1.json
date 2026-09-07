@@ -1,0 +1,50 @@
+{
+  "typeKey": "calendar.event",
+  "version": 1,
+  "tier": "T1",
+  "skill": "calendar",
+  "blobPolicy": "forbidden",
+  "payloadSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "calendar.event@1",
+    "description": "One scheduled point or span. Appointment and deadline share the type because they share every field and every query.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["eventKey", "kind", "title", "startsAt", "allDay", "timeZone", "revision"],
+    "properties": {
+      "eventKey": { "type": "string", "maxLength": 128 },
+      "kind": { "enum": ["appointment", "deadline"] },
+      "title": { "type": "string", "minLength": 1, "maxLength": 512 },
+      "startsAt": { "type": "string", "format": "date-time" },
+      "endsAt": { "type": ["string", "null"], "format": "date-time" },
+      "allDay": { "type": "boolean" },
+      "timeZone": { "type": "string", "maxLength": 64 },
+      "location": { "type": ["string", "null"], "maxLength": 512 },
+      "participants": {
+        "type": "array",
+        "maxItems": 64,
+        "items": { "type": "string", "maxLength": 255 }
+      },
+      "note": { "type": ["string", "null"], "maxLength": 4000 },
+      "revision": { "type": "integer", "minimum": 1 }
+    }
+  },
+  "referencesSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "array",
+    "maxItems": 0
+  },
+  "search": {
+    "fullText": ["/title", "/location", "/note"],
+    "fields": [
+      { "path": "/kind", "kind": "keyword" },
+      { "path": "/startsAt", "kind": "timestamp" },
+      { "path": "/endsAt", "kind": "timestamp" }
+    ]
+  },
+  "notes": [
+    "UI: 'Frist Krankenkasse · 15.09. · ganztägig' (kind deadline, allDay true) and 'Anmeldegespräch Kita · 28.08. · 10:00–11:00' (kind appointment).",
+    "timeZone is required even for all-day events: '15.09. ganztägig' is only unambiguous with one.",
+    "Scheduling over a known conflict requires a review.decision@1 as a run input — the calendar_conflict gate."
+  ]
+}

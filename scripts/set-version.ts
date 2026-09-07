@@ -8,6 +8,9 @@
  *     external workspace deps keep their own versions — only our packages are stamped
  *     like tokio are untouched). Without this, bumping a crate past `^0.0.1` breaks
  *     cargo resolution for any sibling that pins it.
+ *   - every first-party package entry in the corresponding Cargo.lock files. Cargo
+ *     otherwise rejects the release commit under `--locked` because the manifests and
+ *     checked-in lockfiles describe different versions.
  *   - app/src-tauri/tauri.conf.json
  *
  * Idempotent and surgical: touches only version-bearing lines.
@@ -104,6 +107,28 @@ function setCargo(rel: string, version: string, internal: Set<string>): boolean 
 	return true
 }
 
+/** Keep checked-in lockfiles aligned with the first-party manifests stamped above. */
+function setCargoLock(rel: string, version: string, internal: Set<string>): boolean {
+	const file = path.join(repoRoot, rel)
+	let raw: string
+	try {
+		raw = readFileSync(file, 'utf8')
+	} catch {
+		return false
+	}
+	let next = raw
+	for (const name of internal) {
+		const packageEntry = new RegExp(
+			`(\\[\\[package\\]\\]\\nname = "${escapeRe(name)}"\\nversion = ")[^"]*(")`,
+			'g'
+		)
+		next = next.replace(packageEntry, `$1${version}$2`)
+	}
+	if (next === raw) return false
+	writeFileSync(file, next)
+	return true
+}
+
 function scan(pattern: string): string[] {
 	const glob = new Bun.Glob(pattern)
 	const out: string[] = []
@@ -128,6 +153,7 @@ function main(): void {
 		...scan('docs/package.json')
 	]
 	const cargoTargets = [...scan('libs/**/Cargo.toml'), ...scan('app/src-tauri/Cargo.toml')]
+	const cargoLockTargets = [...scan('libs/**/Cargo.lock'), ...scan('app/src-tauri/Cargo.lock')]
 
 	const internal = new Set<string>()
 	for (const rel of cargoTargets) {
@@ -138,6 +164,7 @@ function main(): void {
 	let count = 0
 	for (const rel of jsonTargets) if (setJsonVersion(rel, version)) count++
 	for (const rel of cargoTargets) if (setCargo(rel, version, internal)) count++
+	for (const rel of cargoLockTargets) if (setCargoLock(rel, version, internal)) count++
 	if (setJsonVersion('app/src-tauri/tauri.conf.json', version)) count++
 
 	console.log(

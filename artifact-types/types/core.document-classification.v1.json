@@ -1,0 +1,53 @@
+{
+  "typeKey": "core.document-classification",
+  "version": 1,
+  "tier": "T1",
+  "skill": "inbox",
+  "blobPolicy": "forbidden",
+  "payloadSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "core.document-classification@1",
+    "description": "What a document is believed to be. The subject is a production-run input, never a structural reference.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["rawKind", "resolvedKind", "resolutionMode", "confidence", "reason", "alternatives"],
+    "properties": {
+      "rawKind": { "type": "string", "maxLength": 128 },
+      "resolvedKind": { "type": "string", "maxLength": 128 },
+      "resolutionMode": { "enum": ["model", "rule", "human", "fallback"] },
+      "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+      "reason": { "type": "string", "maxLength": 2000 },
+      "alternatives": {
+        "type": "array",
+        "maxItems": 16,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "confidence"],
+          "properties": {
+            "kind": { "type": "string", "maxLength": 128 },
+            "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        }
+      }
+    }
+  },
+  "referencesSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "array",
+    "maxItems": 0
+  },
+  "search": {
+    "fullText": ["/reason"],
+    "fields": [
+      { "path": "/resolvedKind", "kind": "keyword" },
+      { "path": "/rawKind", "kind": "keyword" },
+      { "path": "/confidence", "kind": "number" }
+    ]
+  },
+  "notes": [
+    "UI: 'Krankenversicherung · Frist erkannt … Zuversicht 96 %' and 'Rechnung · 249,00 €'.",
+    "resolvedKind must be 'unknown' when confidence is below the snapshotted threshold. An explicit unknown beats a dishonest fallback.",
+    "Procedure, model and prompt identity belong to the production run receipt, not here."
+  ]
+}

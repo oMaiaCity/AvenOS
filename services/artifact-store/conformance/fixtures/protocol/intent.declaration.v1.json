@@ -1,0 +1,19 @@
+{
+  "typeKey": "intent.declaration",
+  "version": 1,
+  "schemaProfileId": "artifact-json-schema-profile-v1",
+  "payloadSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["intentId", "title", "triggerKind", "observedAt"],
+    "properties": {
+      "intentId": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+      "title": { "type": "string", "minLength": 1, "maxLength": 512 },
+      "triggerKind": { "const": "file-upload" },
+      "observedAt": { "type": "string", "minLength": 20, "maxLength": 64 }
+    }
+  },
+  "blobPolicy": "forbidden",
+  "referenceRules": []
+}

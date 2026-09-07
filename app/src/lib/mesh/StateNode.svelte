@@ -24,9 +24,9 @@ const {
 {#if data.kind === 'state'}
 	<div
 		class="flex flex-col items-center justify-center rounded-full border-2 bg-surface-raised text-center font-medium text-foreground shadow-[0_1px_3px_rgba(30,41,59,0.06)] {data.compact
-			? 'size-14 text-[0.6875rem]'
+			? 'size-14 text-[length:var(--fs-eyebrow)]'
 			: 'size-24 text-sm'} {data.terminal
-			? 'border-success ring-2 ring-success/45 ring-offset-2 ring-offset-surface-soft'
+			? 'border-success ring-2 ring-success/25 ring-offset-2 ring-offset-surface-sunken'
 			: data.initial
 				? 'border-success'
 				: 'border-foreground/15'}"
@@ -36,11 +36,15 @@ const {
 		<span>{data.label}</span>
 		{#if !data.compact}
 			{#if data.initial}
-				<span class="font-mono text-success-ink text-[0.5625rem] uppercase tracking-wide"
+				<span
+					class="font-mono text-success-ink text-[length:var(--fs-nano)] uppercase tracking-wide"
 					>start</span
 				>
 			{:else if data.terminal}
-				<span class="font-mono text-success-ink text-[0.5625rem] uppercase tracking-wide">end</span>
+				<span
+					class="font-mono text-success-ink text-[length:var(--fs-nano)] uppercase tracking-wide"
+					>end</span
+				>
 			{/if}
 		{/if}
 		<Handle type="source" position={Position.Right} />
@@ -50,9 +54,9 @@ const {
 	<!-- The voids: where a task comes from (new) and goes to (gone). Small,
 	     dashed, so they frame the machine without competing with the states. -->
 	<div
-		class="flex items-center justify-center rounded-full border border-foreground/20 border-dashed bg-surface-soft/60 font-mono text-foreground/45 uppercase {data.compact
-			? 'size-6 text-[0.4375rem]'
-			: 'size-10 text-[0.5625rem]'}"
+		class="flex items-center justify-center rounded-full border border-foreground/15 border-dashed bg-surface-sunken/25 font-mono text-foreground/50 uppercase {data.compact
+			? 'size-6 text-[length:var(--fs-nano)]'
+			: 'size-10 text-[length:var(--fs-nano)]'}"
 	>
 		<Handle type="target" position={Position.Left} />
 		<Handle type="target" position={Position.Top} />

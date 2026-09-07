@@ -1,0 +1,92 @@
+{
+	"deploymentTargets": ["identity", "next", "production"],
+	"repository": "MyAvenCEO/avenOS",
+	"githubPackagesReadToken": "PASTE_GITHUB_PACKAGES_READ_TOKEN",
+	"objectStorage": {
+		"region": "hel1",
+		"targets": {
+			"identity": {
+				"projectId": "1234567",
+				"bootstrapCredential": {
+					"accessKeyId": "PASTE_IDENTITY_BOOTSTRAP_ACCESS_KEY",
+					"secretAccessKey": "PASTE_IDENTITY_BOOTSTRAP_SECRET_KEY"
+				},
+				"deploymentCredential": {
+					"accessKeyId": "PASTE_IDENTITY_DEPLOY_ACCESS_KEY",
+					"secretAccessKey": "PASTE_IDENTITY_DEPLOY_SECRET_KEY"
+				},
+				"observerCredential": {
+					"accessKeyId": "PASTE_IDENTITY_OBSERVER_ACCESS_KEY",
+					"secretAccessKey": "PASTE_IDENTITY_OBSERVER_SECRET_KEY"
+				}
+			},
+			"next": {
+				"projectId": "2345678",
+				"bootstrapCredential": {
+					"accessKeyId": "PASTE_NEXT_BOOTSTRAP_ACCESS_KEY",
+					"secretAccessKey": "PASTE_NEXT_BOOTSTRAP_SECRET_KEY"
+				},
+				"deploymentCredential": {
+					"accessKeyId": "PASTE_NEXT_DEPLOY_ACCESS_KEY",
+					"secretAccessKey": "PASTE_NEXT_DEPLOY_SECRET_KEY"
+				},
+				"observerCredential": {
+					"accessKeyId": "PASTE_NEXT_OBSERVER_ACCESS_KEY",
+					"secretAccessKey": "PASTE_NEXT_OBSERVER_SECRET_KEY"
+				}
+			},
+			"production": {
+				"projectId": "3456789",
+				"bootstrapCredential": {
+					"accessKeyId": "PASTE_PRODUCTION_BOOTSTRAP_ACCESS_KEY",
+					"secretAccessKey": "PASTE_PRODUCTION_BOOTSTRAP_SECRET_KEY"
+				},
+				"deploymentCredential": {
+					"accessKeyId": "PASTE_PRODUCTION_DEPLOY_ACCESS_KEY",
+					"secretAccessKey": "PASTE_PRODUCTION_DEPLOY_SECRET_KEY"
+				},
+				"observerCredential": {
+					"accessKeyId": "PASTE_PRODUCTION_OBSERVER_ACCESS_KEY",
+					"secretAccessKey": "PASTE_PRODUCTION_OBSERVER_SECRET_KEY"
+				}
+			}
+		}
+	},
+	"defaults": {
+		"hetznerLocation": "hel1",
+		"hetznerServerType": "cpx32",
+		"hetznerOsImage": "ubuntu-24.04",
+		"identityVolumeSizeGb": 40,
+		"platformVolumeSizeGb": 80,
+		"sshAllowedCidrs": "0.0.0.0/0,::/0",
+		"acmeEmail": "ops@aven.ceo",
+		"downloadUrl": "https://github.com/MyAvenCEO/avenOS/releases/latest"
+	},
+	"providers": {
+		"dnsProjectId": "4567890",
+		"identity": {
+			"computeToken": "PASTE_IDENTITY_COMPUTE_TOKEN",
+			"dnsApiKey": "PASTE_UNITED_DOMAINS_DNS_API_KEY"
+		},
+		"next": {
+			"computeToken": "PASTE_NEXT_COMPUTE_TOKEN",
+			"dnsToken": "PASTE_NEXT_DNS_TOKEN",
+			"polarApiKey": "PASTE_POLAR_SANDBOX_API_KEY",
+			"polarOrganizationId": "PASTE_POLAR_SANDBOX_ORGANIZATION_ID",
+			"smtpUrl": "smtps://USER:PASSWORD@HOST:465",
+			"smtpFrom": "avenCEO <hello@aven.ceo>",
+			"smtpReplyTo": "hello@aven.ceo"
+		},
+		"production": {
+			"computeToken": "PASTE_PRODUCTION_COMPUTE_TOKEN",
+			"dnsToken": "PASTE_PRODUCTION_DNS_TOKEN",
+			"polarApiKey": "PASTE_POLAR_PRODUCTION_API_KEY",
+			"polarOrganizationId": "PASTE_POLAR_PRODUCTION_ORGANIZATION_ID",
+			"smtpUrl": "smtps://USER:PASSWORD@HOST:465",
+			"smtpFrom": "avenCEO <hello@aven.ceo>",
+			"smtpReplyTo": "hello@aven.ceo",
+			"androidAppCertSha256Fingerprints": ""
+		},
+		"redpillApiKey": "PASTE_REDPILL_API_KEY"
+	}
+}

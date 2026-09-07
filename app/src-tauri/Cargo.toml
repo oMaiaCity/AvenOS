@@ -30,11 +30,17 @@ incremental = false
 
 [package]
 name = "aven-os-app"
-version = "26.8.22-next.6"
+version = "26.8.28-next.9"
 description = "avenCITY desktop shell"
 authors = ["Aven"]
 edition = "2021"
 rust-version = "1.93"
+
+[features]
+default = ["software-voice-cpal"]
+software-voice-cpal = ["dep:aven-voice-host-cpal", "aven-voice-host-cpal/cpal-host"]
+custom-protocol = ["tauri/custom-protocol"]
+e2e-voice-proof = ["aven-voice-runtime/silent-audio-e2e"]
 
 [lib]
 name = "aven_os_app_lib"
@@ -51,14 +57,21 @@ tauri-build = { version = "2", features = [] }
 # here needs crypto, storage, sync or on-device AI, so the feature matrix that
 # used to gate them went with the worlds that used it (card 0121).
 [dependencies]
+aven-voice-core = { path = "../../libs/aven-voice-core" }
+aven-voice-protocol = { path = "../../libs/aven-voice-protocol" }
+aven-voice-runtime = { path = "../../libs/aven-voice-runtime", features = ["software-aec"] }
+aven-voice-host-cpal = { path = "../../libs/aven-voice-host-cpal", optional = true }
+aven-voice-models = { path = "../../libs/aven-voice-models" }
 log = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+crossbeam-channel = "=0.5.15"
 tauri = { version = "2", features = ["macos-private-api", "unstable"] }
 tauri-plugin-opener = "2"
 env_logger = "0.11.10"
 base64 = "0.22"
 sha2 = "0.10"
+mime_guess = "2"
 
 # On-device German TTS — Supertonic-3 through ONNX Runtime (src/tts).
 # Pin the prerelease exactly so the bindings, speech wrapper, and provisioned
@@ -88,9 +101,6 @@ parakeet-rs = { version = "=0.3.7", default-features = false, features = ["cpu",
 [target.'cfg(target_os = "linux")'.dependencies]
 ort = { version = "=2.0.0-rc.13", default-features = false, features = ["load-dynamic", "cuda"] }
 parakeet-rs = { version = "=0.3.7", default-features = false, features = ["load-dynamic"] }
-# `getUserMedia` is a native WebKitGTK permission, not a Tauri capability.
-# Direct access lets the main webview grant microphone-only media requests.
-webkit2gtk = { version = "2", features = ["v2_40"] }
 
 # Other platforms retain ort's existing downloaded/static distribution. In
 # particular, iOS cannot ship a standalone dynamically loaded library.
@@ -109,3 +119,6 @@ core-foundation = "0.10"
 
 [target.'cfg(target_os = "ios")'.dependencies]
 tauri-plugin-ios-passkey = { path = "../../libs/tauri-plugin-ios-passkey" }
+
+[target.'cfg(target_os = "android")'.dependencies]
+tauri-plugin-android-passkey = { path = "../../libs/tauri-plugin-android-passkey" }

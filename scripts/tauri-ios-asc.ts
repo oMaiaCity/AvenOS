@@ -181,7 +181,7 @@ function signArchivedApp(archivedApp: string, profilePath: string, scratchDir: s
 /** Entitlements the shipped iOS binary MUST carry — fail the release if any is missing. */
 const REQUIRED_IPA_ENTITLEMENTS = [
 	'com.apple.developer.associated-domains',
-	'webcredentials:id.next.aven.ceo',
+	'webcredentials:aven.id',
 	'aps-environment'
 ]
 
@@ -530,64 +530,107 @@ function patchXcodeRustScript() {
 }
 
 /**
- * Link Apple's Accelerate framework into the iOS app. ggml's CPU backend (statically
- * linked via llama-cpp-sys-2 for `local-llama`) is built with GGML_USE_ACCELERATE on
- * Apple, so its ops reference Accelerate's vDSP_* symbols (`_vDSP_vadd`, `_vDSP_vmul`,
- * `_vDSP_maxv`, …). On macOS cargo links the `.a`s directly and honors llama-cpp-sys-2's
- * Accelerate link directive; the iOS path links libapp.a through xcodebuild against the
- * frameworks declared in the generated Xcode project, and `cargo:rustc-link-lib=framework`
- * directives do NOT reach that link. Tauri's default iOS template lists Metal/MetalKit but
- * not Accelerate, so without this the archive fails with
- * "Undefined symbols … _vDSP_* … for architecture arm64".
+ * Link Apple SDK frameworks referenced by Rust static libraries into the final iOS app.
+ * Cargo emits the correct framework link directives while building libapp.a, but those
+ * directives do not propagate through Tauri's generated Xcode project to the final app
+ * link. Keep this list explicit so newly introduced native dependencies cannot silently
+ * rely on whichever frameworks happen to be present in the Tauri template.
  *
  * We patch BOTH project.yml (the xcodegen source, in case a regen happens) and the already
  * generated project.pbxproj (which `tauri ios build` consumes as-is, without regenerating).
- * Anchors are section markers / structural lines — xcodegen randomizes the object UUIDs on
- * every regen, so we can't key off existing UUIDs. Idempotent: a no-op once Accelerate is in.
+ * The fixed 24-character IDs use only hexadecimal characters and are outside xcodegen's
+ * random namespace for practical purposes. The patch is idempotent.
  */
-function patchAccelerateFramework() {
-	// Fixed UUIDs (24 uppercase hex). The `ACCE…` prefix + zero-fill makes collision with
-	// xcodegen's random UUIDs effectively impossible.
-	const FRAMEWORK_REF = 'ACCE0000000000000000FEF1'
-	const BUILD_FILE = 'ACCE0000000000000000B111'
+function patchIosSdkFrameworks() {
+	const frameworks = [
+		{
+			name: 'Accelerate',
+			frameworkRef: 'ACCE0000000000000000FEF1',
+			buildFile: 'ACCE0000000000000000B111'
+		},
+		{
+			name: 'AVFAudio',
+			frameworkRef: 'AFAF0000000000000000FEF2',
+			buildFile: 'AFAF0000000000000000B112'
+		},
+		{
+			name: 'AudioToolbox',
+			frameworkRef: 'A0D10000000000000000FEF3',
+			buildFile: 'A0D10000000000000000B113'
+		}
+	] as const
 
 	const projectYml = path.join(genApple, 'project.yml')
 	if (existsSync(projectYml)) {
 		let yml = readFileSync(projectYml, 'utf8')
-		if (!yml.includes('Accelerate.framework')) {
-			// Add alongside the other linked SDK frameworks (mirrors `- sdk: Metal.framework`).
-			yml = yml.replace(
-				'      - sdk: CoreGraphics.framework\n',
-				'      - sdk: Accelerate.framework\n      - sdk: CoreGraphics.framework\n'
-			)
+		const missing = frameworks.filter(({ name }) => !yml.includes(`${name}.framework`))
+		if (missing.length > 0) {
+			const anchor = '      - sdk: CoreGraphics.framework\n'
+			if (!yml.includes(anchor)) {
+				console.error(
+					'tauri-ios-asc: CoreGraphics.framework anchor missing from project.yml; cannot link required iOS SDK frameworks. The cargo-mobile2 template may have changed; update patchIosSdkFrameworks().'
+				)
+				process.exit(1)
+			}
+			const additions = missing.map(({ name }) => `      - sdk: ${name}.framework\n`).join('')
+			yml = yml.replace(anchor, `${additions}${anchor}`)
 			writeFileSync(projectYml, yml, 'utf8')
-			console.log('[tauri-ios-asc] patched project.yml (linked Accelerate.framework)')
+			console.log(
+				'[tauri-ios-asc] patched project.yml (linked %s)',
+				missing.map(({ name }) => `${name}.framework`).join(', ')
+			)
 		}
 	}
 
 	const pbxproj = path.join(genApple, 'aven-os-app.xcodeproj/project.pbxproj')
 	if (!existsSync(pbxproj)) return
 	let pbx = readFileSync(pbxproj, 'utf8')
-	if (pbx.includes('Accelerate.framework')) return // already linked (idempotent)
+	const missing = frameworks.filter(({ name }) => !pbx.includes(`${name}.framework`))
+	if (missing.length === 0) return
 
-	// 1. PBXBuildFile entry — the membership of the framework in a build phase.
+	const buildFileAnchor = '/* Begin PBXBuildFile section */\n'
+	const fileReferenceAnchor = '/* Begin PBXFileReference section */\n'
+	const frameworksPhaseAnchor =
+		'isa = PBXFrameworksBuildPhase;\n\t\t\tbuildActionMask = 2147483647;\n\t\t\tfiles = (\n'
+	if (
+		!pbx.includes(buildFileAnchor) ||
+		!pbx.includes(fileReferenceAnchor) ||
+		!pbx.includes(frameworksPhaseAnchor)
+	) {
+		console.error(
+			'tauri-ios-asc: Xcode framework section anchor missing from project.pbxproj; cannot link required iOS SDK frameworks. The cargo-mobile2 template may have changed; update patchIosSdkFrameworks().'
+		)
+		process.exit(1)
+	}
+
 	pbx = pbx.replace(
-		'/* Begin PBXBuildFile section */\n',
-		`/* Begin PBXBuildFile section */\n\t\t${BUILD_FILE} /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ${FRAMEWORK_REF} /* Accelerate.framework */; };\n`
+		buildFileAnchor,
+		`${buildFileAnchor}${missing
+			.map(
+				({ name, frameworkRef, buildFile }) =>
+					`\t\t${buildFile} /* ${name}.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ${frameworkRef} /* ${name}.framework */; };\n`
+			)
+			.join('')}`
 	)
-	// 2. PBXFileReference entry — points at the SDK framework.
 	pbx = pbx.replace(
-		'/* Begin PBXFileReference section */\n',
-		`/* Begin PBXFileReference section */\n\t\t${FRAMEWORK_REF} /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = System/Library/Frameworks/Accelerate.framework; sourceTree = SDKROOT; };\n`
+		fileReferenceAnchor,
+		`${fileReferenceAnchor}${missing
+			.map(
+				({ name, frameworkRef }) =>
+					`\t\t${frameworkRef} /* ${name}.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ${name}.framework; path = System/Library/Frameworks/${name}.framework; sourceTree = SDKROOT; };\n`
+			)
+			.join('')}`
 	)
-	// 3. Add to the Frameworks build phase's files list (this is what the linker reads).
 	pbx = pbx.replace(
-		'isa = PBXFrameworksBuildPhase;\n\t\t\tbuildActionMask = 2147483647;\n\t\t\tfiles = (\n',
-		`isa = PBXFrameworksBuildPhase;\n\t\t\tbuildActionMask = 2147483647;\n\t\t\tfiles = (\n\t\t\t\t${BUILD_FILE} /* Accelerate.framework in Frameworks */,\n`
+		frameworksPhaseAnchor,
+		`${frameworksPhaseAnchor}${missing
+			.map(({ name, buildFile }) => `\t\t\t\t${buildFile} /* ${name}.framework in Frameworks */,\n`)
+			.join('')}`
 	)
 	writeFileSync(pbxproj, pbx, 'utf8')
 	console.log(
-		'[tauri-ios-asc] patched project.pbxproj (linked Accelerate.framework for ggml/llama.cpp)'
+		'[tauri-ios-asc] patched project.pbxproj (linked %s)',
+		missing.map(({ name }) => `${name}.framework`).join(', ')
 	)
 }
 
@@ -739,7 +782,7 @@ async function main() {
 	patchPodfile()
 	ensureRustToolchainReady()
 	patchXcodeRustScript()
-	patchAccelerateFramework()
+	patchIosSdkFrameworks()
 	patchTargetedDeviceFamily()
 
 	const workspace = path.join(genApple, 'aven-os-app.xcodeproj/project.xcworkspace')

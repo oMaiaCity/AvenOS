@@ -1,0 +1,5 @@
+name: aven-platform
+description: Isolated Hetzner foundation for shared identity or one aven.ceo platform environment
+runtime:
+  name: nodejs
+main: src/index.mjs

@@ -1,0 +1,55 @@
+[workspace]
+members = [
+    "crates/contract",
+    "crates/core",
+    "crates/postgres",
+    "crates/server",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+authors = ["Aven"]
+edition = "2021"
+rust-version = "1.93"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace.dependencies]
+async-trait = "0.1"
+axum = "0.8"
+base64 = "0.22"
+bytes = "1"
+crc32fast = "1"
+futures-util = "0.3"
+hex = "0.4"
+hmac = "0.12"
+http = "1"
+jsonschema = { version = "0.33", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio-rustls",
+    "postgres",
+    "uuid",
+    "time",
+    "json",
+    "migrate",
+    "macros",
+] }
+thiserror = "2"
+time = { version = "0.3", features = ["serde", "formatting", "parsing"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "sync", "time"] }
+tower-http = { version = "0.6", features = ["catch-panic", "request-id", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+url = "2"
+uuid = { version = "1", features = ["v4", "serde"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = "warn"
+pedantic = "warn"

@@ -1,0 +1,25 @@
+{
+	email {$ACME_EMAIL:ops@aven.ceo}
+	admin off
+}
+
+{$IDENTITY_DOMAIN:aven.id} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+	@untrusted_internal {
+		path /internal/*
+		not remote_ip {$NEXT_PLATFORM_PUBLIC_IPV4} {$NEXT_PLATFORM_PUBLIC_IPV6} {$PRODUCTION_PLATFORM_PUBLIC_IPV4} {$PRODUCTION_PLATFORM_PUBLIC_IPV6}
+	}
+	respond @untrusted_internal 404
+	request_body {
+		max_size 128KiB
+	}
+	reverse_proxy identity:3000 {
+		header_up X-Forwarded-For {remote_host}
+	}
+}

@@ -21,9 +21,26 @@ bus.onHeldResolved = (id) => {
 }
 
 export function confirmHeld(id: string): void {
-	void bus.confirmHeld(id)
+	void bus
+		.confirmHeld(id)
+		.then((result) => {
+			if (JSON.parse(result.record)?.ok === false) reviewFailed(id, result.wire)
+		})
+		.catch((error) => reviewFailed(id, error))
 }
 
 export function rejectHeld(id: string): void {
-	bus.rejectHeld(id)
+	void bus.rejectHeld(id).catch((error) => reviewFailed(id, error))
+}
+
+function reviewFailed(id: string, error: unknown): void {
+	const message = error instanceof Error ? error.message : String(error)
+	hitlQueue.items = hitlQueue.items.map((held) =>
+		held.id === id
+			? {
+					...held,
+					label: `Could not save review: ${message}. You can retry.`
+				}
+			: held
+	)
 }

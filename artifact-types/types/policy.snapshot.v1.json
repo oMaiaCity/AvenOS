@@ -1,0 +1,41 @@
+{
+  "typeKey": "policy.snapshot",
+  "version": 1,
+  "tier": "T0",
+  "skill": null,
+  "blobPolicy": "optional",
+  "payloadSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "policy.snapshot@1",
+    "description": "An immutable capture of mutable configuration a run depended on: thresholds, checklists, rulesets, charts of accounts.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["policyKey", "policyVersion", "capturedAt", "values"],
+    "properties": {
+      "policyKey": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$", "maxLength": 128 },
+      "policyVersion": { "type": "string", "maxLength": 64 },
+      "effectiveFrom": { "type": ["string", "null"], "format": "date-time" },
+      "capturedAt": { "type": "string", "format": "date-time" },
+      "values": { "type": "object" },
+      "sourceDigest": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" }
+    }
+  },
+  "referencesSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "array",
+    "maxItems": 0
+  },
+  "search": {
+    "fullText": [],
+    "fields": [
+      { "path": "/policyKey", "kind": "keyword" },
+      { "path": "/policyVersion", "kind": "keyword" },
+      { "path": "/capturedAt", "kind": "timestamp" }
+    ]
+  },
+  "notes": [
+    "Every run whose result depends on a threshold must declare the snapshot as an input with role 'policy'.",
+    "The mock-up needs at least three: inbox classify threshold 0.8, the reconciliation auto-threshold behind 'Score 91 % — knapp unter der Auto-Schwelle', and the tax checklist behind 'fehlend laut Checkliste'.",
+    "values is an open object at kernel level; each policyKey should be given a bounded schema in a later version rather than widening this one."
+  ]
+}

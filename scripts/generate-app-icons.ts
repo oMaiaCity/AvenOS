@@ -2,9 +2,16 @@
 /**
  * Regenerate EVERY app icon from one source image.
  *
- *   bun run icons                        # re-render from the current source
- *   bun run icons ~/Downloads/logo.svg   # adopt a new logo
- *   bun run icons logo.jpg --ios-bg=#F8F1E8
+ *   bun run icons                        # re-render from the generated source
+ *   bun run icons ~/Downloads/logo.svg   # adopt a new logo (see the note below)
+ *   bun run icons logo.jpg --ios-bg=#f8f6ef
+ *
+ * With no argument the source is `icons/app-icon-source.svg`, which is WRITTEN by
+ * `bun run brand:generate` from `@myavenceo/aven-ceo`'s single `logo.svg`. That
+ * is the whole chain: one mark in the package -> the badged source here -> every
+ * platform icon below. Adopting a new logo therefore means replacing the mark in
+ * the brand package, not passing a file here — a path argument is for trying one
+ * out, and `brand:generate` will overwrite it on the next run.
  *
  * Accepts svg, png, jpg/jpeg, webp, avif, tiff and gif. Non-square inputs are
  * letterboxed (never cropped); an SVG input is also copied in as the vector SSOT.
@@ -144,6 +151,43 @@ function runTauriIcon(source: string): void {
 	}
 }
 
+/**
+ * Rewrite `icon.icns` with its chunks in a stable order.
+ *
+ * `tauri icon` emits the same twelve chunks every run but in whatever order it
+ * happened to iterate them, so two runs over an identical source produce two
+ * different files — same length, same content, different byte order. That is
+ * enough to make `git status` dirty forever and to defeat the "regenerating
+ * changes nothing" guarantee the whole brand pipeline rests on.
+ *
+ * The format is just `icns` + total length followed by [type][length][data]
+ * chunks, and readers look chunks up BY TYPE — order carries no meaning — so
+ * sorting them is lossless and makes the output reproducible.
+ */
+function normalizeIcns(file: string): void {
+	if (!existsSync(file)) return
+	const buf = readFileSync(file)
+	if (buf.toString('ascii', 0, 4) !== 'icns') return
+
+	const chunks: Array<{ type: string; data: Buffer }> = []
+	let offset = 8
+	while (offset + 8 <= buf.length) {
+		const type = buf.toString('ascii', offset, offset + 4)
+		const length = buf.readUInt32BE(offset + 4)
+		if (length < 8 || offset + length > buf.length) return // malformed — leave it alone
+		chunks.push({ type, data: buf.subarray(offset, offset + length) })
+		offset += length
+	}
+
+	chunks.sort((a, b) => (a.type < b.type ? -1 : a.type > b.type ? 1 : 0))
+	const body = Buffer.concat(chunks.map((c) => c.data))
+	const header = Buffer.alloc(8)
+	header.write('icns', 0, 'ascii')
+	header.writeUInt32BE(body.length + 8, 4)
+	writeFileSync(file, Buffer.concat([header, body]))
+	console.log(`[icons] normalized ${chunks.length} icns chunks → reproducible`)
+}
+
 /** `tauri icon` guesses the adaptive-icon backdrop; use the icon's own background instead. */
 function writeAndroidBackground(bg: string): void {
 	if (!existsSync(androidBgXml)) return
@@ -169,10 +213,13 @@ function resolveInput(arg: string | undefined): string {
 		}
 		return input
 	}
-	// No argument: re-render from whatever source the repo already holds, vector first.
+	// No argument: the generated vector source, and ONLY that. Falling back to the
+	// rasterised PNG used to look forgiving, but it silently re-rendered whatever
+	// the last run happened to leave behind — which is exactly how the icon set
+	// drifted away from the logo in the first place.
 	if (existsSync(SOURCE_SVG)) return SOURCE_SVG
-	if (existsSync(SOURCE_PNG)) return SOURCE_PNG
-	console.error(`[icons] no source found — pass an image: bun run icons <file.svg|png|jpg>`)
+	console.error(`[icons] ${path.relative(repoRoot, SOURCE_SVG)} is missing.`)
+	console.error(`[icons] run \`bun run brand:generate\` to write it from @myavenceo/aven-ceo.`)
 	return process.exit(1)
 }
 
@@ -205,6 +252,7 @@ async function main(): Promise<void> {
 
 	// Desktop, Windows and Android in one pass; this also writes icons/ios, which we redo below.
 	runTauriIcon(SOURCE_PNG)
+	normalizeIcns(path.join(iconsDir, 'icon.icns'))
 	writeAndroidBackground(bg)
 
 	await generateIosIcons(SOURCE_IOS, iosDir, bg)
