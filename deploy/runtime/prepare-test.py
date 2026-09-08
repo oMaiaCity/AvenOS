@@ -84,6 +84,8 @@ def main():
         assert gateway == ('http', 'api:3000', '/internal/v1/llm', '', '')
         assert services['green-backup']['environment']['RESTIC_REPOSITORY'].endswith('/next/platform/runtimes/green')
         assert services['green-backup']['profiles'] == ['backup']
+        assert services['green-restore']['command'] == ['restore']
+        assert services['green-restore']['environment']['PGHOST'] == 'green-database'
         assert not services['green-database'].get('ports')
         assert set(services['green-database']['networks']) == {'platform-private'}
         assert not services['green-artifact-store-provisioner'].get('ports')

@@ -42,14 +42,20 @@ export async function restoreProvisionerAuthority(
 			for (const role of manifest.functionRoles) suffixes.add(role.roleSuffix)
 		}
 		const names = [...suffixes].map((suffix) => databaseRoleName(environmentId, suffix))
-		const roles = await client.query<{ rolname: string; privileged: boolean }>(
-			`SELECT rolname,(rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls) AS privileged
-			 FROM pg_roles WHERE rolname=ANY($1::text[])`,
-			[names]
+		const roles = await client.query<{
+			rolname: string
+			privileged: boolean
+			administered: boolean
+		}>(
+			`SELECT r.rolname,(r.rolsuper OR r.rolcreatedb OR r.rolcreaterole OR r.rolreplication OR r.rolbypassrls) AS privileged,
+			 EXISTS(SELECT FROM pg_auth_members m JOIN pg_roles p ON p.oid=m.member
+			 WHERE m.roleid=r.oid AND p.rolname=$2 AND m.admin_option) AS administered
+			 FROM pg_roles r WHERE r.rolname=ANY($1::text[])`,
+			[names, provisionerRole]
 		)
 		if (roles.rows.some((role) => role.privileged))
 			throw new Error('customer role has unexpected cluster privileges')
-		for (const { rolname } of roles.rows)
+		for (const { rolname } of roles.rows.filter((role) => !role.administered))
 			await client.query(
 				`GRANT ${quoteIdentifier(rolname)} TO ${quoteIdentifier(provisionerRole)} WITH ADMIN TRUE, INHERIT FALSE, SET FALSE`
 			)
