@@ -196,7 +196,8 @@ jobs:
 
   runtime:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Fleet image archives and fixture cleanup vary with hosted-runner disk speed.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
         with:
