@@ -11,6 +11,7 @@
 	"scripts": {
 		"customer:move": "bun services/platform-provisioner/src/move-cli.ts",
 		"test:customer-movement": "bun deploy/e2e/customer-movement.ts",
+		"test:customer-runtime": "bun deploy/e2e/customer-runtime-journey.ts",
 		"release:promote": "bun scripts/promote-release.ts",
 		"check:secrets": "bash scripts/security-scan.sh",
 		"check:rust-advisories": "bun scripts/rust-advisories.ts",
@@ -91,6 +92,7 @@
 		"@types/pg": "8.15.6",
 		"@types/terminal-kit": "2.5.7",
 		"conventional-changelog-cli": "^5.0.0",
+		"jose": "6.2.9",
 		"nodemailer": "9.0.3",
 		"pg": "8.16.3",
 		"semver": "^7.8.4",

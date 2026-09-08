@@ -125,6 +125,7 @@ bun run test:deploy
 bun run test:proxy-boundary
 bun run test:recovery
 bun run test:customer-movement
+bun run test:customer-runtime
 ```
 
 - `test:infra` evaluates the Pulumi program, security-sensitive cloud-init output, and
@@ -378,13 +379,28 @@ bun run test:bootstrap
 bun run test:deploy
 bun run test:recovery
 bun run test:customer-movement
+bun run test:customer-runtime
 bun run test:e2e:platform
 ```
 
-`platform-ci` and `platform-deploy` repeat the release-critical checks on Linux. A
-deployment cannot publish images until its verification job passes.
+`platform-ci` and `platform-release` call the same `platform-verification` workflow at
+the caller's source revision. Image publication requires that entire workflow to pass.
+The required Platform release gate also fails when verification fails or is cancelled.
 
 ## CI scheduling and caches
+
+Platform verification runs four independent jobs concurrently: static checks and builds,
+unit/infrastructure tests, migration/recovery drills, and the full native/browser journey.
+Every job is required. Security scans still run for each source revision; no path filter,
+previous green run or cache hit substitutes for verification. The checks have read-only
+repository/package permissions and receive no deployment Environment credentials. Package
+registry authentication is scoped to dependency installation and the E2E image builds;
+the harness removes it before scans, services and customer tests run.
+
+Only the native/browser journey installs WebDriver and Playwright. Unit tests install the
+native build libraries they need. Protected release builds use per-image BuildKit caches;
+the exact published image digests are still scanned before the manifest is released.
+The source-level workflow contract test checks that both callers retain all critical gates.
 
 Pull-request checks cancel an older run when a newer commit arrives on the same pull
 request. Deployment, infrastructure, and operations mutations keep their target-scoped,

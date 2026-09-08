@@ -6,6 +6,7 @@ export type MovementPhase =
 	| 'fenced'
 	| 'copied'
 	| 'verified'
+	| 'returning'
 	| 'activated'
 	| 'completed'
 	| 'cancelled'
@@ -40,6 +41,56 @@ export class CustomerMovementStore {
 			[id, releaseSha]
 		)
 		if (!result.rowCount) throw new Error('runtime ID is already bound to another release')
+	}
+
+	async selectDefaultRuntime(
+		id: string,
+		releaseSha: string,
+		catalog: Array<{
+			componentRef: string
+			targetSchemaVersion: number
+			migrationSetDigest: string
+		}>
+	): Promise<void> {
+		if (
+			!catalog.length ||
+			new Set(catalog.map((c) => c.componentRef)).size !== catalog.length ||
+			catalog.some(
+				(c) =>
+					!c.componentRef ||
+					!Number.isSafeInteger(c.targetSchemaVersion) ||
+					c.targetSchemaVersion < 1 ||
+					!/^[a-f0-9]{64}$/.test(c.migrationSetDigest)
+			)
+		)
+			throw new Error('runtime component catalog is invalid')
+		const canonical = JSON.stringify(
+			[...catalog].sort((a, b) => a.componentRef.localeCompare(b.componentRef))
+		)
+		const client = await this.pool.connect()
+		try {
+			await client.query('BEGIN')
+			await client.query(
+				"SELECT pg_advisory_xact_lock(hashtextextended('customer-runtime-default',0))"
+			)
+			const result = await client.query(
+				`UPDATE customer_runtimes SET component_catalog=$3::jsonb
+			 WHERE id=$1 AND release_sha=$2 AND retired_at IS NULL
+			 AND (component_catalog IS NULL OR component_catalog=$3::jsonb) RETURNING id`,
+				[id, releaseSha, canonical]
+			)
+			if (!result.rowCount) throw new Error('runtime release or immutable catalog does not match')
+			await client.query(
+				'UPDATE customer_runtime_defaults SET runtime_id=$1,updated_at=clock_timestamp() WHERE singleton',
+				[id]
+			)
+			await client.query('COMMIT')
+		} catch (error) {
+			await client.query('ROLLBACK').catch(() => {})
+			throw error
+		} finally {
+			client.release()
+		}
 	}
 
 	async begin(input: {
@@ -96,7 +147,7 @@ export class CustomerMovementStore {
 			)
 				throw new Error('customer placement is not ready or has changed')
 			const runtimes = await client.query(
-				'SELECT id FROM customer_runtimes WHERE id=ANY($1::text[]) AND release_sha IS NOT NULL',
+				'SELECT id FROM customer_runtimes WHERE id=ANY($1::text[]) AND release_sha IS NOT NULL AND retired_at IS NULL',
 				[[input.sourceRuntimeId, input.destinationRuntimeId]]
 			)
 			if (runtimes.rowCount !== 2)
@@ -127,6 +178,17 @@ export class CustomerMovementStore {
 				)
 					throw new Error(
 						'rollback requires a retained customer movement and explicit divergence acceptance'
+					)
+
+				const priorController = (
+					await client.query<{ claimed: boolean }>(
+						'SELECT pg_try_advisory_xact_lock(hashtextextended($1,0)) AS claimed',
+						[`movement:${retained.id}`]
+					)
+				).rows[0]?.claimed
+				if (!priorController)
+					throw new Error(
+						'the previous movement controller is still active; retry rollback after it exits'
 					)
 				if (retained.phase === 'activated')
 					await client.query(
@@ -229,25 +291,46 @@ export class CustomerMovementStore {
 		if (!result.rowCount) throw new Error('movement phase changed')
 	}
 
-	async activate(id: string): Promise<void> {
+	/** Called only while the controller owns this operation's advisory lock. */
+	async requestReturn(id: string): Promise<void> {
+		const result = await this.pool.query(
+			`UPDATE customer_movements SET phase=CASE WHEN phase='cancelled' THEN phase ELSE 'returning' END,updated_at=clock_timestamp()
+		 WHERE id=$1 AND phase IN ('paused','fenced','copied','verified','returning','cancelled') AND destination_generation<9007199254740991 RETURNING id`,
+			[id]
+		)
+		if (!result.rowCount)
+			throw new Error(
+				'return is only allowed before activation; use explicit retained rollback afterwards'
+			)
+	}
+
+	async activate(id: string, returnEvidence?: Record<string, unknown>): Promise<void> {
 		const client = await this.pool.connect()
 		try {
 			await client.query('BEGIN')
 			const movement = await this.read(id, client)
+			const returning = returnEvidence !== undefined
+			if (returning) {
+				if (movement.phase !== 'returning') throw new Error('movement is not returning')
+				movement.destination_runtime_id = movement.source_runtime_id
+				movement.destination_generation += 1
+				movement.evidence = { ...movement.evidence, ...returnEvidence }
+			}
 			// Match entitlement state and generation as well as placement. A revocation must win.
 			const result = await client.query(
 				`UPDATE customer_environments SET runtime_id=$3,routing_generation=$4,movement_id=NULL,
 				 observed_state='ready',updated_at=clock_timestamp()
 				 WHERE id=$1 AND movement_id=$2 AND runtime_id=$5 AND routing_generation=$6
 				 AND desired_state='ready' AND EXISTS
-				 (SELECT 1 FROM customer_movements WHERE id=$2 AND phase='verified') RETURNING id`,
+				 (SELECT 1 FROM customer_movements WHERE id=$2 AND phase=$7) RETURNING id`,
 				[
 					movement.environment_id,
 					id,
 					movement.destination_runtime_id,
 					movement.destination_generation,
 					movement.source_runtime_id,
-					movement.source_generation
+					movement.source_generation,
+					returning ? 'returning' : 'verified'
 				]
 			)
 			if (!result.rowCount)
@@ -292,8 +375,8 @@ export class CustomerMovementStore {
 				)
 			}
 			await client.query(
-				"UPDATE customer_movements SET phase='activated',updated_at=clock_timestamp() WHERE id=$1",
-				[id]
+				'UPDATE customer_movements SET phase=$2,evidence=evidence || $3::jsonb,updated_at=clock_timestamp() WHERE id=$1',
+				[id, returning ? 'cancelled' : 'activated', JSON.stringify(returnEvidence ?? {})]
 			)
 			await client.query('COMMIT')
 		} catch (error) {
@@ -306,6 +389,8 @@ export class CustomerMovementStore {
 }
 
 export interface MovementDriver {
+	/** Fence both copies, rotate the source generation, and preserve effect uncertainty. */
+	returnToSource?(movement: Movement, signal: AbortSignal): Promise<Record<string, unknown>>
 	/** Idempotent; must verify execution drain and persistent source fencing. */
 	fence(movement: Movement, signal: AbortSignal): Promise<Record<string, unknown>>
 	/** Idempotent; only a source frozen at the recorded boundary can be copied. */
@@ -314,15 +399,21 @@ export interface MovementDriver {
 	verify(movement: Movement, signal: AbortSignal): Promise<Record<string, unknown>>
 	/** Recheck both physical postconditions immediately before publication. */
 	beforeActivate(movement: Movement, signal: AbortSignal): Promise<void>
+	afterActivate?(movement: Movement, signal: AbortSignal): Promise<void>
 	observe(movement: Movement, signal: AbortSignal): Promise<Record<string, unknown>>
 }
 
 export async function resumeMovement(
 	store: CustomerMovementStore,
 	id: string,
-	driver: MovementDriver
+	driver: MovementDriver,
+	returnToSource = false
 ): Promise<Movement> {
 	return store.exclusive(id, async (signal) => {
+		if (returnToSource) {
+			if (!driver.returnToSource) throw new Error('this driver cannot return to the source')
+			await store.requestReturn(id)
+		}
 		for (;;) {
 			signal.throwIfAborted()
 			const movement = await store.read(id)
@@ -351,9 +442,18 @@ export async function resumeMovement(
 					await store.activate(id)
 					break
 				case 'activated': {
+					await driver.afterActivate?.(movement, signal)
+					signal.throwIfAborted()
 					const evidence = await driver.observe(movement, signal)
 					signal.throwIfAborted()
 					await store.advance(id, 'activated', 'completed', evidence)
+					break
+				}
+				case 'returning': {
+					if (!driver.returnToSource) throw new Error('this driver cannot return to the source')
+					const evidence = await driver.returnToSource(movement, signal)
+					signal.throwIfAborted()
+					await store.activate(id, evidence)
 					break
 				}
 				case 'completed':

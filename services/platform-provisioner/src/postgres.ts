@@ -30,7 +30,13 @@ export class CustomerDatabaseProvisioner {
 	private pool(database: string, options: pg.PoolConfig = {}): pg.Pool {
 		const url = new URL(this.clusterUrl)
 		url.pathname = `/${database}`
-		return new pg.Pool({ connectionString: url.toString(), max: 1, ...options })
+		return new pg.Pool({
+			connectionString: url.toString(),
+			max: 1,
+			connectionTimeoutMillis: 5000,
+			statement_timeout: 60000,
+			...options
+		})
 	}
 
 	async reconcile(operation: Operation, entry: ComponentCatalogEntry): Promise<void> {
@@ -45,6 +51,19 @@ export class CustomerDatabaseProvisioner {
 				`customer-environment:${operation.environmentId}`
 			])
 			await this.ensureDatabase(operation.environmentId, operation.databaseName)
+			const metadata = this.pool(operation.databaseName)
+			try {
+				const identity = (
+					await metadata.query<{ routing_generation: string }>(
+						'SELECT routing_generation FROM aven_platform.environment_identity WHERE singleton'
+					)
+				).rows[0]
+				if (!identity || Number(identity.routing_generation) > operation.routingGeneration)
+					throw new Error('provisioning generation is stale')
+			} finally {
+				await metadata.end()
+			}
+
 			if (operation.action === 'suspend') {
 				await this.suspend(operation, entry.manifest)
 				return
@@ -326,7 +345,12 @@ export class CustomerDatabaseProvisioner {
 		url.username = role
 		url.password = password
 		url.pathname = `/${operation.databaseName}`
-		const runtime = new pg.Pool({ connectionString: url.toString(), max: 1 })
+		const runtime = new pg.Pool({
+			connectionString: url.toString(),
+			max: 1,
+			connectionTimeoutMillis: 5000,
+			statement_timeout: 60000
+		})
 		try {
 			const installation = (
 				await runtime.query<{

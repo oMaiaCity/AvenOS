@@ -1,6 +1,11 @@
 name: Set up platform test host
 description: Install the Linux libraries, WebDriver, and browser required by the avenOS E2E stack
 
+inputs:
+  browser-e2e:
+    description: Install browser and WebDriver tools in addition to native build libraries
+    default: "true"
+
 runs:
   using: composite
   steps:
@@ -27,8 +32,12 @@ runs:
           webkit2gtk-driver \
           wget \
           xvfb
-        cargo install tauri-driver --locked
+    - name: Install native WebDriver
+      if: inputs.browser-e2e == 'true'
+      shell: bash
+      run: cargo install tauri-driver --locked
     - name: Restore the lockfile-scoped Playwright browser cache
+      if: inputs.browser-e2e == 'true'
       uses: actions/cache@v4
       with:
         path: ~/.cache/ms-playwright
@@ -36,5 +45,6 @@ runs:
         restore-keys: |
           playwright-${{ runner.os }}-
     - name: Install the lockfile-matched Playwright Chromium
+      if: inputs.browser-e2e == 'true'
       shell: bash
       run: bunx playwright install chromium

@@ -127,6 +127,9 @@ if [ "${E2E_SKIP_IMAGE_BUILD:-false}" != "true" ]; then
   docker build --file "$root/services/static-site-host/Dockerfile" --tag "$E2E_STATIC_SITE_HOST_IMAGE" "$root"
 fi
 
+# Registry access is needed by image builds only. Customer fixtures and tests receive no token.
+unset NODE_AUTH_TOKEN
+
 docker compose --project-name "$project" --file "$compose" --file "$hardening" config --quiet
 if [ -n "$built_images" ]; then
   # Internally generated, whitespace-free image names; deliberate word splitting.

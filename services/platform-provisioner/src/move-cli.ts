@@ -25,16 +25,21 @@ const configSchema = z
 					})
 					.strict()
 			)
-			.min(2)
+			.min(1)
 			.max(32)
 	})
 	.strict()
 
 async function main(): Promise<void> {
 	const [file, action, ...args] = process.argv.slice(2)
-	if (!file || !['register', 'begin', 'resume', 'status', 'rollback'].includes(action ?? ''))
+	if (
+		!file ||
+		!['register', 'begin', 'resume', 'status', 'rollback', 'default', 'return'].includes(
+			action ?? ''
+		)
+	)
 		throw new Error(
-			'Use customer:move -- CONFIG register|begin|resume|status|rollback; see the recovery handbook.'
+			'Use customer:move -- CONFIG register|begin|resume|status|rollback|default|return; see the recovery handbook.'
 		)
 	const info = await lstat(file)
 	if (
@@ -47,6 +52,16 @@ async function main(): Promise<void> {
 	const config = configSchema.parse(JSON.parse(await readFile(file, 'utf8')))
 	if (new Set(config.runtimes.map((runtime) => runtime.id)).size !== config.runtimes.length)
 		throw new Error('Runtime IDs must be unique.')
+	for (const runtime of config.runtimes) {
+		const recovery = new URL(runtime.recoveryDatabaseUrl)
+		const provisioning = new URL(runtime.provisioner.CLUSTER_DATABASE_URL)
+		if (
+			recovery.hostname !== provisioning.hostname ||
+			(recovery.port || '5432') !== (provisioning.port || '5432') ||
+			runtime.provisioner.CUSTOMER_RUNTIME_ID !== runtime.id
+		)
+			throw new Error('Recovery and provisioning must name the same runtime and database endpoint.')
+	}
 	const pool = new pg.Pool({
 		connectionString: config.controlDatabaseUrl,
 		max: 4,
@@ -93,15 +108,33 @@ async function main(): Promise<void> {
 			console.info(`Customer admission paused. Resume operation ${result}.`)
 			return
 		}
-		if (args.length !== 1) throw new Error('Resume and status require one operation UUID.')
-		const id = z.uuid().parse(args[0])
+		if (args.length !== 1)
+			throw new Error(
+				'Resume and status require one operation UUID; default requires one runtime ID.'
+			)
+		const id = action === 'default' ? runtimeId.parse(args[0]) : z.uuid().parse(args[0])
 		if (action === 'status') {
 			console.info(JSON.stringify(await store.read(id), null, 2))
 			return
 		}
-		const movement = await store.read(id)
+		const movement = action === 'default' ? undefined : await store.read(id)
+		if (
+			movement &&
+			((action === 'resume' && ['completed', 'cancelled', 'superseded'].includes(movement.phase)) ||
+				(action === 'return' && movement.phase === 'cancelled'))
+		) {
+			console.info(JSON.stringify(movement, null, 2))
+			return
+		}
+
 		const destination = config.runtimes.find(
-			(runtime) => runtime.id === movement.destination_runtime_id
+			(runtime) =>
+				runtime.id ===
+				(action === 'default'
+					? id
+					: action === 'return' || movement?.phase === 'returning'
+						? movement?.source_runtime_id
+						: movement?.destination_runtime_id)
 		)
 		if (!destination) throw new Error('Destination runtime is absent from the configuration.')
 		// Migrations are executable source. The controller must use the destination release.
@@ -132,6 +165,24 @@ async function main(): Promise<void> {
 		}
 		process.chdir(resolve(import.meta.dir, '..'))
 		const catalog = await loadCatalog()
+		if (action === 'default') {
+			const health = await fetch(
+				new URL('/health/ready', destination.provisioner.ARTIFACT_STORE_PROVISIONER_URL),
+				{ signal: AbortSignal.timeout(5000) }
+			)
+			if (!health.ok) throw new Error('Destination provisioner is not ready.')
+			await store.selectDefaultRuntime(
+				destination.id,
+				destination.releaseSha,
+				[...catalog.values()].map(({ manifest }) => ({
+					componentRef: manifest.componentRef,
+					targetSchemaVersion: manifest.targetSchemaVersion,
+					migrationSetDigest: manifest.migrationSetDigest
+				}))
+			)
+			console.info(`New customer environments will use runtime ${destination.id}.`)
+			return
+		}
 		const provisioner = new CustomerDatabaseProvisioner(
 			destination.provisioner.CLUSTER_DATABASE_URL,
 			destination.provisioner
@@ -182,7 +233,9 @@ async function main(): Promise<void> {
 				}
 			}
 		})
-		console.info(JSON.stringify(await resumeMovement(store, id, driver), null, 2))
+		console.info(
+			JSON.stringify(await resumeMovement(store, id, driver, action === 'return'), null, 2)
+		)
 	} finally {
 		await pool.end()
 	}

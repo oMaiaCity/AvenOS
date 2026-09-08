@@ -78,7 +78,12 @@ export class PostgresMovementDriver implements MovementDriver {
 			if (
 				identity?.environment_id !== movement.environment_id ||
 				typeof identity.execution_enabled !== 'boolean' ||
-				(!destination && Number(identity.routing_generation) !== movement.source_generation)
+				(!destination &&
+					Number(identity.routing_generation) !== movement.source_generation &&
+					!(
+						movement.phase === 'returning' &&
+						Number(identity.routing_generation) === movement.destination_generation + 1
+					))
 			)
 				throw new Error('customer identity or execution barrier is missing')
 		})
@@ -100,9 +105,7 @@ export class PostgresMovementDriver implements MovementDriver {
 		)
 	}
 
-	async fence(movement: Movement, signal: AbortSignal): Promise<Record<string, unknown>> {
-		signal.throwIfAborted()
-		await this.assertIdentity(movement, false)
+	private async assertClusterTargets(movement: Movement): Promise<void> {
 		for (const destination of [false, true]) {
 			await this.database(
 				movement,
@@ -143,9 +146,53 @@ export class PostgresMovementDriver implements MovementDriver {
 		)
 		if (!sourceSystem || sourceSystem === targetSystem)
 			throw new Error('movement requires separate database clusters')
+	}
+
+	private async runtimeExclusive<T>(
+		movement: Movement,
+		destination: boolean,
+		work: () => Promise<T>
+	): Promise<T> {
+		return this.database(
+			movement,
+			destination,
+			async (client) => {
+				await client.query('SELECT pg_advisory_lock(hashtextextended($1,0))', [
+					`customer-environment:${movement.environment_id}`
+				])
+				return work()
+			},
+			true
+		)
+	}
+
+	async fence(movement: Movement, signal: AbortSignal): Promise<Record<string, unknown>> {
+		return this.runtimeExclusive(movement, false, () => this.fenceSource(movement, signal))
+	}
+
+	private async fenceSource(
+		movement: Movement,
+		signal: AbortSignal
+	): Promise<Record<string, unknown>> {
+		signal.throwIfAborted()
+		await this.assertIdentity(movement, false)
+		await this.assertClusterTargets(movement)
+		await this.stopApplicationAccess(movement, false, signal)
+		await this.assertFenced(movement)
+		return {
+			fencedAt: new Date().toISOString(),
+			sourceRelease: this.runtime(movement, false).releaseSha
+		}
+	}
+
+	private async stopApplicationAccess(
+		movement: Movement,
+		destination: boolean,
+		signal: AbortSignal
+	): Promise<void> {
 		// Pause first, then wait for every executor holding the shared barrier to leave.
 		// A timeout preserves the pause. Never kill an executor to claim its effects stopped.
-		await this.database(movement, false, async (client) => {
+		await this.database(movement, destination, async (client) => {
 			await client.query(
 				'UPDATE aven_platform.environment_identity SET execution_enabled=false WHERE singleton'
 			)
@@ -158,11 +205,11 @@ export class PostgresMovementDriver implements MovementDriver {
 			if (unsettled !== 0)
 				throw new Error('interrupted Actor execution requires reconciliation before movement')
 			signal.throwIfAborted()
-			const roles = await this.customerRoles(movement, false)
+			const roles = await this.customerRoles(movement, destination)
 			if (!roles.length) throw new Error('customer roles are absent')
 			await this.database(
 				movement,
-				false,
+				destination,
 				async (cluster) => {
 					for (const role of roles) {
 						await cluster.query(`ALTER ROLE ${quoteIdentifier(role)} NOLOGIN`)
@@ -178,16 +225,12 @@ export class PostgresMovementDriver implements MovementDriver {
 				true
 			)
 		})
-		await this.assertFenced(movement)
-		return {
-			fencedAt: new Date().toISOString(),
-			sourceRelease: this.runtime(movement, false).releaseSha
-		}
 	}
 
-	private async assertFenced(movement: Movement): Promise<void> {
-		const roles = await this.customerRoles(movement, false)
-		await this.database(movement, false, async (client) => {
+	private async assertFenced(movement: Movement, destination = false): Promise<void> {
+		await this.assertClusterTargets(movement)
+		const roles = await this.customerRoles(movement, destination)
+		await this.database(movement, destination, async (client) => {
 			const enabled = (
 				await client.query<{ execution_enabled: boolean }>(
 					'SELECT execution_enabled FROM aven_platform.environment_identity WHERE singleton'
@@ -332,17 +375,42 @@ export class PostgresMovementDriver implements MovementDriver {
 				 THEN CREATE ROLE ${quoteIdentifier(role)} NOLOGIN; END IF; END $$`)
 					await client.query(`ALTER ROLE ${quoteIdentifier(role)} NOLOGIN`)
 				}
+
 				if (!existing) {
+					// An operation-specific, closed staging database survives a crash between
+					// CREATE DATABASE (nontransactional) and publishing its ownership marker.
+					const staging = `movement_${movement.id.replaceAll('-', '')}`
+					const owner = databaseRoleName(movement.environment_id, 'db_owner')
+					const partial = (
+						await client.query<{ marker: string | null; owner: string; datallowconn: boolean }>(
+							`SELECT shobj_description(oid,'pg_database') AS marker,pg_get_userbyid(datdba) AS owner,datallowconn FROM pg_database WHERE datname=$1`,
+							[staging]
+						)
+					).rows[0]
+					if (
+						partial &&
+						(partial.owner !== owner ||
+							partial.datallowconn ||
+							(partial.marker !== null && partial.marker !== marker))
+					)
+						throw new Error(
+							'unrecognized destination staging database; recovery material is preserved'
+						)
+					if (!partial)
+						await client.query(
+							`CREATE DATABASE ${quoteIdentifier(staging)} OWNER ${quoteIdentifier(owner)} TEMPLATE template0 ALLOW_CONNECTIONS false`
+						)
+					await client.query(`REVOKE ALL ON DATABASE ${quoteIdentifier(staging)} FROM PUBLIC`)
 					await client.query(
-						`CREATE DATABASE ${quoteIdentifier(movement.database_name)} OWNER ${quoteIdentifier(databaseRoleName(movement.environment_id, 'db_owner'))}`
+						`COMMENT ON DATABASE ${quoteIdentifier(staging)} IS ${literal(marker)}`
 					)
 					await client.query(
-						`REVOKE ALL ON DATABASE ${quoteIdentifier(movement.database_name)} FROM PUBLIC`
-					)
-					await client.query(
-						`COMMENT ON DATABASE ${quoteIdentifier(movement.database_name)} IS ${literal(marker)}`
+						`ALTER DATABASE ${quoteIdentifier(staging)} RENAME TO ${quoteIdentifier(movement.database_name)}`
 					)
 				}
+				await client.query(
+					`ALTER DATABASE ${quoteIdentifier(movement.database_name)} ALLOW_CONNECTIONS true`
+				)
 				await client.query(
 					`REVOKE ALL ON DATABASE ${quoteIdentifier(movement.database_name)} FROM PUBLIC`
 				)
@@ -394,10 +462,11 @@ export class PostgresMovementDriver implements MovementDriver {
 			).rows[0]
 			if (Number(identity?.routing_generation) !== movement.destination_generation)
 				throw new Error('destination generation was not prepared')
-			// A rollback cannot resume the old job journal until effects are reconciled.
+			// Execution stays paused until the directory publishes this destination.
+			// Rollback keeps it paused until effects are reconciled.
 			await client.query(
 				'UPDATE aven_platform.environment_identity SET execution_enabled=$1 WHERE singleton',
-				[movement.mode !== 'rollback']
+				[false]
 			)
 			return (
 				await client.query(
@@ -443,7 +512,118 @@ export class PostgresMovementDriver implements MovementDriver {
 		await this.config.verifyApplication(movement, signal)
 	}
 
+	async returnToSource(movement: Movement, signal: AbortSignal): Promise<Record<string, unknown>> {
+		await this.assertClusterTargets(movement)
+		for (const destination of [true, false]) {
+			await this.runtimeExclusive(movement, destination, async () => {
+				signal.throwIfAborted()
+				const exists = await this.database(
+					movement,
+					destination,
+					async (client) =>
+						(
+							await client.query<{ datallowconn: boolean; marker: string | null }>(
+								"SELECT datallowconn,shobj_description(oid,'pg_database') AS marker FROM pg_database WHERE datname=$1",
+								[movement.database_name]
+							)
+						).rows[0],
+					true
+				)
+				if (!exists) {
+					if (destination) return
+					throw new Error('source database is missing')
+				}
+				if (destination && !exists.datallowconn) {
+					if (!exists.marker?.startsWith(`aven-movement:${movement.id}:`))
+						throw new Error('unrecognized closed destination; return refused')
+					return
+				}
+				// A transactional restore may not yet have created customer metadata.
+				if (destination) {
+					const identityTable = await this.database(
+						movement,
+						true,
+						async (client) =>
+							(
+								await client.query(
+									"SELECT to_regclass('aven_platform.environment_identity') AS present"
+								)
+							).rows[0]?.present
+					)
+					if (!identityTable) {
+						const marker = await this.database(
+							movement,
+							true,
+							async (client) =>
+								(
+									await client.query(
+										"SELECT shobj_description(oid,'pg_database') AS marker FROM pg_database WHERE datname=$1",
+										[movement.database_name]
+									)
+								).rows[0]?.marker,
+							true
+						)
+						if (typeof marker !== 'string' || !marker.startsWith(`aven-movement:${movement.id}:`))
+							throw new Error('unrecognized partial destination; return refused')
+						return
+					}
+				}
+				await this.assertIdentity(movement, destination)
+				await this.stopApplicationAccess(movement, destination, signal)
+				await this.assertFenced(movement, destination)
+			})
+		}
+		const returned: Movement = {
+			...movement,
+			destination_runtime_id: movement.source_runtime_id,
+			destination_generation: movement.destination_generation + 1,
+			mode: 'rollback'
+		}
+		await this.config.prepareDestination(returned, signal)
+		await this.config.verifyApplication(returned, signal)
+		const verifiedComponents = await this.database(returned, true, async (client) => {
+			const identity = (
+				await client.query(
+					'SELECT routing_generation,execution_enabled FROM aven_platform.environment_identity WHERE singleton'
+				)
+			).rows[0]
+			if (
+				Number(identity?.routing_generation) !== returned.destination_generation ||
+				identity.execution_enabled !== false
+			)
+				throw new Error('source return was not prepared with execution paused')
+			return (
+				await client.query(
+					'SELECT component_ref,schema_version,migration_set_digest FROM aven_platform.component_installations WHERE routing_generation=$1 ORDER BY component_ref',
+					[returned.destination_generation]
+				)
+			).rows
+		})
+		return {
+			returnedAt: new Date().toISOString(),
+			returnedGeneration: returned.destination_generation,
+			verifiedComponents,
+			executionRequiresReconciliation: true
+		}
+	}
+
+	async afterActivate(movement: Movement, signal: AbortSignal): Promise<void> {
+		signal.throwIfAborted()
+		await this.assertFenced(movement)
+		await this.database(movement, true, async (client) => {
+			signal.throwIfAborted()
+			const result = await client.query(
+				`UPDATE aven_platform.environment_identity SET execution_enabled=$1
+			 WHERE singleton AND environment_id=$2 AND routing_generation=$3 RETURNING singleton`,
+				[movement.mode !== 'rollback', movement.environment_id, movement.destination_generation]
+			)
+			if (!result.rowCount)
+				throw new Error('destination generation changed before enabling execution')
+		})
+	}
+
 	async observe(movement: Movement, signal: AbortSignal): Promise<Record<string, unknown>> {
+		await this.assertClusterTargets(movement)
 		await this.config.verifyApplication(movement, signal)
 		return { observedAt: new Date().toISOString() }
 	}

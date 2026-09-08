@@ -192,7 +192,7 @@ The operator-owned mode-`0600` configuration file has these fields:
 | `runtimes` | Array of runtime configuration objects |
 | Runtime `id`, `releaseSha` | Immutable runtime ID and exact 40-character release commit |
 | Runtime `recoveryDatabaseUrl` | Generated administrative recovery connection for that cluster |
-| Runtime `provisioner` | That runtime's normal validated provisioner configuration |
+| Runtime `provisioner` | That runtime's normal validated provisioner configuration; `CUSTOMER_RUNTIME_ID` must match `id`, and its cluster hostname and port must match the recovery connection |
 
 Recover credentials through the existing escrow/access process. The installer does not
 currently generate this movement configuration. It contains secrets; keep it outside
@@ -214,11 +214,24 @@ bun run customer:move -- /private/movement.json status OPERATION_UUID
 `begin` immediately pauses that customer's admission. `resume` verifies source ownership,
 waits up to 60 seconds for running Actors, blocks on uncertain executions, closes source
 logins, restores an empty destination, and applies the destination checkout's component
-catalog. Repeating the same operation resumes its durable phase. A failure preserves the
+catalog. Restored Actors remain paused until placement is published; a retry finishes
+that activation step before observing the new runtime. Repeating the same operation resumes its durable phase. A failure preserves the
 hold and files. An existing destination without the exact operation/dump marker is
-refused; do not delete it to silence the error. An interruption between database creation
-and marker publication requires inspection before retry. There is no automatic
-pre-activation cancellation command yet.
+refused; do not delete it to silence the error. Database creation first uses a closed, operation-specific staging database. A retry
+recognizes only that name, its expected owner and closed state before recording the
+marker and publishing the final database name. Other existing databases remain refused. Return a failed movement to its original runtime before activation from the clean source
+release checkout:
+
+```sh
+bun run customer:move -- /private/movement.json return OPERATION_UUID
+```
+
+The durable `returning` phase fences both copies, waits for provisioning and execution,
+verifies the original database with newly derived credentials, then publishes the original
+runtime at a generation higher than either attempted placement. A crash resumes with the
+same `return` or `resume` command. It preserves any partial destination and blocks on
+unfinished effects. Actor execution stays paused for reconciliation; ordinary customer
+reads and writes resume. After activation, use the explicit divergence rollback below.
 
 A rollback requires the activated or completed earlier movement ID and explicit acceptance that
 newer data will no longer be visible. It retains both databases and disables Actor
@@ -233,10 +246,29 @@ Resume rollback from the clean retained release checkout. Never clear unfinished
 records merely to make movement succeed: determine the actual outcome of each external
 action first. Automated reconciliation and retirement are separate outstanding work.
 
+After proving the destination runtime, select it for new purchases from its clean release
+checkout. This binds the component catalog immutably and atomically changes the directory
+default; existing customers keep their current placement:
+
+```sh
+bun run customer:move -- /private/movement.json default DESTINATION_RUNTIME
+```
+
+This command checks the Artifact Store provisioner's readiness. It does not replace the
+runtime journey or verify the remote image digests. Configuration may contain one runtime
+for this command; a movement still requires two distinct registered runtimes.
+
 The driver verifies database component metadata, scoped reads and privileges. It does
 not yet perform a native-client or live-provider journey before activation. Run the
 isolated mechanism proof with:
 
 ```sh
 bun run test:customer-movement
+bun run test:customer-runtime
 ```
+
+The second command builds the current Artifact Store image and runs the actual customer
+catalog and provisioners on two disposable PostgreSQL clusters. Signed HTTP requests
+exercise the facade and Intent Service, including phase interruption, continued writes
+for another customer, retained rollback, interrupted pre-activation return and default placement. It uses local identity
+signing keys and does not contact a live identity or cloud provider.
