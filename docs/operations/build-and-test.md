@@ -414,6 +414,8 @@ Platform verification runs five independent jobs concurrently: static checks and
 unit/infrastructure tests, migration/recovery drills, the native/browser journey, and
 host rollout with fresh fleet recovery. The last two jobs consume the same verified
 release manifest and run independently; neither waits for the other to finish.
+The fleet recovery job allows 60 minutes, including encrypted image archives and
+cleanup, to accommodate hosted-runner disk variation. It exits as soon as it finishes.
 Every job is required. Security scans still run for each source revision; no path filter,
 previous green run or cache hit substitutes for verification. The checks have read-only
 repository/package permissions and receive no deployment Environment credentials. Package
