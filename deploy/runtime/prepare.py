@@ -122,7 +122,9 @@ def prepare(bundle, destination, runtime_id, target, database_port, provisioner_
     }}
     storage = data_root / runtime_id
     for name in SERVICES:
-        service = rewrite(copy.deepcopy(source['services'][name]))
+        service = copy.deepcopy(source['services'][name])
+        # Commands, users and health probes are executable configuration, not service names.
+        service['environment'] = rewrite(service.get('environment', {}))
         for key, scope in bindings.get(name, {}).items():
             service['environment'][key] = credentials[scope]
         for key, scope in database_credentials.get(name, {}).items():

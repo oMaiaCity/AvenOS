@@ -766,6 +766,56 @@ try {
 	await cli('resume', cliOperation)
 	assert.equal((await movementStore.read(cliOperation)).phase, 'completed')
 	assert.deepEqual(await (await request(cliCustomer, `/${intent}`)).json(), cliBefore)
+	// Restored credentials need jobs at the active generation, including generations
+	// whose migrations were applied directly by the movement controller.
+	assert.equal(
+		Number(
+			(
+				await control.query(
+					'SELECT count(*) FROM customer_component_operations WHERE environment_id=$1 AND routing_generation=2',
+					[cliCustomer]
+				)
+			).rows[0].count
+		),
+		0
+	)
+	await cli('reconcile', 'primary')
+	const recoveryWorker = new ControlStore(control, 'recovery-lease-proof', 60, 'primary')
+	const leased = await recoveryWorker.claim()
+	assert.ok(leased)
+	await cli('reconcile', 'primary')
+	assert.deepEqual(
+		(
+			await control.query(
+				'SELECT status,lease_owner FROM customer_component_operations WHERE id=$1',
+				[leased.id]
+			)
+		).rows[0],
+		{ status: 'running', lease_owner: 'recovery-lease-proof' }
+	)
+	assert.equal(
+		Number(
+			(
+				await control.query(
+					'SELECT count(*) FROM customer_component_operations WHERE environment_id=$1 AND routing_generation=2',
+					[cliCustomer]
+				)
+			).rows[0].count
+		),
+		catalog.size
+	)
+	await runtimes.primary.provisioner.reconcile(leased, getEntry(leased.componentRef))
+	await recoveryWorker.finish(leased)
+	await install('primary')
+	assert.equal(
+		(
+			await control.query('SELECT observed_state FROM customer_environments WHERE id=$1', [
+				cliCustomer
+			])
+		).rows[0].observed_state,
+		'ready'
+	)
+	assert.deepEqual(await (await request(cliCustomer, `/${intent}`)).json(), cliBefore)
 	await chmod(configuration, 0o644)
 	await assert.rejects(cli('list'), /failed/)
 	await chmod(configuration, 0o600)
@@ -784,7 +834,7 @@ try {
 	assert.equal((await control.query(provisioningHealthQuery)).rows[0].healthy, true)
 
 	console.info(
-		`Customer runtime journey passed in ${Math.round((performance.now() - started) / 1000)}s: real catalog and Artifact Store provisioning; signed identity and tenant grants; HTTP reads/writes across two clusters; interruption at every handover phase; unaffected second customer; stale source rejected; divergent rollback; explicit default placement; interrupted return from every pre-activation phase; bundled release controller with wrong-release and insecure-configuration rejection.`
+		`Customer runtime journey passed in ${Math.round((performance.now() - started) / 1000)}s: real catalog and Artifact Store provisioning; signed identity and tenant grants; HTTP reads/writes across two clusters; interruption at every handover phase; unaffected second customer; stale source rejected; divergent rollback; explicit default placement; interrupted return from every pre-activation phase; bundled release controller with wrong-release and insecure-configuration rejection; post-movement credential reconciliation with idempotent jobs and live-lease preservation.`
 	)
 } finally {
 	for (const server of servers) await server.stop(true)

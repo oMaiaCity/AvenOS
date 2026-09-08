@@ -4,6 +4,7 @@ import pg from 'pg'
 import { z } from 'zod'
 import { loadCatalog } from './catalog.js'
 import { provisionerConfigSchema } from './config.js'
+import { queueCustomerReconciliation } from './control.js'
 import { CustomerMovementStore, resumeMovement } from './movement.js'
 import { PostgresMovementDriver } from './movement-postgres.js'
 import { CustomerDatabaseProvisioner, restoreProvisionerAuthority } from './postgres.js'
@@ -237,12 +238,7 @@ async function main(): Promise<void> {
 						customer.id,
 						catalog.values()
 					)
-					await client.query(
-						`UPDATE customer_component_operations o SET status='queued',last_error=NULL,updated_at=now()
-						 FROM customer_environments e WHERE e.id=$1 AND o.environment_id=e.id
-						 AND o.routing_generation=e.routing_generation AND o.action='reconcile' AND o.status='succeeded'`,
-						[customer.id]
-					)
+					await queueCustomerReconciliation(client, customer.id)
 					await client.query(
 						"UPDATE customer_environment_components SET observed_state='pending' WHERE environment_id=$1 AND desired_state='ready'",
 						[customer.id]

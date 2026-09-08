@@ -11,6 +11,27 @@ export interface Operation {
 	routingGeneration: number
 }
 
+/** Called while the operator holds the customer environment row lock. */
+export async function queueCustomerReconciliation(
+	client: Pick<pg.PoolClient, 'query'>,
+	environmentId: string
+): Promise<void> {
+	// Movement verifies components directly, so the new generation may have no jobs yet.
+	// Keep an active worker's lease; all other retries reuse the unique operation row.
+	await client.query(
+		`INSERT INTO customer_component_operations
+		 (id,environment_id,component_ref,action,status,target_schema_version,migration_set_digest,routing_generation)
+		 SELECT gen_random_uuid(),e.id,c.component_ref,'reconcile','queued',c.target_schema_version,c.migration_set_digest,e.routing_generation
+		 FROM customer_environments e JOIN customer_environment_components c ON c.environment_id=e.id
+		 WHERE e.id=$1 AND e.desired_state='ready' AND e.movement_id IS NULL AND c.desired_state='ready'
+		 ON CONFLICT(environment_id,component_ref,action,routing_generation,target_schema_version,migration_set_digest)
+		 DO UPDATE SET status='queued',last_error=NULL,lease_owner=NULL,lease_expires_at=NULL,updated_at=clock_timestamp()
+		 WHERE customer_component_operations.status<>'running'
+		 OR coalesce(customer_component_operations.lease_expires_at,'-infinity'::timestamptz)<=clock_timestamp()`,
+		[environmentId]
+	)
+}
+
 export class ControlStore {
 	constructor(
 		private readonly pool: pg.Pool,

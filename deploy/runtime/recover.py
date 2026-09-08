@@ -79,6 +79,7 @@ def recover(source, platform, volume, target, snapshot='latest'):
         service = copy.deepcopy(source_config['services']['restore'])
         service.pop('depends_on', None); service.pop('profiles', None)
         service['networks'] = ['recovery-egress']
+        service['command'] = ['restore']
         service['environment'].update(RESTORE_MODE='release-only', RESTORE_SNAPSHOT=snapshot,
                                       RESTORE_RELEASE_DESTINATION='/recovery/archive')
         service['volumes'].append({'type': 'bind', 'source': str(work), 'target': '/recovery'})
@@ -160,6 +161,7 @@ def recover(source, platform, volume, target, snapshot='latest'):
                          '--wait-timeout', '180', prefix+'database'])
             restore_service = blank['services'][prefix+'restore']
             selected_snapshot = receipt['snapshotId'] if runtime_id == 'primary' else receipt['manifest'].get('runtimeSnapshots', {}).get(runtime_id, 'latest')
+            restore_service['command'] = ['restore']
             restore_service['environment'].update(RESTORE_SNAPSHOT=selected_snapshot)
             compose = local_compose(bundle, blank, images)
             archive.run([*compose, 'run', '--rm', '--no-deps', '--pull', 'never', prefix+'restore'])
@@ -194,12 +196,18 @@ def recover(source, platform, volume, target, snapshot='latest'):
             compose = compose_by_id[runtime_id]
             archive.run([*compose, 'run', '--rm', '--no-deps', '--pull', 'never', prefix+'database-roles'])
             archive.run([*compose, 'up', '--detach', '--no-deps', '--pull', 'never', '--wait', '--wait-timeout', '180',
-                         *[prefix+name for name in ('database-access', 'artifact-store-provisioner', 'artifact-provisioner-access', 'platform-provisioner')]])
+                         *[prefix+name for name in ('database-access', 'artifact-store-provisioner', 'artifact-provisioner-access')]])
             controller = lifecycle / 'primary-controller' if runtime_id == 'primary' else Path(entry['bundle']) / 'controller'
             controller_image = configurations[runtime_id]['services'][prefix+'platform-provisioner']['image']
             start.install_controller(images[controller_image], controller, entry['movement']['releaseSha'])
             archive.run([str(controller / 'bun'), str(controller / 'build/move-cli.js'),
                          str(lifecycle / 'operator.json'), 'reconcile', runtime_id])
+        # Publish all reconciliation jobs before workers can claim restored pending work.
+        for entry in runtimes:
+            runtime_id = entry['movement']['id']
+            prefix = '' if runtime_id == 'primary' else runtime_id+'-'
+            archive.run([*compose_by_id[runtime_id], 'up', '--detach', '--no-deps', '--pull', 'never',
+                         prefix+'platform-provisioner'])
         # Reconciliation is placement-aware; inactive copies retain NOLOGIN customer roles.
         for _ in range(120):
             if sql(control, 'database', 'aven_api', "SELECT count(*) FROM customer_environments WHERE desired_state='ready' AND observed_state<>'ready'") == '0': break

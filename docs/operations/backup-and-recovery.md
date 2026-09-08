@@ -335,8 +335,8 @@ exercise the facade and Intent Service, including phase interruption, continued 
 for another customer, retained rollback, interrupted pre-activation return and default placement. It uses local identity
 signing keys and does not contact a live identity or cloud provider.
 
-The installed controller also supports `reconcile RUNTIME_ID`. It queues the existing
-component operations through the normal placement-aware worker, without changing a
+The installed controller also supports `reconcile RUNTIME_ID`. It creates or requeues
+component operations at the active generation through the normal placement-aware worker, without changing a
 customer's generation or component catalog. It cannot reopen a retained copy whose
 customer is assigned elsewhere. The initial host transition waits for this work to
 finish before starting the customer-facing services.
@@ -384,7 +384,9 @@ A failed attempt preserves partial recovery and requires
 fresh storage for retry. An unfinished movement requires selecting a completed recovery
 boundary; recovery never guesses which customer copy should win.
 
-Current service roles are reconciled through each retained release's controller. PostgreSQL grants the provisioner administration of customer roles when it creates them;
+Current service roles are reconciled through each retained release's controller. Recovery
+queues current-generation component work before starting provisioner workers and preserves
+any active reconciliation lease. PostgreSQL grants the provisioner administration of customer roles when it creates them;
 restoring roles as the recovery administrator does not preserve that relationship. Before
 reconciliation, the controller verifies the customer database identity and restores the
 same administration membership for existing roles named by its trusted component catalog.
