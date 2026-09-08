@@ -192,4 +192,32 @@ jobs:
       - name: Full-stack browser E2E
         env:
           NODE_AUTH_TOKEN: ${{ secrets.PACKAGE_READ_TOKEN }}
-        run: xvfb-run --auto-servernum bun run test:e2e:platform
+        run: xvfb-run --auto-servernum bun run test:e2e:native
+
+  runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+      - uses: ./.github/actions/bun-install
+        with:
+          token: ${{ secrets.PACKAGE_READ_TOKEN }}
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Select the exact release images when verifying a release
+        env:
+          RELEASE_TEST_MANIFEST: ${{ inputs.manifest }}
+        run: bun scripts/configure-e2e-release.ts
+      - name: Prove host rollout and fresh encrypted fleet recovery
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.PACKAGE_READ_TOKEN }}
+        run: bun run test:e2e:runtime

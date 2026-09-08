@@ -17,6 +17,7 @@ sh -n \
   "$root/deploy/operations/entrypoint.sh" \
   "$root/deploy/operations/healthcheck.sh"
 bash -n \
+  "$root/deploy/e2e/runtime-install.sh" \
   "$root/deploy/release/deploy.sh" \
   "$root/deploy/release/environment.sh" \
   "$root/deploy/release/ssh-staging.sh" \
@@ -30,6 +31,7 @@ python3 "$root/deploy/runtime/rollout-test.py"
 python3 "$root/deploy/runtime/host-test.py"
 python3 "$root/deploy/runtime/transition-test.py"
 python3 "$root/deploy/runtime/recover-test.py"
+python3 "$root/deploy/e2e/test-runtime-install.py"
 grep -Fq 'test:runtime-install' "$root/deploy/e2e/run.sh"
 bun test "$root/deploy/local/llm-catalog.test.ts" "$root/deploy/e2e/llm-catalog.test.ts"
 

@@ -73,7 +73,8 @@ test('CI and release require the same full verification without deployment crede
 		'bun run test:customer-runtime',
 		'bun run test:release-archive',
 		'bun run test:recovery',
-		'xvfb-run --auto-servernum bun run test:e2e:platform'
+		'xvfb-run --auto-servernum bun run test:e2e:native',
+		'bun run test:e2e:runtime'
 	])
 		expect(commands.filter((c) => c === required)).toHaveLength(1)
 	const publication = release.jobs.build.steps
@@ -94,9 +95,12 @@ test('release publication consumes the tested candidate without another build', 
 		expect(step.uses ?? '').not.toContain('build-push')
 	}
 	const gate = await workflow('platform-verification')
-	expect(
-		gate.jobs.journey.steps.some((step) => step.run === 'bun scripts/configure-e2e-release.ts')
-	).toBe(true)
+	for (const name of ['journey', 'runtime']) {
+		expect(gate.jobs[name].needs).toBeUndefined()
+		expect(
+			gate.jobs[name].steps.some((step) => step.run === 'bun scripts/configure-e2e-release.ts')
+		).toBe(true)
+	}
 })
 
 test('each release image refreshes OS packages without disabling build caches', async () => {
