@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
 	assertDeploymentAuthority,
+	assertInitialDeployment,
 	assertNextReleaseCommit,
 	assertRunProvenance,
 	releaseImages,
@@ -20,6 +24,71 @@ const manifest = () => ({
 	)
 })
 describe('release trust boundary', () => {
+	test('the release journey receives only the exact verified image set', async () => {
+		const directory = await mkdtemp(join(tmpdir(), 'aven-release-environment-'))
+		try {
+			const file = join(directory, 'environment')
+			const release = manifest()
+			for (const [input, sha, accepted] of [
+				[JSON.stringify(release), release.sha, true],
+				[JSON.stringify(release), 'c'.repeat(40), false],
+				['{}', release.sha, false],
+				['', release.sha, true]
+			] as const) {
+				await writeFile(file, 'existing=value\n')
+				const child = Bun.spawn([process.execPath, 'scripts/configure-e2e-release.ts'], {
+					env: { RELEASE_TEST_MANIFEST: input, GITHUB_SHA: sha, GITHUB_ENV: file },
+					stdout: 'pipe',
+					stderr: 'pipe'
+				})
+				expect((await child.exited) === 0).toBe(accepted)
+				const output = await readFile(file, 'utf8')
+				if (!accepted || !input) expect(output).toBe('existing=value\n')
+				else {
+					expect(output.split('\n').filter(Boolean)).toEqual([
+						'existing=value',
+						...Object.entries(release.images).map(([name, image]) => `E2E_${name}=${image}`),
+						'E2E_SKIP_IMAGE_BUILD=true'
+					])
+				}
+			}
+		} finally {
+			await rm(directory, { recursive: true, force: true })
+		}
+	})
+	test('deployment staging rejects changed images and revisions before reading deployment state', async () => {
+		const release = manifest()
+		const environment = {
+			...release.images,
+			RELEASE_MANIFEST: JSON.stringify(release),
+			DEPLOYED_REF_SHA: release.sha
+		}
+		for (const [change, accepted] of [
+			[{}, true],
+			[{ DEPLOYED_REF_SHA: 'c'.repeat(40) }, false],
+			[{ DATABASE_IMAGE: 'unverified:latest' }, false],
+			[{ RELEASE_MANIFEST: '{}' }, false]
+		] as const) {
+			const child = Bun.spawn([process.execPath, 'scripts/validate-deploy-manifest.ts'], {
+				env: { ...environment, ...change },
+				stdout: 'pipe',
+				stderr: 'pipe'
+			})
+			expect((await child.exited) === 0).toBe(accepted)
+			const output = await new Response(child.stdout).text()
+			if (accepted) expect(JSON.parse(output)).toEqual(release)
+			else expect(output).toBe('')
+		}
+	})
+	test('normal updates cannot redeploy every target including shared identity', () => {
+		expect(() => assertInitialDeployment('all', false, false)).toThrow()
+		expect(() => assertInitialDeployment('all', true, true)).toThrow()
+		expect(() => assertInitialDeployment('all', true, false)).not.toThrow()
+		for (const target of ['next', 'production', 'identity']) {
+			expect(() => assertInitialDeployment(target, false, false)).not.toThrow()
+			expect(() => assertInitialDeployment(target, true, false)).toThrow()
+		}
+	})
 	test('next requires its current commit while prod can restore an earlier verified release into next', () => {
 		expect(() =>
 			assertNextReleaseCommit('refs/heads/next', 'next', 'a'.repeat(40), 'b'.repeat(40))

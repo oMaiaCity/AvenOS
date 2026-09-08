@@ -1,6 +1,9 @@
 #!/bin/sh
 set -eu
 
+proof=${1:-full}
+case "$proof" in full|native) ;; *) echo 'Usage: run.sh [full|native]' >&2; exit 64 ;; esac
+
 root=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
 compose="$root/deploy/e2e/docker-compose.yml"
 project=${COMPOSE_PROJECT_NAME:-aven-e2e-$$}
@@ -64,13 +67,15 @@ trap finish EXIT INT TERM
 
 teardown
 
-if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
-  NODE_AUTH_TOKEN=$(sed -n 's#^//npm.pkg.github.com/:_authToken=##p' "$HOME/.npmrc" 2>/dev/null | tail -n 1)
-  export NODE_AUTH_TOKEN
-fi
-if [ -z "${NODE_AUTH_TOKEN:-}" ] || [ "$NODE_AUTH_TOKEN" = "undefined" ]; then
-  echo "NODE_AUTH_TOKEN with read:packages is required to build checkout." >&2
-  exit 1
+if [ "${E2E_SKIP_IMAGE_BUILD:-false}" != "true" ]; then
+  if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+    NODE_AUTH_TOKEN=$(sed -n 's#^//npm.pkg.github.com/:_authToken=##p' "$HOME/.npmrc" 2>/dev/null | tail -n 1)
+    export NODE_AUTH_TOKEN
+  fi
+  if [ -z "${NODE_AUTH_TOKEN:-}" ] || [ "$NODE_AUTH_TOKEN" = "undefined" ]; then
+    echo "NODE_AUTH_TOKEN with read:packages is required to build checkout." >&2
+    exit 1
+  fi
 fi
 
 # Build the real desktop application against this run's disposable origins.
@@ -115,17 +120,20 @@ if [ "${E2E_SKIP_IMAGE_BUILD:-false}" != "true" ]; then
   export E2E_ARTIFACT_STORE_IMAGE E2E_STATIC_SITE_HOST_IMAGE
   built_images="$E2E_IDENTITY_IMAGE $E2E_API_IMAGE $E2E_CHECKOUT_IMAGE $E2E_PLATFORM_PROVISIONER_IMAGE $E2E_INTENT_SERVICE_IMAGE $E2E_ACTOR_RUNNER_IMAGE $E2E_ARTIFACT_STORE_IMAGE $E2E_STATIC_SITE_HOST_IMAGE"
   built_images="$built_images $E2E_DATABASE_IMAGE $E2E_PROXY_IMAGE"
-  docker build --file "$root/deploy/database/Dockerfile" --tag "$E2E_DATABASE_IMAGE" "$root"
-  docker build --file "$root/deploy/proxy/Dockerfile" --tag "$E2E_PROXY_IMAGE" "$root"
-  docker build --secret id=npm_token,env=NODE_AUTH_TOKEN --file "$root/services/identity/Dockerfile" --tag "$E2E_IDENTITY_IMAGE" "$root"
-  docker build --secret id=npm_token,env=NODE_AUTH_TOKEN --file "$root/services/aven-api/Dockerfile" --tag "$E2E_API_IMAGE" "$root"
-  docker build --secret id=npm_token,env=NODE_AUTH_TOKEN --file "$root/services/checkout/Dockerfile" --tag "$E2E_CHECKOUT_IMAGE" "$root"
-  docker build --secret id=npm_token,env=NODE_AUTH_TOKEN --file "$root/services/platform-provisioner/Dockerfile" --tag "$E2E_PLATFORM_PROVISIONER_IMAGE" "$root"
-  docker build --secret id=npm_token,env=NODE_AUTH_TOKEN --file "$root/services/intent-service/Dockerfile" --tag "$E2E_INTENT_SERVICE_IMAGE" "$root"
-  docker build --secret id=npm_token,env=NODE_AUTH_TOKEN --file "$root/services/actor-runner/Dockerfile" --tag "$E2E_ACTOR_RUNNER_IMAGE" "$root"
-  docker build --file "$root/services/artifact-store/Dockerfile" --tag "$E2E_ARTIFACT_STORE_IMAGE" "$root"
-  docker build --file "$root/services/static-site-host/Dockerfile" --tag "$E2E_STATIC_SITE_HOST_IMAGE" "$root"
+  docker build --build-arg "OS_SECURITY_REFRESH=$project" --file "$root/deploy/database/Dockerfile" --tag "$E2E_DATABASE_IMAGE" "$root"
+  docker build --build-arg "OS_SECURITY_REFRESH=$project" --file "$root/deploy/proxy/Dockerfile" --tag "$E2E_PROXY_IMAGE" "$root"
+  docker build --build-arg "OS_SECURITY_REFRESH=$project" --secret id=npm_token,env=NODE_AUTH_TOKEN --file "$root/services/identity/Dockerfile" --tag "$E2E_IDENTITY_IMAGE" "$root"
+  docker build --build-arg "OS_SECURITY_REFRESH=$project" --secret id=npm_token,env=NODE_AUTH_TOKEN --file "$root/services/aven-api/Dockerfile" --tag "$E2E_API_IMAGE" "$root"
+  docker build --build-arg "OS_SECURITY_REFRESH=$project" --secret id=npm_token,env=NODE_AUTH_TOKEN --file "$root/services/checkout/Dockerfile" --tag "$E2E_CHECKOUT_IMAGE" "$root"
+  docker build --build-arg "OS_SECURITY_REFRESH=$project" --secret id=npm_token,env=NODE_AUTH_TOKEN --build-arg "SOURCE_REVISION=$(git -C "$root" rev-parse HEAD)" --file "$root/services/platform-provisioner/Dockerfile" --tag "$E2E_PLATFORM_PROVISIONER_IMAGE" "$root"
+  docker build --build-arg "OS_SECURITY_REFRESH=$project" --secret id=npm_token,env=NODE_AUTH_TOKEN --file "$root/services/intent-service/Dockerfile" --tag "$E2E_INTENT_SERVICE_IMAGE" "$root"
+  docker build --build-arg "OS_SECURITY_REFRESH=$project" --secret id=npm_token,env=NODE_AUTH_TOKEN --file "$root/services/actor-runner/Dockerfile" --tag "$E2E_ACTOR_RUNNER_IMAGE" "$root"
+  docker build --build-arg "OS_SECURITY_REFRESH=$project" --file "$root/services/artifact-store/Dockerfile" --tag "$E2E_ARTIFACT_STORE_IMAGE" "$root"
+  docker build --build-arg "OS_SECURITY_REFRESH=$project" --file "$root/services/static-site-host/Dockerfile" --tag "$E2E_STATIC_SITE_HOST_IMAGE" "$root"
 fi
+
+# Registry access is needed by image builds only. Customer fixtures and tests receive no token.
+unset NODE_AUTH_TOKEN
 
 docker compose --project-name "$project" --file "$compose" --file "$hardening" config --quiet
 if [ -n "$built_images" ]; then
@@ -173,3 +181,6 @@ E2E_SILENT_DUPLEX_FIXTURE="$E2E_SILENT_DUPLEX_FIXTURE" \
 bunx playwright test --config "$root/deploy/e2e/playwright.config.ts"
 
 docker compose --project-name "$project" --file "$compose" --file "$hardening" ps
+if [ "$proof" = full ]; then
+  bun run --cwd "$root" test:runtime-install
+fi

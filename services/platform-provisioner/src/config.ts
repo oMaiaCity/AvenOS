@@ -5,6 +5,10 @@ const root = z.string().regex(/^[A-Za-z0-9_-]{43,128}$/)
 
 export const provisionerConfigSchema = z.object({
 	CLUSTER_DATABASE_URL: postgres,
+	CUSTOMER_RUNTIME_ID: z
+		.string()
+		.regex(/^[a-z][a-z0-9-]{0,62}$/)
+		.default('primary'),
 	CONTROL_DATABASE_URL: postgres,
 	INTENTS_API_DB_CREDENTIAL_ROOT: root,
 	ACTOR_API_DB_CREDENTIAL_ROOT: root,

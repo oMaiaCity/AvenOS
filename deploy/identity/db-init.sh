@@ -8,10 +8,10 @@ SELECT 'CREATE ROLE aven_identity_accounts LOGIN NOINHERIT' WHERE NOT EXISTS (SE
 SELECT 'CREATE ROLE aven_identity_authorization LOGIN NOINHERIT' WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname='aven_identity_authorization')\gexec
 SELECT 'CREATE ROLE aven_identity_migrator LOGIN' WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname='aven_identity_migrator')\gexec
 SELECT 'CREATE ROLE aven_backup LOGIN INHERIT' WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname='aven_backup')\gexec
-ALTER ROLE aven_identity_auth PASSWORD '${IDENTITY_AUTH_PASSWORD}';
-ALTER ROLE aven_identity_accounts PASSWORD '${IDENTITY_ACCOUNTS_PASSWORD}';
-ALTER ROLE aven_identity_authorization PASSWORD '${IDENTITY_AUTHORIZATION_PASSWORD}';
-ALTER ROLE aven_identity_migrator PASSWORD '${IDENTITY_MIGRATOR_PASSWORD}';
+ALTER ROLE aven_identity_auth LOGIN NOINHERIT PASSWORD '${IDENTITY_AUTH_PASSWORD}';
+ALTER ROLE aven_identity_accounts LOGIN NOINHERIT PASSWORD '${IDENTITY_ACCOUNTS_PASSWORD}';
+ALTER ROLE aven_identity_authorization LOGIN NOINHERIT PASSWORD '${IDENTITY_AUTHORIZATION_PASSWORD}';
+ALTER ROLE aven_identity_migrator LOGIN PASSWORD '${IDENTITY_MIGRATOR_PASSWORD}';
 ALTER ROLE aven_backup LOGIN INHERIT PASSWORD '${IDENTITY_BACKUP_PASSWORD}';
 GRANT pg_read_all_data TO aven_backup;
 GRANT aven_identity_owner TO aven_identity_migrator WITH ADMIN OPTION;

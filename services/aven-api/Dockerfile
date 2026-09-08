@@ -8,7 +8,8 @@ RUN --mount=type=cache,target=/root/.bun/install/cache,sharing=locked \
   && rm -f "$HOME/.npmrc"
 RUN bun --cwd services/aven-api build
 FROM oven/bun:1.3.13
-RUN apt-get update && apt-get upgrade --yes --no-install-recommends && rm -rf /var/lib/apt/lists/*
+ARG OS_SECURITY_REFRESH=local
+RUN test -n "$OS_SECURITY_REFRESH" && apt-get update && apt-get upgrade --yes --no-install-recommends && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /repo/services/aven-api/build ./build
 COPY --from=build /repo/services/aven-api/migrations ./migrations

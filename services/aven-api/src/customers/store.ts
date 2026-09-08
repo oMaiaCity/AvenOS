@@ -2,8 +2,8 @@ import { randomUUID } from 'node:crypto'
 import {
 	customerComponentCatalog,
 	databaseNameForEnvironment,
-	membershipAllows,
 	type MembershipRole,
+	membershipAllows,
 	type TenantGrantClaims
 } from '@avenos/aven-customer-contracts'
 import type { IdentityClaims } from '@avenos/aven-identity'
@@ -88,26 +88,45 @@ export class CustomerStore {
 				return { environmentId: existing.rows[0].id, replay: true }
 			}
 
+			// Serialize default selection with promotion so a new purchase cannot land on
+			// the retired side of a concurrent default change.
+			if (!existing.rows[0])
+				await client.query(
+					"SELECT pg_advisory_xact_lock_shared(hashtextextended('customer-runtime-default',0))"
+				)
+			const placement = existing.rows[0]
+				? undefined
+				: (
+						await client.query<{ runtime_id: string; component_catalog: typeof defaults | null }>(
+							`SELECT d.runtime_id,r.component_catalog FROM customer_runtime_defaults d
+					 JOIN customer_runtimes r ON r.id=d.runtime_id
+					 WHERE d.singleton AND r.retired_at IS NULL`
+						)
+					).rows[0]
+			if (!existing.rows[0] && !placement)
+				throw new Error('default customer runtime is unavailable')
 			const environmentId = existing.rows[0]?.id ?? randomUUID()
 			const desiredState = event.eventType === 'purchase_granted' ? 'ready' : 'suspended'
 			if (existing.rows[0]) {
 				await client.query(
 					`UPDATE customer_environments SET owner_subject_id=$2,desired_state=$3,
-					 observed_state='pending',routing_generation=routing_generation+1,
+					 observed_state='pending',routing_generation=CASE WHEN movement_id IS NULL
+					 THEN routing_generation+1 ELSE routing_generation END,
 					 updated_at=clock_timestamp() WHERE id=$1`,
 					[environmentId, event.subjectId, desiredState]
 				)
 			} else {
 				await client.query(
 					`INSERT INTO customer_environments
-					 (id,purchased_name,owner_subject_id,database_name,desired_state,observed_state,routing_generation)
-					 VALUES($1,$2,$3,$4,$5,'pending',1)`,
+					 (id,purchased_name,owner_subject_id,database_name,desired_state,observed_state,routing_generation,runtime_id)
+					 VALUES($1,$2,$3,$4,$5,'pending',1,$6)`,
 					[
 						environmentId,
 						event.purchasedName,
 						event.subjectId,
 						databaseNameForEnvironment(environmentId),
-						desiredState
+						desiredState,
+						placement?.runtime_id
 					]
 				)
 			}
@@ -123,7 +142,24 @@ export class CustomerStore {
 				)
 			).rows[0]?.routing_generation
 			if (!generation) throw new Error('environment generation missing')
-			for (const component of defaults) {
+			const components = existing.rows[0]
+				? (
+						await client.query<{
+							component_ref: string
+							target_schema_version: number
+							migration_set_digest: string
+						}>(
+							'SELECT component_ref,target_schema_version,migration_set_digest FROM customer_environment_components WHERE environment_id=$1',
+							[environmentId]
+						)
+					).rows.map((row) => ({
+						componentRef: row.component_ref,
+						targetSchemaVersion: row.target_schema_version,
+						migrationSetDigest: row.migration_set_digest
+					}))
+				: (placement?.component_catalog ?? (placement?.runtime_id === 'primary' ? defaults : []))
+			if (!components.length) throw new Error('default runtime has no component catalog')
+			for (const component of components) {
 				await client.query(
 					`INSERT INTO customer_environment_components
 					 (environment_id,component_ref,desired_state,observed_state,target_schema_version,
@@ -214,17 +250,19 @@ export class CustomerStore {
 		environmentId: string,
 		componentRef: string,
 		actions: string[]
-	): Promise<Omit<TenantGrantClaims, 'iat' | 'exp'>> {
+	): Promise<Omit<TenantGrantClaims, 'iat' | 'exp'> & { runtimeId: string }> {
 		const row = (
 			await this.pool.query<{
 				database_name: string
+				runtime_id: string
+				movement_id: string | null
 				routing_generation: number
 				desired_state: string
 				observed_state: string
 				component_state: string
 				membership_role: MembershipRole
 			}>(
-				`SELECT e.database_name,e.routing_generation,e.desired_state,e.observed_state,
+				`SELECT e.database_name,e.runtime_id,e.movement_id,e.routing_generation,e.desired_state,e.observed_state,
 				 c.observed_state AS component_state,m.role AS membership_role
 				 FROM customer_environments e
 				 JOIN customer_environment_memberships m ON m.environment_id=e.id AND m.subject_id=$2
@@ -236,8 +274,13 @@ export class CustomerStore {
 		if (!row)
 			throw new CustomerAuthorizationError(404, 'ENVIRONMENT_NOT_FOUND', 'Environment not found.')
 		if (!membershipAllows(row.membership_role, componentRef, actions))
-			throw new CustomerAuthorizationError(403, 'MEMBERSHIP_ACTION_DENIED', 'Your customer role does not permit this action.')
+			throw new CustomerAuthorizationError(
+				403,
+				'MEMBERSHIP_ACTION_DENIED',
+				'Your customer role does not permit this action.'
+			)
 		if (
+			row.movement_id != null ||
 			row.desired_state !== 'ready' ||
 			row.observed_state !== 'ready' ||
 			row.component_state !== 'ready'
@@ -256,6 +299,7 @@ export class CustomerStore {
 			membershipRole: row.membership_role,
 			environmentId,
 			databaseName: row.database_name,
+			runtimeId: row.runtime_id,
 			routingGeneration: Number(row.routing_generation),
 			componentRef,
 			actions

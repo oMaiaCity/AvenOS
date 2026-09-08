@@ -126,6 +126,81 @@ For a customer request:
 Suspension, restore, ownership changes, or credential rotation advance the routing
 generation. Old grants and old derived passwords then fail closed.
 
+## Customer movement
+
+The API directory records a runtime ID and an independent migration hold for each
+customer environment. The facade reloads these with membership for every grant and
+selects an operator-configured runtime destination. Unknown destinations and held
+customers fail closed. Artifact translation uses that runtime's Artifact Store.
+`primary` is the initial composition; additional destinations are explicit. An optional
+operator-managed file publishes runtime routes without restarting the facade. Each
+customer request validates the current file; invalid or missing current configuration
+fails closed rather than reviving cached routes.
+
+The provisioner claims work only for its configured runtime and skips customers under
+movement. Completion cannot publish readiness for a stale location or generation.
+Each runtime has a separate worker heartbeat; capability health requires a recent
+heartbeat for every customer placement and the selected default. A healthy generation
+cannot mask another generation that stopped.
+The central movement journal binds an idempotency key to source, destination and
+expected generation. A controller serializes operations, fences source access, copies
+a database, verifies its prepared components, and atomically publishes its destination.
+
+Production Actor execution, including continuation submission, holds a shared database
+barrier and records unfinished execution in customer metadata. Handover closes new
+execution and waits for the exclusive barrier. A lost worker connection leaves its
+unfinished record; movement refuses to infer that its external effects stopped.
+Fencing waits for the physical provisioning lock; reconciliation rejects a lower routing
+generation. Source customer roles become `NOLOGIN` and their remaining sessions are terminated
+before the final dump. A cluster marker rejects copying across installation targets.
+
+The movement driver uses pinned PostgreSQL 17 tools, private local dump files, an
+operation-bound destination marker, a closed staging database and transactional restore. It never overwrites an
+existing unrecognized database or deletes recovery copies. Rollback advances generation,
+preserves both histories, and leaves Actor execution disabled pending reconciliation.
+Forward movement enables execution only after the directory publishes the destination;
+a crash between publication and enabling execution keeps Actors paused until resume.
+
+The isolated movement drill proves two physical clusters, a running Actor delaying
+handover, another customer continuing to write, failed readiness and resume, directory
+routing, controller contention, entitlement holds and rollback after divergent writes, including
+a failed observation after activation.
+A second journey uses the real component catalog, PostgreSQL provisioner, Rust Artifact
+Store provisioner, identity signature verification, facade and Intent Service over HTTP.
+It interrupts each physical phase before journal publication, resumes it, checks exact
+Intent and contribution content, rejects stale source access, retains divergent histories,
+provisions a new customer on the selected default runtime, and interrupts/resumes a
+return to the original database from each pre-activation phase. It also migrates through
+the bundled operator command, rejects another controller release, and publishes new
+runtime routes through the running facade. The full native journey
+and provider host replacement remain separate proofs.
+
+The operator command and its limits are in
+[Customer movement development](operations/backup-and-recovery.md#customer-movement-development).
+The hosted platform controller prepares a new runtime and encrypted release backup,
+updates shared control services, publishes the complete route directory and moves
+customers individually. Interrupted operations resume from their journal; prior
+runtimes and credentials remain intact. Shared control services still reside on the
+platform host. New customer placement uses a serialized directory default and a
+release-bound immutable component catalog; changing the facade binary does not change
+that default. The first pre-movement transition requires a quiesced, encrypted backup
+and identical customer schema catalogs.
+
+The host-controller fixture proves quiesced adoption, two consecutive customer
+rollouts, retry without replacing the selected database, and recovery after removing
+all platform databases and release configuration. Only encrypted backup repositories
+and the independent identity fixture survive. Recovery restores the retained runtime
+fleet, verifies exact customer placement, reconciles current-generation component
+jobs, preserves customer content and admits new authenticated writes. Actor execution
+remains paused for effect reconciliation. Commerce and edge behavior are covered by
+the separate native journey; replacing a cloud provider host remains a separate proof.
+
+The public installer still requires the hosted three-target topology. Site bindings
+remain central and model requests remain identity-scoped. Automated effect
+reconciliation and old-generation retirement are not implemented.
+These are outstanding acceptance requirements of the
+[release lifecycle specification](customer-release-lifecycle.md), not deployment claims.
+
 ## Static hosting
 
 The facade owns site bindings and the private directory contract. The static host

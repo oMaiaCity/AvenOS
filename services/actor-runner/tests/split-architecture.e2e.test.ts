@@ -210,6 +210,7 @@ describe('split identity -> facade -> os.aven runner', () => {
 				membershipRole: 'owner',
 				environmentId: id,
 				databaseName: databaseNameForEnvironment(id),
+				runtimeId: 'primary',
 				routingGeneration: 1,
 				componentRef,
 				actions
@@ -377,6 +378,7 @@ describe('split identity -> facade -> os.aven runner', () => {
 						membershipRole: 'owner',
 						environmentId: id,
 						databaseName: databaseNameForEnvironment(id),
+						runtimeId: 'primary',
 						routingGeneration: 1,
 						componentRef,
 						actions

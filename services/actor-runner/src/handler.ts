@@ -10,6 +10,7 @@ import type { IdentityVerifier } from '@avenos/aven-identity'
 import { BodyLimitError, readBoundedBytes } from '@avenos/http-boundary'
 import { ZodError } from 'zod'
 import { parsePlanRunStartCommand } from './command.js'
+import { CustomerExecutionPaused } from './sql-runner.js'
 
 const json = (status: number, body: unknown): Response =>
 	new Response(JSON.stringify(body), {
@@ -184,6 +185,8 @@ export function createActorRunnerHandler(
 			}
 			return json(404, { code: 'ROUTE_NOT_FOUND' })
 		} catch (error) {
+			if (error instanceof CustomerExecutionPaused)
+				return json(503, { code: 'CUSTOMER_EXECUTION_PAUSED', message: error.message })
 			if (error instanceof BodyLimitError) return json(error.status, { code: error.code })
 			if (error instanceof ActorRunHttpError) {
 				return json(error.status, { code: error.code, message: error.message })

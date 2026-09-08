@@ -124,6 +124,9 @@ bun run test:bootstrap
 bun run test:deploy
 bun run test:proxy-boundary
 bun run test:recovery
+bun run test:customer-movement
+bun run test:customer-runtime
+bun run test:release-archive
 ```
 
 - `test:infra` evaluates the Pulumi program, security-sensitive cloud-init output, and
@@ -137,14 +140,38 @@ bun run test:recovery
   removing operator settings, and exact-bucket teardown planning across every partial
   checkpoint state without contacting a provider.
 - `test:deploy` validates shell scripts, production Compose files, Caddy
-  configuration, dependency order, non-root images, and secret-safe build contexts.
+  configuration, dependency order, non-root images, secret-safe build contexts, and
+  immutable runtime preparation with separate credentials, storage and routes, host
+  control/runtime separation, and interrupted cohort retry behavior.
 - `test:proxy-boundary` runs the production checkout Caddy block against a loopback
   fixture on Linux, proves distinct transport clients survive forwarding, rejects
   caller-selected forwarding identity, and checks the production Svelte one-hop settings.
   It does not simulate separate users behind the same NAT or a future CDN.
-- `test:recovery` creates source databases, takes encrypted backups, restores fresh
-  targets, compares exact data and access control lists, and proves bounded provider
+- `test:customer-movement` uses two disposable PostgreSQL clusters to prove customer
+  routing and holds, executor drain, uncertain-attempt refusal, source fencing, exact
+  database restore, failed readiness and resume, controller contention, and retained
+  rollback after new writes while another customer keeps its data. Its fixture adapter
+  does not prove provider provisioning or a complete native journey through migration.
+- `test:release-archive` requires Python 3 and Docker Compose. It restores pinned images
+  and private configuration without registry access, starts the retained image, and
+  refuses another target, inconsistent release identity, damaged configuration, or an
+  existing recovery destination.
+- `test:recovery` creates source databases, takes encrypted backups including a retained
+  release, removes the original release files, restores fresh targets, compares exact
+  data and access control lists, starts the retained image, and proves bounded provider
   failure, wrong-key, and populated-target rejection.
+
+`test:runtime-install` exercises the generation startup tool using the service images
+built by the full-stack harness. That harness invokes it after customer journeys, with
+package credentials already removed. An isolated loopback registry provides immutable
+image references; an internal control network and disposable database replace hosted
+infrastructure. The test uses a Docker tools container with the local engine socket to
+run the host-administrator operation. It never receives provider or deployment secrets.
+Run it separately only after building those images at the current checkout:
+
+```sh
+bun run test:runtime-install
+```
 
 ## Full-stack E2E release gate
 
@@ -371,13 +398,34 @@ bun run test:infra
 bun run test:bootstrap
 bun run test:deploy
 bun run test:recovery
+bun run test:customer-movement
+bun run test:customer-runtime
+bun run test:release-archive
 bun run test:e2e:platform
 ```
 
-`platform-ci` and `platform-deploy` repeat the release-critical checks on Linux. A
-deployment cannot publish images until its verification job passes.
+`platform-ci` and `platform-release` call the same `platform-verification` workflow at
+the caller's source revision. Image publication requires that entire workflow to pass.
+The required Platform release gate also fails when verification fails or is cancelled.
 
 ## CI scheduling and caches
+
+Platform verification runs five independent jobs concurrently: static checks and builds,
+unit/infrastructure tests, migration/recovery drills, the native/browser journey, and
+host rollout with fresh fleet recovery. The last two jobs consume the same verified
+release manifest and run independently; neither waits for the other to finish.
+The fleet recovery job allows 60 minutes, including encrypted image archives and
+cleanup, to accommodate hosted-runner disk variation. It exits as soon as it finishes.
+Every job is required. Security scans still run for each source revision; no path filter,
+previous green run or cache hit substitutes for verification. The checks have read-only
+repository/package permissions and receive no deployment Environment credentials. Package
+registry authentication is scoped to dependency installation and the E2E image builds;
+the harness removes it before scans, services and customer tests run.
+
+Only the native/browser journey installs WebDriver and Playwright. Unit tests install the
+native build libraries they need. Protected release builds use per-image BuildKit caches;
+the exact published image digests are still scanned before the manifest is released.
+The source-level workflow contract test checks that both callers retain all critical gates.
 
 Pull-request checks cancel an older run when a newer commit arrives on the same pull
 request. Deployment, infrastructure, and operations mutations keep their target-scoped,
@@ -398,3 +446,36 @@ build or verification step, and a cache miss runs the same assertions.
   dependency.
 - Re-run the complete gate after changing shared contracts, migrations, deployment
   sources, authentication, authorization, or recovery behavior.
+
+The runtime installation harness also contains a host-controller fixture. It uses the
+real API and customer services for entitlement admission, an Intent write, quiesced
+adoption, two runtime rollouts and retry without database replacement. It then removes
+all platform databases and release configuration, restores the fleet from encrypted
+repositories, compares the original Intent and performs a new authenticated write.
+It verifies that Actor execution remains paused after recovery. Commerce workers and
+the public edge are inert in this fixture; the separate full native journey remains
+required for those services. The independent identity fixture survives the simulated
+platform loss. This test does not replace infrastructure through a cloud provider.
+The host fixture must pass before publishing a release with lifecycle changes.
+
+`bun run test:e2e:platform` remains the complete local native and host proof. CI uses
+`bun run test:e2e:native` and `bun run test:e2e:runtime` as separate required jobs.
+The runtime command builds and scans its service images from the clean checkout;
+image builds require `NODE_AUTH_TOKEN` with package-read access. For release verification,
+both jobs instead pull the exact manifest images and run all their assertions. The
+lower-level `test:runtime-install` command still consumes already available images.
+
+Release builds publish candidate image digests first, scan them, and pass their exact
+manifest to the full verification workflow. The release journey pulls those images
+and skips rebuilding service images; all customer and native tests still run. Only a
+successful complete gate publishes the deployable `aven-release` artifact. Pull
+request verification builds local fixture images because it has no release manifest.
+The build and verification jobs have no deployment Environment credentials.
+
+Each release build refreshes the runtime OS package layer using a unique run/attempt
+build argument. Compiler and dependency caches remain reusable; a cached package-update
+layer cannot silently preserve a vulnerability after an upstream fix becomes available.
+Local image-building test runs also supply a fresh OS-layer identifier. The normal
+container security scan still blocks fixable high/critical findings on the resulting
+images. Verifying an existing release manifest does not read a package token to rebuild
+images.

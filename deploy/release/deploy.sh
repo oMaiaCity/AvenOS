@@ -5,6 +5,7 @@ common_required=(
   DEPLOYMENT_TARGET PULUMI_STACK PULUMI_BACKEND GHCR_USER GHCR_TOKEN
   OPERATIONS_IMAGE BACKUP_REPOSITORY_BASE BACKUP_S3_ACCESS_KEY_ID
   DATABASE_IMAGE PROXY_IMAGE
+  RELEASE_MANIFEST DEPLOYED_REF_SHA
   BACKUP_S3_SECRET_ACCESS_KEY BACKUP_S3_REGION BACKUP_RESTIC_PASSWORD
 )
 for name in "${common_required[@]}"; do
@@ -50,6 +51,8 @@ source "$root/deploy/release/environment.sh"
 source "$root/deploy/release/ssh-staging.sh"
 stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
+umask 077
+bun "$root/scripts/validate-deploy-manifest.ts" > "$stage/release.json"
 
 pulumi login "$PULUMI_BACKEND"
 pulumi stack select "$PULUMI_STACK" --cwd "$root/infrastructure/platform"
@@ -94,6 +97,7 @@ prepare_ssh_staging "$stage/ssh"
 dotenv() {
   local name=$1 value=$2
   value=${value//\\/\\\\}
+  value=${value//\$/\$\$}
   value=${value//\"/\\\"}
   value=${value//$'\n'/\\n}
   printf '%s="%s"\n' "$name" "$value"
@@ -138,6 +142,30 @@ deploy_bundle() {
     return 1
   fi
   cleanup_remote
+}
+
+deploy_platform_runtime() {
+  local host=$1 host_key=$2
+  local remote="aven-admin@$host"
+  local upload="/tmp/aven-runtime-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
+  local ssh_args=(-i "$stage/ssh/key" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=10 -o UserKnownHostsFile="$stage/ssh/known_hosts" -o StrictHostKeyChecking=yes)
+  [[ "$GHCR_USER" =~ ^[A-Za-z0-9_-]+$ && "$upload" =~ ^/tmp/aven-runtime-[A-Za-z0-9_-]+-[0-9]+$ ]] || return 64
+  wait_for_cloud_init "$stage/ssh/key" "$remote" "$host_key"
+  ssh "${ssh_args[@]}" "$remote" "install -d -m 0700 '$upload/platform' '$upload/tools/runtime' '$upload/tools/release'"
+  scp "${ssh_args[@]}" -r "$stage/platform/." "$remote:$upload/platform/"
+  local tool_files=()
+  for name in host initialize prepare rollout start transition recover; do tool_files+=("$root/deploy/runtime/$name.py"); done
+  scp "${ssh_args[@]}" "${tool_files[@]}" "$root/deploy/runtime/db-init.sh" "$remote:$upload/tools/runtime/"
+  scp "${ssh_args[@]}" "$root/deploy/release/archive.py" "$remote:$upload/tools/release/"
+  local result=0
+  local controller=host
+  [[ "${RECOVER_FROM_BACKUP:-false}" == true ]] && controller=recover
+  if printf '%s' "$GHCR_TOKEN" | ssh "${ssh_args[@]}" "$remote" "sudo docker --config '$upload/docker' login ghcr.io --username '$GHCR_USER' --password-stdin"; then
+    ssh "${ssh_args[@]}" "$remote" "sudo env DOCKER_CONFIG='$upload/docker' PYTHONDONTWRITEBYTECODE=1 python3 '$upload/tools/runtime/$controller.py' '$upload/platform' --target '$DEPLOYMENT_TARGET'" || result=$?
+  else result=1; fi
+  # Secrets live in the retained root-owned installation; remove the transport copies and registry token.
+  ssh "${ssh_args[@]}" "$remote" "sudo rm -rf '$upload'" || true
+  return "$result"
 }
 
 wait_for_url() {
@@ -226,6 +254,7 @@ platform_ip=$(output platformIpv4Address)
 platform_ipv6=$(output platformIpv6Address)
 platform_host_key=$(output platformHostPublicKey)
 load_secret platformDeployPrivateKey "$PULUMI_STACK" platformDeployPrivateKey
+load_secret platformAdminPrivateKey "$PULUMI_STACK" platformAdminPrivateKey
 for secret_name in \
   platformPostgresPassword platformBackupPassword checkoutRuntimePassword \
   checkoutWebhookPassword checkoutMigratorPassword checkoutEmailPassword \
@@ -328,7 +357,9 @@ system_sites=$(printf '[{"hostname":"%s","repository":"myavenceo/aven-brands","s
 install -m 644 "$root/deploy/platform/docker-compose.yml" "$stage/platform/docker-compose.yml"
 install -m 644 "$root/deploy/platform/Caddyfile" "$stage/platform/Caddyfile"
 install -m 755 "$root/deploy/platform/db-init.sh" "$stage/platform/db-init.sh"
-deploy_bundle "$platform_ip" platform "$platform_host_key"
+install -m 600 "$stage/release.json" "$stage/platform/release.json"
+printf '%s\n' "$platformAdminPrivateKey" > "$stage/ssh/key"
+deploy_platform_runtime "$platform_ip" "$platform_host_key"
 wait_for_url "https://$api_domain/health/live"
 wait_for_url "https://$checkout_domain/api/health/ready"
 wait_for_url "https://$public_domain/"
