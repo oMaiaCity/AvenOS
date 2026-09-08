@@ -62,6 +62,7 @@ test('CI and release require the same full verification without deployment crede
 		'bun run test:proxy-boundary',
 		'bun run test:customer-movement',
 		'bun run test:customer-runtime',
+		'bun run test:release-archive',
 		'bun run test:recovery',
 		'xvfb-run --auto-servernum bun run test:e2e:platform'
 	])

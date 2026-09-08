@@ -146,6 +146,8 @@ jobs:
         run: bun run test:customer-movement
       - name: Prove real service migration and rollback
         run: bun run test:customer-runtime
+      - name: Prove retained release recovery without registry access
+        run: bun run test:release-archive
       - name: Build and drill database recovery image
         run: bun run test:recovery
 

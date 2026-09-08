@@ -112,7 +112,8 @@ The restore insertion point and the convergence gates after it are defined in
 
 The restore accepts only the internal `fresh-target-only` confirmation and refuses a
 database containing user relations. It verifies the manifest and every dump before
-restoring. Missing historical role names are created `NOLOGIN`; password hashes are
+restoring. A failed restore preserves its partial database for inspection; retry on a
+fresh target. Missing historical role names are created `NOLOGIN`; password hashes are
 not restored. Current role initialization derives fresh passwords and reapplies
 least-privilege grants.
 
@@ -165,6 +166,51 @@ wrong-password and populated-target rejection.
 
 The local drill proves the mechanism. The quarterly real-bucket drill proves provider
 access, escrow, DNS, infrastructure creation, and operator timing.
+
+## Retained release archive
+
+The release archive tool is available for installation integration. Hosted deployment
+has not yet enabled it automatically. Until that integration is complete, existing
+hosted snapshots contain database dumps without an independent release-image archive.
+
+On a Docker host with Python 3, prepare a private bundle containing `release.json`,
+`.env` (mode `0600`), `docker-compose.yml`, `db-init.sh`, and `Caddyfile`. The release
+manifest must come from the verified release workflow, and every Compose image must
+match one of its immutable digests. After pulling those images, retain them with:
+
+```sh
+python3 deploy/release/archive.py create /private/bundle /private/release-archive --target next
+```
+
+The tool exports images once per release and retains each configuration revision.
+`current.json` selects the current pair. A retry checks existing content before reusing
+it. The archive includes credentials: keep every directory private and mount it
+read-only at `/var/lib/aven-release-archive` in the backup container. Its owner must
+match that container's UID. Set `BACKUP_RELEASE_ARCHIVE_ROOT` to that mount path and
+`BACKUP_RELEASE_ID` to the exact release commit. Backup then includes the retained
+images and configuration in the encrypted snapshot and binds its selected release
+to the database integrity manifest. Incomplete archive preparations are excluded.
+
+For a full release recovery, set `RESTORE_RELEASE_DESTINATION` to a new absolute path
+inside a persistent writable mount of the restore container. Restore preserves the
+archive there before restoring databases. Then, on the Docker host, run:
+
+```sh
+python3 deploy/release/archive.py restore /private/recovered-archive /private/fresh-bundle --target next
+```
+
+The tool checks the target, release, image archive and configuration checksums, loads
+the retained images, and writes `restored-compose.json` using immutable local image
+identities with pulling disabled. It refuses an existing destination. Inspect the
+restored target paths, restore the matching databases and complete admission checks
+before starting the full service bundle. Recovery must not start another writable
+copy against live databases.
+
+Without `RESTORE_RELEASE_DESTINATION`, the restore command verifies the release
+selection but skips downloading image archives. The continuous database-only drill
+uses this path to keep its memory limit bounded. `test:recovery` separately proves
+that an encrypted snapshot restores both databases and a retained release after its
+original files are removed. Neither fixture replaces the fresh-cloud-host drill.
 
 ## Customer movement development
 

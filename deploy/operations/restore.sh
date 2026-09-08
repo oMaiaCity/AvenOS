@@ -18,9 +18,20 @@ snapshot=${RESTORE_SNAPSHOT:-latest}
 stage="$state_root/restore-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 trap 'rm -rf "$stage"' EXIT HUP INT TERM
 mkdir -p "$stage"
+release_destination=${RESTORE_RELEASE_DESTINATION:-}
+set --
+if [ -z "$release_destination" ]; then
+  # Database-only verification stays bounded even when many release images are retained.
+  set -- --exclude /var/lib/aven-release-archive
+else
+  case "$release_destination" in /*) ;; *) echo 'release recovery destination must be absolute' >&2; exit 64 ;; esac
+  [ ! -e "$release_destination" ] && [ ! -L "$release_destination" ] || {
+    echo 'release recovery destination must be new' >&2; exit 1;
+  }
+fi
 case "${RESTORE_NO_LOCK:-false}" in
-  false) restic restore "$snapshot" --tag "environment:$BACKUP_ENVIRONMENT" --target "$stage" ;;
-  true) restic --no-lock restore "$snapshot" --tag "environment:$BACKUP_ENVIRONMENT" --target "$stage" ;;
+  false) restic restore "$snapshot" --tag "environment:$BACKUP_ENVIRONMENT" --target "$stage" "$@" ;;
+  true) restic --no-lock restore "$snapshot" --tag "environment:$BACKUP_ENVIRONMENT" --target "$stage" "$@" ;;
   *) echo 'RESTORE_NO_LOCK must be true or false' >&2; exit 64 ;;
 esac
 manifest=$(find "$stage" -type f -name manifest.json -print | head -1)
@@ -33,6 +44,28 @@ grep -Fq '"environment":"'"$BACKUP_ENVIRONMENT"'"' "$manifest" || {
 expected=$(cat "$manifest_dir/manifest.sha256")
 actual=$(sha256sum "$manifest" | cut -d' ' -f1)
 [ "$expected" = "$actual" ] || { echo 'manifest integrity check failed' >&2; exit 1; }
+
+selection_digest=$(jq -r '.releaseSelectionSha256 // empty' "$manifest")
+if [ -n "$selection_digest" ]; then
+  selection="$manifest_dir/release-selection.json"
+  [ "$selection_digest" = "$(sha256sum "$selection" | cut -d' ' -f1)" ] || {
+    echo 'release selection integrity check failed' >&2; exit 1;
+  }
+  jq -e --arg target "$BACKUP_ENVIRONMENT" --arg release "$(jq -r .release "$manifest")" \
+    '.version == 1 and .target == $target and .releaseSha == $release and (.release | test("^[a-f0-9]{64}$")) and (.configuration | test("^[a-f0-9]{64}$"))' \
+    "$selection" >/dev/null || { echo 'release selection differs from database backup' >&2; exit 1; }
+fi
+if [ -n "$release_destination" ]; then
+  [ -n "$selection_digest" ] || { echo 'snapshot does not contain a retained release' >&2; exit 1; }
+  retained="$stage/var/lib/aven-release-archive"
+  [ -d "$retained/$(jq -r .release "$selection")/configurations/$(jq -r .configuration "$selection")" ] || {
+    echo 'selected release configuration is missing from snapshot' >&2; exit 1;
+  }
+  cp -R "$retained" "$release_destination"
+  chmod 0700 "$release_destination"
+  cp "$selection" "$release_destination/current.json"
+  echo 'Release recovery material preserved; verify it with the release archive tool before starting services.'
+fi
 
 found=0
 for dump in "$manifest_dir"/databases/*.dump; do
@@ -73,7 +106,7 @@ for dump in "$manifest_dir"/databases/*.dump; do
   fi
   createdb --owner "$database_owner" "$database"
   if ! pg_restore --exit-on-error --dbname "$database" "$dump"; then
-    dropdb "$database"
+    echo 'Restore failed; the partial database is retained for inspection. Retry on a fresh target.' >&2
     exit 1
   fi
 done
