@@ -444,9 +444,14 @@ build or verification step, and a cache miss runs the same assertions.
   sources, authentication, authorization, or recovery behavior.
 
 The runtime installation harness also contains a host-controller fixture. It uses the
-real API and customer services for entitlement admission, an Intent write, runtime
-rollout and the final HTTP read. Commerce workers and the public edge are inert in
-this fixture; the separate full native journey remains required for those services.
+real API and customer services for entitlement admission, an Intent write, quiesced
+adoption, two runtime rollouts and retry without database replacement. It then removes
+all platform databases and release configuration, restores the fleet from encrypted
+repositories, compares the original Intent and performs a new authenticated write.
+It verifies that Actor execution remains paused after recovery. Commerce workers and
+the public edge are inert in this fixture; the separate full native journey remains
+required for those services. The independent identity fixture survives the simulated
+platform loss. This test does not replace infrastructure through a cloud provider.
 The host fixture must pass before publishing a release with lifecycle changes.
 
 Release builds publish candidate image digests first, scan them, and pass their exact
