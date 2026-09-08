@@ -18,8 +18,8 @@ trap cleanup EXIT
 
 mkdir -p "$scratch/repository" "$scratch/source-state" "$scratch/target-state"
 chmod 0777 "$scratch/repository" "$scratch/source-state" "$scratch/target-state"
-docker build --file "$root/deploy/operations/Dockerfile" --tag "$image" "$root"
-docker build --file "$root/deploy/database/Dockerfile" --tag "$database_image" "$root"
+docker build --build-arg "OS_SECURITY_REFRESH=$image" --file "$root/deploy/operations/Dockerfile" --tag "$image" "$root"
+docker build --build-arg "OS_SECURITY_REFRESH=$image" --file "$root/deploy/database/Dockerfile" --tag "$database_image" "$root"
 bash "$root/scripts/scan-container-os.sh" "$image"
 [[ "$(docker image inspect --format '{{.Config.User}}' "$image")" == '65532:65532' ]]
 docker network create "$network" >/dev/null
@@ -71,9 +71,27 @@ common=(
   --env XDG_CACHE_HOME=/tmp/restic-cache
   --volume "$scratch/repository:/repository"
 )
+fixture_release=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+RECOVERY_FIXTURE_ROOT="$scratch" python3 - <<'PY'
+import json, os
+from pathlib import Path
+root = Path(os.environ['RECOVERY_FIXTURE_ROOT']) / 'release-bundle'
+root.mkdir(mode=0o700)
+image = 'postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73'
+(root / 'release.json').write_text(json.dumps({'version': 1, 'sha': 'a'*40, 'images': {'DATABASE_IMAGE': image}}))
+(root / '.env').write_text(f'DATABASE_IMAGE={image}\nRECOVERY_VALUE=retained-fixture\n')
+(root / '.env').chmod(0o600)
+(root / 'docker-compose.yml').write_text('services:\n  database:\n    network_mode: none\n    image: ${DATABASE_IMAGE}\n    environment:\n      RECOVERY_VALUE: ${RECOVERY_VALUE}\n')
+for name in ('Caddyfile', 'db-init.sh'): (root / name).write_text('fixture')
+PY
+python3 "$root/deploy/release/archive.py" create "$scratch/release-bundle" "$scratch/release-archive" --target ci
 docker run "${common[@]}" --env PGHOST="$source_db" --env PGUSER=aven_backup --env PGPASSWORD=backup-test \
   --env BACKUP_ENVIRONMENT=ci --env BACKUP_HOST=restore-drill-source \
+  --env BACKUP_RELEASE_ID="$fixture_release" --env BACKUP_RELEASE_ARCHIVE_ROOT=/var/lib/aven-release-archive \
+  --volume "$scratch/release-archive:/var/lib/aven-release-archive:ro" \
   --volume "$scratch/source-state:/var/lib/aven-backups" "$image" backup
+# Recovery must work after the original installation and its local archive disappear.
+rm -rf "$scratch/release-bundle" "$scratch/release-archive"
 docker run "${common[@]}" --env PGHOST="$source_db" --env PGUSER=aven_backup --env PGPASSWORD=backup-test \
   --volume "$scratch/source-state:/var/lib/aven-backups" "$image" health
 HEALTH_RECORD="$scratch/source-state/public-status/health.json" bun -e '
@@ -102,6 +120,32 @@ if docker run "${common[@]}" --volume "$scratch/source-state:/var/lib/aven-backu
 fi
 
 start_database "$target_db"
+source_snapshot=$(awk '{print $3}' "$scratch/source-state/last-success")
+for corruption in missing-dump corrupt-roles; do
+  mkdir "$scratch/$corruption"
+  docker run "${common[@]}" --entrypoint restic --volume "$scratch/$corruption:/mutation" \
+    "$image" restore "$source_snapshot" --target /mutation >/dev/null
+  damaged=$(find "$scratch/$corruption" -type d -name databases -print)
+  if [[ "$corruption" == missing-dump ]]; then
+    rm "$damaged/customer_00000000_0000_4000_8000_000000000001.dump"
+  else
+    printf 'unexpected role\n' >> "$damaged/customer_00000000_0000_4000_8000_000000000001.roles"
+  fi
+  corrupt_snapshot=$(docker run "${common[@]}" --entrypoint restic --volume "$scratch/$corruption:/mutation:ro" \
+    "$image" backup /mutation --host corrupt-fixture --tag environment:corrupt-fixture --json |
+    jq -r 'select(.message_type == "summary") | .snapshot_id')
+  if docker run "${common[@]}" --env PGHOST="$target_db" --env PGUSER=postgres --env PGPASSWORD=recovery-test \
+    --env BACKUP_ENVIRONMENT=ci --env RESTORE_CONFIRMATION=fresh-target-only --env RESTORE_SNAPSHOT="$corrupt_snapshot" \
+    --volume "$scratch/target-state:/var/lib/aven-backups" "$image" restore > "$scratch/$corruption.log" 2>&1; then
+    echo "restore unexpectedly accepted $corruption" >&2
+    exit 1
+  fi
+  expected_error='role manifest integrity check failed'
+  [[ "$corruption" == missing-dump ]] && expected_error='backup database inventory is incomplete'
+  grep -Fq "$expected_error" "$scratch/$corruption.log" || { cat "$scratch/$corruption.log"; exit 1; }
+  [[ "$(docker exec "$target_db" psql -U postgres -tAc "SELECT count(*) FROM pg_database WHERE datname='aven_identity'")" == 0 ]]
+  [[ "$(docker exec "$target_db" psql -U postgres -tAc "SELECT count(*) FROM pg_roles WHERE rolname='app_reader'")" == 0 ]]
+done
 if docker run "${common[@]}" --env PGHOST="$target_db" --env PGUSER=postgres --env PGPASSWORD=recovery-test \
   --env BACKUP_ENVIRONMENT=production --env RESTORE_CONFIRMATION=fresh-target-only \
   --volume "$scratch/target-state:/var/lib/aven-backups" "$image" restore; then
@@ -110,7 +154,11 @@ if docker run "${common[@]}" --env PGHOST="$target_db" --env PGUSER=postgres --e
 fi
 docker run "${common[@]}" --env PGHOST="$target_db" --env PGUSER=postgres --env PGPASSWORD=recovery-test \
   --env BACKUP_ENVIRONMENT=ci --env RESTORE_CONFIRMATION=fresh-target-only \
+  --env RESTORE_RELEASE_DESTINATION=/var/lib/aven-backups/recovered-release \
   --volume "$scratch/target-state:/var/lib/aven-backups" "$image" restore
+python3 "$root/deploy/release/archive.py" restore "$scratch/target-state/recovered-release" "$scratch/fresh-release" --target ci
+docker compose --project-directory "$scratch/fresh-release" --file "$scratch/fresh-release/restored-compose.json" \
+  run --rm --no-deps --pull never database sh -c 'test "$RECOVERY_VALUE" = retained-fixture'
 
 identity_label=$(docker exec "$target_db" psql --username postgres --dbname aven_identity \
   --tuples-only --no-align --command 'SELECT label FROM credentials')
@@ -146,4 +194,5 @@ OPERATIONS_IMAGE="$image" DATABASE_IMAGE="$database_image" RESTIC_REPOSITORY=/re
   BACKUP_ENVIRONMENT=ci DRILL_LOCAL_REPOSITORY_DIR="$scratch/repository" DRILL_OUTPUT="$scratch/drill.json" \
   bash "$root/deploy/operations/drill-latest.sh"
 jq -e '.status == "healthy" and .databaseCount == 2 and (.snapshotId|length) == 64' "$scratch/drill.json" >/dev/null
+RECOVERY_DATABASE_IMAGE="$database_image" python3 "$root/deploy/operations/test-restored-roles.py"
 echo 'destructive backup/restore drill passed'

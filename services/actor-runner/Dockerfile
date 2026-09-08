@@ -12,7 +12,8 @@ RUN mkdir -p /runtime-node-modules/@napi-rs \
   && cp -RL node_modules/.bun/@napi-rs+canvas-linux-x64-gnu@*/node_modules/@napi-rs/canvas-linux-x64-gnu /runtime-node-modules/@napi-rs/canvas-linux-x64-gnu
 
 FROM oven/bun:1.3.13
-RUN apt-get update && apt-get upgrade --yes --no-install-recommends && rm -rf /var/lib/apt/lists/*
+ARG OS_SECURITY_REFRESH=local
+RUN test -n "$OS_SECURITY_REFRESH" && apt-get update && apt-get upgrade --yes --no-install-recommends && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /repo/services/actor-runner/build ./build
 COPY --from=build /runtime-node-modules ./node_modules

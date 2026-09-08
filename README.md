@@ -231,6 +231,11 @@ cluster-wide customer access or caller-selected connection details.
 
 The execution design is split across a few focused references:
 
+- [Customer release lifecycle](docs/customer-release-lifecycle.md) specifies manual
+  release promotion, independent identity deployment, customer-by-customer movement
+  and retained-state recovery. The system map distinguishes implemented mechanisms
+  from remaining installer and hosted deployment integration.
+
 - [Actor skills and goal-directed problem solving](docs/actor-skills-and-problem-solving.md)
   explains capabilities, generated plans, durable runs, and artifact-backed
   resumption.

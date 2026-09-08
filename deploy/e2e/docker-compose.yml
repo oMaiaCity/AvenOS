@@ -96,6 +96,7 @@ services:
       API_ENTITLEMENTS_PASSWORD: api-entitlements-e2e
       API_RECONCILER_PASSWORD: api-reconciler-e2e
       API_MIGRATOR_PASSWORD: api-migrator-e2e
+      CUSTOMER_PLATFORM_ID: local-e2e
       CUSTOMER_PROVISIONER_PASSWORD: customer-provisioner-e2e
       ARTIFACT_STORE_PROVISIONER_DB_PASSWORD: artifact-store-provisioner-db-e2e
       PLATFORM_BACKUP_PASSWORD: platform-backup-e2e
@@ -132,6 +133,7 @@ services:
       API_ENTITLEMENTS_PASSWORD: api-entitlements-e2e
       API_RECONCILER_PASSWORD: api-reconciler-e2e
       API_MIGRATOR_PASSWORD: api-migrator-e2e
+      CUSTOMER_PLATFORM_ID: local-e2e
       CUSTOMER_PROVISIONER_PASSWORD: customer-provisioner-e2e
       ARTIFACT_STORE_PROVISIONER_DB_PASSWORD: artifact-store-provisioner-db-e2e
       PLATFORM_BACKUP_PASSWORD: platform-backup-e2e

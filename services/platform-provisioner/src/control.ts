@@ -11,21 +11,49 @@ export interface Operation {
 	routingGeneration: number
 }
 
+/** Called while the operator holds the customer environment row lock. */
+export async function queueCustomerReconciliation(
+	client: Pick<pg.PoolClient, 'query'>,
+	environmentId: string
+): Promise<void> {
+	// Movement verifies components directly, so the new generation may have no jobs yet.
+	// Keep an active worker's lease; all other retries reuse the unique operation row.
+	await client.query(
+		`INSERT INTO customer_component_operations
+		 (id,environment_id,component_ref,action,status,target_schema_version,migration_set_digest,routing_generation)
+		 SELECT gen_random_uuid(),e.id,c.component_ref,'reconcile','queued',c.target_schema_version,c.migration_set_digest,e.routing_generation
+		 FROM customer_environments e JOIN customer_environment_components c ON c.environment_id=e.id
+		 WHERE e.id=$1 AND e.desired_state='ready' AND e.movement_id IS NULL AND c.desired_state='ready'
+		 ON CONFLICT(environment_id,component_ref,action,routing_generation,target_schema_version,migration_set_digest)
+		 DO UPDATE SET status='queued',last_error=NULL,lease_owner=NULL,lease_expires_at=NULL,updated_at=clock_timestamp()
+		 WHERE customer_component_operations.status<>'running'
+		 OR coalesce(customer_component_operations.lease_expires_at,'-infinity'::timestamptz)<=clock_timestamp()`,
+		[environmentId]
+	)
+}
+
 export class ControlStore {
 	constructor(
 		private readonly pool: pg.Pool,
 		private readonly instanceId: string,
-		private readonly leaseSeconds: number
+		private readonly leaseSeconds: number,
+		private readonly runtimeId = 'primary'
 	) {}
 
 	async heartbeat(catalogDigest: string): Promise<void> {
 		await this.pool.query(
 			`INSERT INTO platform_worker_heartbeats
 			 (worker_name,instance_id,catalog_digest,started_at,last_heartbeat_at)
-			 VALUES('platform-provisioner',$1,$2,now(),now())
+			 VALUES($3,$1,$2,now(),now())
 			 ON CONFLICT(worker_name) DO UPDATE SET instance_id=EXCLUDED.instance_id,
 			 catalog_digest=EXCLUDED.catalog_digest,last_heartbeat_at=now()`,
-			[this.instanceId, catalogDigest]
+			[
+				this.instanceId,
+				catalogDigest,
+				this.runtimeId === 'primary'
+					? 'platform-provisioner'
+					: `platform-provisioner:${this.runtimeId}`
+			]
 		)
 	}
 
@@ -48,8 +76,11 @@ export class ControlStore {
 					 o.target_schema_version,o.migration_set_digest,o.routing_generation
 					 FROM customer_component_operations o
 					 JOIN customer_environments e ON e.id=o.environment_id
-					 WHERE o.status='queued' OR (o.status='running' AND o.lease_expires_at<now())
-					 ORDER BY o.created_at,o.id FOR UPDATE OF o SKIP LOCKED LIMIT 1`
+					 WHERE e.runtime_id=$1 AND e.movement_id IS NULL
+					 AND o.routing_generation=e.routing_generation
+					 AND (o.status='queued' OR (o.status='running' AND o.lease_expires_at<now()))
+					 ORDER BY o.created_at,o.id FOR UPDATE OF o,e SKIP LOCKED LIMIT 1`,
+					[this.runtimeId]
 				)
 			).rows[0]
 			if (!row) {
@@ -94,6 +125,14 @@ export class ControlStore {
 		const client = await this.pool.connect()
 		try {
 			await client.query('BEGIN')
+			const environment = (
+				await client.query(
+					`SELECT id FROM customer_environments WHERE id=$1 AND runtime_id=$2
+				 AND routing_generation=$3 AND movement_id IS NULL FOR UPDATE`,
+					[operation.environmentId, this.runtimeId, operation.routingGeneration]
+				)
+			).rows[0]
+			if (!environment) throw new Error('customer placement changed during provisioning')
 			const current = await client.query(
 				`UPDATE customer_component_operations SET status='succeeded',lease_owner=NULL,
 				 lease_expires_at=NULL,last_error=NULL,updated_at=now()
@@ -137,20 +176,39 @@ export class ControlStore {
 
 	async fail(operation: Operation, error: unknown): Promise<void> {
 		const message = String(error).slice(0, 1000)
-		await this.pool.query(
-			`UPDATE customer_component_operations SET status='failed',lease_owner=NULL,
-			 lease_expires_at=NULL,last_error=$3,updated_at=now()
-			 WHERE id=$1 AND lease_owner=$2`,
-			[operation.id, this.instanceId, message]
-		)
-		await this.pool.query(
-			`UPDATE customer_environment_components SET observed_state='failed',last_error=$3,
-			 updated_at=now() WHERE environment_id=$1 AND component_ref=$2`,
-			[operation.environmentId, operation.componentRef, message]
-		)
-		await this.pool.query(
-			"UPDATE customer_environments SET observed_state='failed',last_error=$2,updated_at=now() WHERE id=$1",
-			[operation.environmentId, message]
-		)
+		const client = await this.pool.connect()
+		try {
+			await client.query('BEGIN')
+			const environment = (
+				await client.query(
+					`SELECT id FROM customer_environments WHERE id=$1 AND runtime_id=$2
+				 AND routing_generation=$3 AND movement_id IS NULL FOR UPDATE`,
+					[operation.environmentId, this.runtimeId, operation.routingGeneration]
+				)
+			).rows[0]
+			const current = await client.query(
+				`UPDATE customer_component_operations SET status='failed',lease_owner=NULL,
+				 lease_expires_at=NULL,last_error=$3,updated_at=now()
+				 WHERE id=$1 AND status='running' AND lease_owner=$2 RETURNING id`,
+				[operation.id, this.instanceId, message]
+			)
+			if (environment && current.rowCount) {
+				await client.query(
+					`UPDATE customer_environment_components SET observed_state='failed',last_error=$3,
+					 updated_at=now() WHERE environment_id=$1 AND component_ref=$2 AND routing_generation=$4`,
+					[operation.environmentId, operation.componentRef, message, operation.routingGeneration]
+				)
+				await client.query(
+					"UPDATE customer_environments SET observed_state='failed',last_error=$2,updated_at=now() WHERE id=$1",
+					[operation.environmentId, message]
+				)
+			}
+			await client.query('COMMIT')
+		} catch (failure) {
+			await client.query('ROLLBACK').catch(() => {})
+			throw failure
+		} finally {
+			client.release()
+		}
 	}
 }

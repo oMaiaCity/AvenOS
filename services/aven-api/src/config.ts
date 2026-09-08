@@ -1,3 +1,4 @@
+import { isAbsolute } from 'node:path'
 import { componentRefSchema } from '@avenos/aven-customer-contracts'
 import { z } from 'zod'
 
@@ -35,6 +36,25 @@ const customerTarget = z.object({
 		.min(1)
 		.default(['user', 'admin'])
 })
+export const runtimeTargets = z
+	.array(
+		z
+			.object({
+				id: z.string().regex(/^[a-z][a-z0-9-]{0,62}$/),
+				targets: z.array(customerTarget).min(1),
+				artifactStoreBaseUrl: z.url(),
+				artifactStoreBearerToken: z.string().min(32)
+			})
+			.strict()
+	)
+	.max(32)
+	.superRefine((values, context) => {
+		if (new Set(values.map((value) => value.id)).size !== values.length)
+			context.addIssue({ code: 'custom', message: 'runtime IDs must be unique' })
+		for (const runtime of values)
+			if (new Set(runtime.targets.map((value) => value.segment)).size !== runtime.targets.length)
+				context.addIssue({ code: 'custom', message: 'runtime segments must be unique' })
+	})
 export const facadeConfigSchema = z.object({
 	PORT: z.coerce.number().int().positive().default(3000),
 	DATABASE_URL: z.string().regex(/^postgres(ql)?:\/\//),
@@ -60,6 +80,7 @@ export const facadeConfigSchema = z.object({
 	API_PUBLIC_BASE_URL: z.url().default('https://api.aven.ceo'),
 	CHECKOUT_CAPABILITIES_URL: z.url().optional(),
 	BACKUP_HEALTH_FILE: z.string().optional(),
+	CUSTOMER_RUNTIME_BACKUP_HEALTH_DIRECTORY: z.string().refine(isAbsolute).optional(),
 	CUSTOMER_ENTITLEMENT_TOKEN: z.string().regex(/^[A-Za-z0-9_-]{32,128}$/),
 	TENANT_GRANT_PRIVATE_KEY: z.string().min(80),
 	CORS_ORIGINS: z.string().default('https://portal.aven.ceo,https://aven.ceo'),
@@ -86,6 +107,25 @@ export const facadeConfigSchema = z.object({
 				return z.NEVER
 			}
 		}),
+	CUSTOMER_RUNTIMES_JSON: z
+		.string()
+		.max(262144)
+		.default('[]')
+		.transform((value, context) => {
+			try {
+				return runtimeTargets.parse(JSON.parse(value))
+			} catch {
+				context.addIssue({
+					code: 'custom',
+					message: 'must be a JSON array of runtime destinations'
+				})
+				return z.NEVER
+			}
+		}),
+	CUSTOMER_RUNTIMES_FILE: z.preprocess(
+		(value) => (value === '' ? undefined : value),
+		z.string().refine(isAbsolute).optional()
+	),
 	CUSTOMER_DOWNSTREAMS_JSON: z
 		.string()
 		.default('[]')

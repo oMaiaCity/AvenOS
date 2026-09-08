@@ -397,7 +397,11 @@ async function withProgress<T>(
 	})
 }
 
-type RolloutRunField = 'infrastructurePreviewRunId' | 'infrastructureApplyRunId' | 'releaseRunId' | 'deployRunId'
+type RolloutRunField =
+	| 'infrastructurePreviewRunId'
+	| 'infrastructureApplyRunId'
+	| 'releaseRunId'
+	| 'deployRunId'
 
 function appendRolloutLog(message: string): void {
 	if (!existsSync(rolloutLogPath))
@@ -789,10 +793,22 @@ async function completeInitialRollout(input: BootstrapInput): Promise<boolean> {
 		throw new Error(
 			`The setup code must be the current ${defaultBranch} commit before deployment. Local ${localRef.slice(0, 12)} differs from GitHub ${remoteRef.slice(0, 12)}.`
 		)
-	const nextRef = await resilientGitHubRead(['api', `repos/${repository}/commits/next`, '--jq', '.sha'], 'Read protected next release')
-	const nextTree = await resilientGitHubRead(['api', `repos/${repository}/git/commits/${nextRef}`, '--jq', '.tree.sha'], 'Read next release tree')
-	const productionTree = await resilientGitHubRead(['api', `repos/${repository}/git/commits/${localRef}`, '--jq', '.tree.sha'], 'Read production release tree')
-	if (nextTree !== productionTree) throw new Error('Initial installation requires the same source tree promoted through next to prod. Open the promotion PR; main has no deployment authority.')
+	const nextRef = await resilientGitHubRead(
+		['api', `repos/${repository}/commits/next`, '--jq', '.sha'],
+		'Read protected next release'
+	)
+	const nextTree = await resilientGitHubRead(
+		['api', `repos/${repository}/git/commits/${nextRef}`, '--jq', '.tree.sha'],
+		'Read next release tree'
+	)
+	const productionTree = await resilientGitHubRead(
+		['api', `repos/${repository}/git/commits/${localRef}`, '--jq', '.tree.sha'],
+		'Read production release tree'
+	)
+	if (nextTree !== productionTree)
+		throw new Error(
+			'Initial installation requires the same source tree promoted through next to prod. Open the promotion PR; main has no deployment authority.'
+		)
 	if (
 		!generated.initialRollout ||
 		generated.initialRollout.ref !== localRef ||
@@ -858,7 +874,12 @@ async function completeInitialRollout(input: BootstrapInput): Promise<boolean> {
 		label: 'Install identity, verify next, then install production',
 		repository,
 		ref: defaultBranch,
-		inputs: { target: 'all', release_run_id: String(generated.initialRollout.releaseRunId), recover_from_backup: 'false' },
+		inputs: {
+			target: 'all',
+			initial_installation: 'true',
+			release_run_id: String(generated.initialRollout.releaseRunId),
+			recover_from_backup: 'false'
+		},
 		timeoutMs: 3 * 60 * 60_000,
 		refreshCredentials: () => refreshCompletedCredentials(input)
 	})

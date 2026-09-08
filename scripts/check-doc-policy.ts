@@ -152,7 +152,11 @@ for (const workflow of [
 	'.github/workflows/platform-ci.yml',
 	'.github/workflows/platform-release.yml'
 ]) {
-	if (!read(workflow).includes('bun run check:docs')) {
+	const source = read(workflow)
+	const sharedGate =
+		source.includes('uses: ./.github/workflows/platform-verification.yml') &&
+		read('.github/workflows/platform-verification.yml').includes('bun run check:docs')
+	if (!source.includes('bun run check:docs') && !sharedGate) {
 		failures.push(`${workflow} must run the documentation gate`)
 	}
 }

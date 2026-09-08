@@ -332,7 +332,8 @@ uses an owning service API or an explicitly versioned database contract. Co-loca
 is an isolation and recovery choice, not permission to create a distributed monolith
 inside PostgreSQL.
 
-The `aven_platform` schema contains only physical installation evidence such as:
+The `aven_platform` schema contains physical installation and execution-fence evidence,
+including:
 
 ```text
 component_ref
@@ -344,8 +345,12 @@ verified_at
 routing_generation
 ```
 
-Only the provisioning role writes this metadata. Runtime roles may read the row needed
-for startup compatibility checks but cannot forge installation success.
+Provisioning owns installation versions and routing generations. Runtime roles may read
+the metadata needed for compatibility checks but cannot forge installation success.
+Actor workers additionally have column-level update permission on `execution_unsettled`,
+the set of run IDs whose execution has started without a durable completion. They cannot
+change `execution_enabled`: only the controller can close or reopen that fence. Actor
+plans, results and continuations remain in the Actor-owned schema.
 
 ## Control-plane records
 
@@ -743,23 +748,22 @@ workflow with retention and recovery rules.
 
 ## Deployment and rollout
 
-A service image and its database component do not become active in one uncoordinated
-step. A normal rollout is:
+A release prepares a separate runtime and database cluster, then moves customer
+environments individually through the protocol in
+[Customer release lifecycle](customer-release-lifecycle.md). The customer directory
+selects the runtime as well as the physical database. A migration hold closes admission
+independently of entitlement and component readiness, and prevents background
+provisioning from reopening the customer.
 
-1. publish and validate the new component manifest and migrations;
-2. build the new static catalog without changing desired versions;
-3. deploy one provisioner image capable of the old and new manifest versions;
-4. deploy runtime code compatible with both current and target schemas;
-5. raise desired schema version for one or a few test customer environments;
-6. reconcile and verify those databases;
-7. raise the desired version for the remaining environments in bounded batches;
-8. gate full runtime activation on database compatibility, not necessarily on every
-   optional customer being healthy; and
-9. perform later contract cleanup only after old runtime versions are absent.
+Runtime and database schema move together. Customer runtimes do not need to support
+both domain schemas in one process; shared identity, facade and client contracts must
+support the concurrently running releases. Entitlement changes preserve the installed
+component targets instead of resetting a migrated customer to the facade's compiled
+catalog. Provisioning operations are claimed only by the customer's current runtime.
 
-New customer databases install the current desired component set. Existing customer
-databases converge through the same reconciliation path; deployment scripts do not
-fan out ad-hoc SQL directly across every database.
+The lifecycle specification is the target contract. The
+[system map](customer-database-system-map.md#customer-movement) distinguishes the
+implemented migration mechanism from the hosted rollout integration still required.
 
 ## Backup, restore, and movement
 

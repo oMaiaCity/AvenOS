@@ -88,7 +88,7 @@ const handler = createActorRunnerHandler(
 				],
 				createActorPlanExecutor(createServerActorExecutionHost())
 			)
-			const runner = new SqlPlanRunner(api, worker, execute)
+			const runner = new SqlPlanRunner(api, worker, execute, true)
 			await runner.recoverAcceptedRuns()
 			return runner
 		}

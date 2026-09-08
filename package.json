@@ -9,6 +9,11 @@
 		"infrastructure/*"
 	],
 	"scripts": {
+		"customer:move": "bun services/platform-provisioner/src/move-cli.ts",
+		"test:customer-movement": "bun deploy/e2e/customer-movement.ts",
+		"test:customer-runtime": "bun deploy/e2e/customer-runtime-journey.ts",
+		"test:release-archive": "python3 deploy/release/archive-test.py",
+		"test:runtime-install": "python3 deploy/runtime/test-start.py",
 		"release:promote": "bun scripts/promote-release.ts",
 		"check:secrets": "bash scripts/security-scan.sh",
 		"check:rust-advisories": "bun scripts/rust-advisories.ts",
@@ -66,6 +71,8 @@
 		"test:proxy-boundary": "bun deploy/e2e/proxy-address.ts",
 		"test:recovery": "bash deploy/operations/test-recovery.sh",
 		"test:e2e:platform": "bash deploy/e2e/run.sh",
+		"test:e2e:native": "bash deploy/e2e/run.sh native",
+		"test:e2e:runtime": "bash deploy/e2e/runtime-install.sh",
 		"test:e2e:polar-sandbox": "bash deploy/e2e/polar-sandbox/run.sh",
 		"local:up": "bash deploy/local/up.sh",
 		"local:down": "bash deploy/local/down.sh",
@@ -89,6 +96,7 @@
 		"@types/pg": "8.15.6",
 		"@types/terminal-kit": "2.5.7",
 		"conventional-changelog-cli": "^5.0.0",
+		"jose": "6.2.9",
 		"nodemailer": "9.0.3",
 		"pg": "8.16.3",
 		"semver": "^7.8.4",

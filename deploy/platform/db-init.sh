@@ -1,6 +1,23 @@
 #!/bin/sh
 set -eu
 
+# This marker is local to the cluster, outside customer dumps. A replacement runtime
+# may share a platform ID; a next database must never be adopted into production.
+psql --set=ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres \
+  --set=platform_id="${CUSTOMER_PLATFORM_ID:?required}" <<'EOSQL'
+SELECT (shobj_description(oid,'pg_database')='aven-platform:' || :'platform_id'
+  OR ((shobj_description(oid,'pg_database') IS NULL
+       OR shobj_description(oid,'pg_database')='default administrative connection database')
+      AND NOT EXISTS (SELECT FROM pg_database WHERE NOT datistemplate AND datname <> 'postgres')
+      AND NOT EXISTS (SELECT FROM pg_roles WHERE rolname !~ '^pg_' AND rolname <> current_user)))
+  AS platform_matches FROM pg_database WHERE datname='postgres'\gset
+\if :platform_matches
+\else
+  DO $$ BEGIN RAISE EXCEPTION 'Database cluster identity is unrecognized; refusing initialization.'; END $$;
+\endif
+SELECT format('COMMENT ON DATABASE postgres IS %L','aven-platform:' || :'platform_id')\gexec
+EOSQL
+
 psql --set=ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres <<-EOSQL
 SELECT 'CREATE ROLE aven_checkout_owner NOLOGIN' WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname='aven_checkout_owner')\gexec
 SELECT 'CREATE ROLE aven_checkout_http LOGIN NOINHERIT' WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname='aven_checkout_http')\gexec
@@ -17,18 +34,18 @@ SELECT 'CREATE ROLE aven_api_migrator LOGIN' WHERE NOT EXISTS (SELECT FROM pg_ro
 SELECT 'CREATE ROLE aven_customer_provisioner LOGIN NOINHERIT CREATEDB CREATEROLE' WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname='aven_customer_provisioner')\gexec
 SELECT 'CREATE ROLE aven_artifact_store_provisioner LOGIN INHERIT' WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname='aven_artifact_store_provisioner')\gexec
 SELECT 'CREATE ROLE aven_backup LOGIN INHERIT' WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname='aven_backup')\gexec
-ALTER ROLE aven_checkout_http PASSWORD '${CHECKOUT_RUNTIME_PASSWORD}';
-ALTER ROLE aven_checkout_webhooks PASSWORD '${CHECKOUT_WEBHOOK_PASSWORD}';
-ALTER ROLE aven_checkout_migrator PASSWORD '${CHECKOUT_MIGRATOR_PASSWORD}';
-ALTER ROLE aven_checkout_email PASSWORD '${CHECKOUT_EMAIL_PASSWORD}';
-ALTER ROLE aven_checkout_platform_events PASSWORD '${CHECKOUT_PLATFORM_EVENTS_PASSWORD}';
-ALTER ROLE aven_api_hosting PASSWORD '${API_HOSTING_PASSWORD}';
-ALTER ROLE aven_api_authorization PASSWORD '${API_AUTHORIZATION_PASSWORD}';
-ALTER ROLE aven_api_entitlements PASSWORD '${API_ENTITLEMENTS_PASSWORD}';
-ALTER ROLE aven_api_reconciler PASSWORD '${API_RECONCILER_PASSWORD}';
-ALTER ROLE aven_api_migrator PASSWORD '${API_MIGRATOR_PASSWORD}';
-ALTER ROLE aven_customer_provisioner PASSWORD '${CUSTOMER_PROVISIONER_PASSWORD}';
-ALTER ROLE aven_artifact_store_provisioner PASSWORD '${ARTIFACT_STORE_PROVISIONER_DB_PASSWORD}';
+ALTER ROLE aven_checkout_http LOGIN NOINHERIT PASSWORD '${CHECKOUT_RUNTIME_PASSWORD}';
+ALTER ROLE aven_checkout_webhooks LOGIN NOINHERIT PASSWORD '${CHECKOUT_WEBHOOK_PASSWORD}';
+ALTER ROLE aven_checkout_migrator LOGIN PASSWORD '${CHECKOUT_MIGRATOR_PASSWORD}';
+ALTER ROLE aven_checkout_email LOGIN PASSWORD '${CHECKOUT_EMAIL_PASSWORD}';
+ALTER ROLE aven_checkout_platform_events LOGIN NOINHERIT PASSWORD '${CHECKOUT_PLATFORM_EVENTS_PASSWORD}';
+ALTER ROLE aven_api_hosting LOGIN NOINHERIT PASSWORD '${API_HOSTING_PASSWORD}';
+ALTER ROLE aven_api_authorization LOGIN NOINHERIT PASSWORD '${API_AUTHORIZATION_PASSWORD}';
+ALTER ROLE aven_api_entitlements LOGIN NOINHERIT PASSWORD '${API_ENTITLEMENTS_PASSWORD}';
+ALTER ROLE aven_api_reconciler LOGIN NOINHERIT PASSWORD '${API_RECONCILER_PASSWORD}';
+ALTER ROLE aven_api_migrator LOGIN PASSWORD '${API_MIGRATOR_PASSWORD}';
+ALTER ROLE aven_customer_provisioner LOGIN NOINHERIT CREATEDB CREATEROLE PASSWORD '${CUSTOMER_PROVISIONER_PASSWORD}';
+ALTER ROLE aven_artifact_store_provisioner LOGIN INHERIT PASSWORD '${ARTIFACT_STORE_PROVISIONER_DB_PASSWORD}';
 ALTER ROLE aven_backup LOGIN INHERIT PASSWORD '${PLATFORM_BACKUP_PASSWORD}';
 GRANT pg_read_all_data TO aven_backup;
 GRANT aven_checkout_owner TO aven_checkout_migrator WITH ADMIN OPTION;

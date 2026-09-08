@@ -6,10 +6,12 @@ import {
 	requireIdentity
 } from '@avenos/aven-identity'
 import { BodyLimitError, readBoundedBytes, readBoundedJson } from '@avenos/http-boundary'
-import type { ArtifactHandler } from './artifacts/handler.js'
+import { ArtifactHandler } from './artifacts/handler.js'
 import type { FacadeConfig } from './config.js'
 import type { CustomerHandler } from './customers/handler.js'
+import { RuntimeDirectory } from './customers/runtime-directory.js'
 import type { HostingHandler } from './hosting/handler.js'
+import { ArtifactFileService } from './lib/server/artifacts/service.js'
 import { AppError } from './lib/server/errors.js'
 import type { LlmGatewayService } from './lib/server/llm-gateway.js'
 
@@ -65,7 +67,8 @@ export function forwardedHeaders(
 				'x-aven-tenant-grant',
 				'x-aven-environment',
 				'x-aven-database',
-				'x-aven-routing-generation'
+				'x-aven-routing-generation',
+				'x-aven-runtime'
 			].includes(lower)
 		)
 			headers.set(name, value)
@@ -88,6 +91,7 @@ export function createFacadeHandler(
 	artifacts?: ArtifactHandler,
 	llmGateway?: LlmGatewayService | null
 ) {
+	const runtimeDirectory = new RuntimeDirectory(config)
 	const allowedOrigins = new Set(
 		config.CORS_ORIGINS.split(',')
 			.map((value) => value.trim())
@@ -198,22 +202,57 @@ export function createFacadeHandler(
 					componentRef: targetConfig.componentRef,
 					actions: [action]
 				})
-				if (customerMatch[2] === 'artifacts' && artifacts)
-					return artifacts.user(request, claims, grant.claims, customerMatch[3] ?? '')
+				const runtime = (await runtimeDirectory.read()).find(
+					(entry) => entry.id === grant.runtimeId
+				)
+				const usePrimary =
+					grant.runtimeId === 'primary' && !runtime && !config.CUSTOMER_RUNTIMES_FILE
+				const destination =
+					runtime?.targets.find((entry) => entry.segment === customerMatch[2]) ??
+					(usePrimary ? targetConfig : undefined)
+				if (!destination || destination.componentRef !== targetConfig.componentRef)
+					throw new AppError(
+						503,
+						'CUSTOMER_RUNTIME_UNAVAILABLE',
+						'The customer system is unavailable.'
+					)
+				if (customerMatch[2] === 'artifacts') {
+					const artifactService = runtime
+						? ArtifactFileService.fromConfig({
+								ARTIFACT_STORE_BASE_URL: runtime.artifactStoreBaseUrl,
+								ARTIFACT_STORE_BEARER_TOKEN: runtime.artifactStoreBearerToken
+							})
+						: undefined
+					const artifactHandler = artifactService
+						? new ArtifactHandler(artifactService)
+						: usePrimary
+							? artifacts
+							: undefined
+					if (!artifactHandler)
+						throw new AppError(
+							503,
+							'CUSTOMER_RUNTIME_UNAVAILABLE',
+							'The customer system is unavailable.'
+						)
+					return artifactHandler.user(request, claims, grant.claims, customerMatch[3] ?? '')
+				}
 				const identityToken = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ?? ''
 				const suffix = customerMatch[3] ?? ''
-				const targetPath = `${targetConfig.targetPrefix.replace(/\/$/, '')}${suffix || ''}${url.search}`
-				const target = new URL(targetPath, targetConfig.baseUrl)
+				const targetPath = `${destination.targetPrefix.replace(/\/$/, '')}${suffix || ''}${url.search}`
+				const target = new URL(targetPath, destination.baseUrl)
 				const body = ['GET', 'HEAD'].includes(request.method)
 					? undefined
-					: await readBoundedBytes(request, customerMatch[2] === 'intents' ? 256 * 1024 : 1024 * 1024)
+					: await readBoundedBytes(
+							request,
+							customerMatch[2] === 'intents' ? 256 * 1024 : 1024 * 1024
+						)
 				const response = await fetcher(
 					new Request(target, {
 						method: request.method,
 						headers: forwardedHeaders(
 							request,
 							claims,
-							targetConfig.bearerToken,
+							destination.bearerToken,
 							identityToken,
 							grant.token
 						),

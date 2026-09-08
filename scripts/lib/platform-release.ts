@@ -97,3 +97,14 @@ export function sameRelease(a: ReleaseManifest, b: ReleaseManifest): boolean {
 		)
 	)
 }
+
+export function assertInitialDeployment(target: string, initial: boolean, recovery: boolean) {
+	if (target === 'all' && (!initial || recovery))
+		throw new Error(
+			'All targets is reserved for explicit fresh installation; updates select one target.'
+		)
+	if (initial && target !== 'all')
+		throw new Error(
+			'Initial installation selects all targets; individual deployments leave identity independent.'
+		)
+}

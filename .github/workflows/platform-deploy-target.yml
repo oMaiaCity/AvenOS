@@ -75,6 +75,7 @@ jobs:
       BACKUP_S3_REGION: ${{ vars.BACKUP_S3_REGION }}
       BACKUP_RESTIC_PASSWORD: ${{ secrets.BACKUP_RESTIC_PASSWORD }}
       DEPLOYMENT_TARGET: ${{ inputs.target }}
+      RELEASE_MANIFEST: ${{ inputs.manifest }}
       RECOVER_FROM_BACKUP: ${{ inputs.recover_from_backup }}
     steps:
       - uses: actions/checkout@v5

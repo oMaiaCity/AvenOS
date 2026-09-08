@@ -12,6 +12,62 @@ import type { Operation } from './control.js'
 
 const literal = (value: string) => `'${value.replaceAll("'", "''")}'`
 
+/** Restore the role administration normally granted automatically by CREATE ROLE. */
+export async function restoreProvisionerAuthority(
+	recoveryUrl: string,
+	provisionerRole: string,
+	environmentId: string,
+	catalog: Iterable<ComponentCatalogEntry>
+): Promise<void> {
+	const url = new URL(recoveryUrl)
+	url.pathname = `/${databaseNameForEnvironment(environmentId)}`
+	const client = new pg.Client({
+		connectionString: url.toString(),
+		connectionTimeoutMillis: 5000,
+		statement_timeout: 60000
+	})
+	await client.connect()
+	try {
+		await client.query('BEGIN')
+		const identity = (
+			await client.query<{ environment_id: string }>(
+				'SELECT environment_id FROM aven_platform.environment_identity WHERE singleton'
+			)
+		).rows[0]
+		if (identity?.environment_id !== environmentId)
+			throw new Error('restored customer identity differs')
+		const suffixes = new Set(['db_owner', 'platform_owner'])
+		for (const { manifest } of catalog) {
+			suffixes.add(manifest.ownerRoleSuffix)
+			for (const role of manifest.functionRoles) suffixes.add(role.roleSuffix)
+		}
+		const names = [...suffixes].map((suffix) => databaseRoleName(environmentId, suffix))
+		const roles = await client.query<{
+			rolname: string
+			privileged: boolean
+			administered: boolean
+		}>(
+			`SELECT r.rolname,(r.rolsuper OR r.rolcreatedb OR r.rolcreaterole OR r.rolreplication OR r.rolbypassrls) AS privileged,
+			 EXISTS(SELECT FROM pg_auth_members m JOIN pg_roles p ON p.oid=m.member
+			 WHERE m.roleid=r.oid AND p.rolname=$2 AND m.admin_option) AS administered
+			 FROM pg_roles r WHERE r.rolname=ANY($1::text[])`,
+			[names, provisionerRole]
+		)
+		if (roles.rows.some((role) => role.privileged))
+			throw new Error('customer role has unexpected cluster privileges')
+		for (const { rolname } of roles.rows.filter((role) => !role.administered))
+			await client.query(
+				`GRANT ${quoteIdentifier(rolname)} TO ${quoteIdentifier(provisionerRole)} WITH ADMIN TRUE, INHERIT FALSE, SET FALSE`
+			)
+		await client.query('COMMIT')
+	} catch (error) {
+		await client.query('ROLLBACK').catch(() => {})
+		throw error
+	} finally {
+		await client.end()
+	}
+}
+
 export class CustomerDatabaseProvisioner {
 	private readonly roots: Record<string, string>
 
@@ -30,7 +86,13 @@ export class CustomerDatabaseProvisioner {
 	private pool(database: string, options: pg.PoolConfig = {}): pg.Pool {
 		const url = new URL(this.clusterUrl)
 		url.pathname = `/${database}`
-		return new pg.Pool({ connectionString: url.toString(), max: 1, ...options })
+		return new pg.Pool({
+			connectionString: url.toString(),
+			max: 1,
+			connectionTimeoutMillis: 5000,
+			statement_timeout: 60000,
+			...options
+		})
 	}
 
 	async reconcile(operation: Operation, entry: ComponentCatalogEntry): Promise<void> {
@@ -45,6 +107,19 @@ export class CustomerDatabaseProvisioner {
 				`customer-environment:${operation.environmentId}`
 			])
 			await this.ensureDatabase(operation.environmentId, operation.databaseName)
+			const metadata = this.pool(operation.databaseName)
+			try {
+				const identity = (
+					await metadata.query<{ routing_generation: string }>(
+						'SELECT routing_generation FROM aven_platform.environment_identity WHERE singleton'
+					)
+				).rows[0]
+				if (!identity || Number(identity.routing_generation) > operation.routingGeneration)
+					throw new Error('provisioning generation is stale')
+			} finally {
+				await metadata.end()
+			}
+
 			if (operation.action === 'suspend') {
 				await this.suspend(operation, entry.manifest)
 				return
@@ -104,6 +179,9 @@ export class CustomerDatabaseProvisioner {
 				 environment_id uuid NOT NULL,routing_generation bigint NOT NULL,
 				 created_at timestamptz NOT NULL DEFAULT now())`
 			)
+			await client.query(`ALTER TABLE aven_platform.environment_identity
+			 ADD COLUMN IF NOT EXISTS execution_enabled boolean NOT NULL DEFAULT true,
+			 ADD COLUMN IF NOT EXISTS execution_unsettled uuid[] NOT NULL DEFAULT '{}'`)
 			await client.query(
 				`INSERT INTO aven_platform.environment_identity(singleton,environment_id,routing_generation)
 				 VALUES(true,$1,1) ON CONFLICT(singleton) DO NOTHING`,
@@ -262,6 +340,10 @@ export class CustomerDatabaseProvisioner {
 						`GRANT SELECT ON aven_platform.environment_identity,
 						 aven_platform.component_installations TO ${quoteIdentifier(role)}`
 					)
+					if (spec.kind === 'os.aven:db-role:actors:worker@1')
+						await grantsClient.query(
+							`GRANT UPDATE(execution_unsettled) ON aven_platform.environment_identity TO ${quoteIdentifier(role)}`
+						)
 					await grantsClient.query('RESET ROLE')
 				}
 			} finally {
@@ -305,7 +387,7 @@ export class CustomerDatabaseProvisioner {
 		await this.verify(operation, entry)
 	}
 
-	private async verify(operation: Operation, entry: ComponentCatalogEntry): Promise<void> {
+	async verify(operation: Operation, entry: ComponentCatalogEntry): Promise<void> {
 		const spec = entry.manifest.functionRoles[0]
 		if (!spec) throw new Error('component has no runtime verification role')
 		const role = databaseRoleName(operation.environmentId, spec.roleSuffix)
@@ -319,7 +401,12 @@ export class CustomerDatabaseProvisioner {
 		url.username = role
 		url.password = password
 		url.pathname = `/${operation.databaseName}`
-		const runtime = new pg.Pool({ connectionString: url.toString(), max: 1 })
+		const runtime = new pg.Pool({
+			connectionString: url.toString(),
+			max: 1,
+			connectionTimeoutMillis: 5000,
+			statement_timeout: 60000
+		})
 		try {
 			const installation = (
 				await runtime.query<{

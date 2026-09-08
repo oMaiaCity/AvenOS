@@ -9,7 +9,8 @@ RUN --mount=type=cache,target=/root/.bun/install/cache,sharing=locked \
 RUN bun --cwd services/identity build && cd services/identity && bun build scripts/migrate.ts --target=bun --outdir=build/scripts
 
 FROM oven/bun:1.3.13
-RUN apt-get update && apt-get upgrade --yes --no-install-recommends && rm -rf /var/lib/apt/lists/*
+ARG OS_SECURITY_REFRESH=local
+RUN test -n "$OS_SECURITY_REFRESH" && apt-get update && apt-get upgrade --yes --no-install-recommends && rm -rf /var/lib/apt/lists/*
 WORKDIR /repo/services/identity
 ENV NODE_ENV=production
 COPY --from=build /repo/node_modules /repo/node_modules
