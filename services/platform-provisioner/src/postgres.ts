@@ -104,6 +104,9 @@ export class CustomerDatabaseProvisioner {
 				 environment_id uuid NOT NULL,routing_generation bigint NOT NULL,
 				 created_at timestamptz NOT NULL DEFAULT now())`
 			)
+			await client.query(`ALTER TABLE aven_platform.environment_identity
+			 ADD COLUMN IF NOT EXISTS execution_enabled boolean NOT NULL DEFAULT true,
+			 ADD COLUMN IF NOT EXISTS execution_unsettled uuid[] NOT NULL DEFAULT '{}'`)
 			await client.query(
 				`INSERT INTO aven_platform.environment_identity(singleton,environment_id,routing_generation)
 				 VALUES(true,$1,1) ON CONFLICT(singleton) DO NOTHING`,
@@ -262,6 +265,10 @@ export class CustomerDatabaseProvisioner {
 						`GRANT SELECT ON aven_platform.environment_identity,
 						 aven_platform.component_installations TO ${quoteIdentifier(role)}`
 					)
+					if (spec.kind === 'os.aven:db-role:actors:worker@1')
+						await grantsClient.query(
+							`GRANT UPDATE(execution_unsettled) ON aven_platform.environment_identity TO ${quoteIdentifier(role)}`
+						)
 					await grantsClient.query('RESET ROLE')
 				}
 			} finally {
@@ -305,7 +312,7 @@ export class CustomerDatabaseProvisioner {
 		await this.verify(operation, entry)
 	}
 
-	private async verify(operation: Operation, entry: ComponentCatalogEntry): Promise<void> {
+	async verify(operation: Operation, entry: ComponentCatalogEntry): Promise<void> {
 		const spec = entry.manifest.functionRoles[0]
 		if (!spec) throw new Error('component has no runtime verification role')
 		const role = databaseRoleName(operation.environmentId, spec.roleSuffix)

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
 	assertDeploymentAuthority,
+	assertInitialDeployment,
 	assertNextReleaseCommit,
 	assertRunProvenance,
 	sameRelease,
@@ -11,6 +12,11 @@ import {
 
 const env = process.env
 assertDeploymentAuthority(env.GITHUB_REF ?? '', env.DEPLOYMENT_TARGET ?? '')
+assertInitialDeployment(
+	env.DEPLOYMENT_TARGET ?? '',
+	env.INITIAL_INSTALLATION === 'true',
+	env.RECOVER_FROM_BACKUP === 'true'
+)
 if (env.GITHUB_EVENT_NAME !== 'workflow_dispatch')
 	throw new Error('Deployment requires an explicit dispatch.')
 if (env.GITHUB_ACTOR?.endsWith('[bot]'))

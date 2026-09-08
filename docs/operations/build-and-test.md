@@ -124,6 +124,7 @@ bun run test:bootstrap
 bun run test:deploy
 bun run test:proxy-boundary
 bun run test:recovery
+bun run test:customer-movement
 ```
 
 - `test:infra` evaluates the Pulumi program, security-sensitive cloud-init output, and
@@ -142,6 +143,11 @@ bun run test:recovery
   fixture on Linux, proves distinct transport clients survive forwarding, rejects
   caller-selected forwarding identity, and checks the production Svelte one-hop settings.
   It does not simulate separate users behind the same NAT or a future CDN.
+- `test:customer-movement` uses two disposable PostgreSQL clusters to prove customer
+  routing and holds, executor drain, uncertain-attempt refusal, source fencing, exact
+  database restore, failed readiness and resume, controller contention, and retained
+  rollback after new writes while another customer keeps its data. Its fixture adapter
+  does not prove provider provisioning or a complete native journey through migration.
 - `test:recovery` creates source databases, takes encrypted backups, restores fresh
   targets, compares exact data and access control lists, and proves bounded provider
   failure, wrong-key, and populated-target rejection.
@@ -371,6 +377,7 @@ bun run test:infra
 bun run test:bootstrap
 bun run test:deploy
 bun run test:recovery
+bun run test:customer-movement
 bun run test:e2e:platform
 ```
 

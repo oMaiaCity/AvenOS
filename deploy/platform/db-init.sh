@@ -1,6 +1,20 @@
 #!/bin/sh
 set -eu
 
+# This marker is local to the cluster, outside customer dumps. A replacement runtime
+# may share a platform ID; a next database must never be adopted into production.
+psql --set=ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres \
+  --set=platform_id="${CUSTOMER_PLATFORM_ID:?required}" <<'EOSQL'
+SELECT COALESCE(shobj_description(oid,'pg_database')='aven-platform:' || :'platform_id',true)
+  AS platform_matches FROM pg_database WHERE datname='postgres'\gset
+\if :platform_matches
+\else
+  \echo 'Database cluster belongs to another installation target.'
+  \quit 3
+\endif
+SELECT format('COMMENT ON DATABASE postgres IS %L','aven-platform:' || :'platform_id')\gexec
+EOSQL
+
 psql --set=ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres <<-EOSQL
 SELECT 'CREATE ROLE aven_checkout_owner NOLOGIN' WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname='aven_checkout_owner')\gexec
 SELECT 'CREATE ROLE aven_checkout_http LOGIN NOINHERIT' WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname='aven_checkout_http')\gexec

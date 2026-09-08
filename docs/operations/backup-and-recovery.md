@@ -165,3 +165,78 @@ wrong-password and populated-target rejection.
 
 The local drill proves the mechanism. The quarterly real-bucket drill proves provider
 access, escrow, DNS, infrastructure creation, and operator timing.
+
+## Customer movement development
+
+The customer movement controller is available for controlled development installations.
+It is not connected to hosted provisioning or the public installer. Do not interpret
+its database fixture proof as a completed cloud rollout. The
+[lifecycle specification](../customer-release-lifecycle.md) lists the remaining gates.
+
+Run on Linux from a clean checkout of the destination release with Bun, Docker and private
+network access or database tunnels to both already-prepared runtimes. Set the recovery
+URL SSL mode explicitly; the local tunnel fixture uses `sslmode=disable`, while dump
+tools otherwise require TLS. Remote certificate provisioning is not part of this command. The controller
+uses the checksum-pinned PostgreSQL 17 client image with host networking. It does not
+publish database ports. Source and destination must be separate clusters with the same
+installation target marker, created by the normal database initialization. Both running
+Actor services must implement the customer execution barrier in this release.
+
+The operator-owned mode-`0600` configuration file has these fields:
+
+| Field | Meaning |
+| --- | --- |
+| `platformId` | Exact installation target label used by database initialization |
+| `controlDatabaseUrl` | Central directory connection with the reconciler role |
+| `archiveDirectory` | Absolute private directory for retained local migration dumps |
+| `runtimes` | Array of runtime configuration objects |
+| Runtime `id`, `releaseSha` | Immutable runtime ID and exact 40-character release commit |
+| Runtime `recoveryDatabaseUrl` | Generated administrative recovery connection for that cluster |
+| Runtime `provisioner` | That runtime's normal validated provisioner configuration |
+
+Recover credentials through the existing escrow/access process. The installer does not
+currently generate this movement configuration. It contains secrets; keep it outside
+Git. The local dump directory contains customer data and must be protected and retained
+until recovery is complete. These files are not a substitute for encrypted off-host
+backups. Registration binds runtime IDs permanently to releases; it does not establish
+that remote service images actually match those releases.
+
+Register both already-prepared runtime releases, then create a movement using a fresh
+operation UUID and the currently observed customer generation:
+
+```sh
+bun run customer:move -- /private/movement.json register
+bun run customer:move -- /private/movement.json begin ENVIRONMENT_UUID SOURCE_RUNTIME DESTINATION_RUNTIME GENERATION OPERATION_UUID
+bun run customer:move -- /private/movement.json resume OPERATION_UUID
+bun run customer:move -- /private/movement.json status OPERATION_UUID
+```
+
+`begin` immediately pauses that customer's admission. `resume` verifies source ownership,
+waits up to 60 seconds for running Actors, blocks on uncertain executions, closes source
+logins, restores an empty destination, and applies the destination checkout's component
+catalog. Repeating the same operation resumes its durable phase. A failure preserves the
+hold and files. An existing destination without the exact operation/dump marker is
+refused; do not delete it to silence the error. An interruption between database creation
+and marker publication requires inspection before retry. There is no automatic
+pre-activation cancellation command yet.
+
+A rollback requires the activated or completed earlier movement ID and explicit acceptance that
+newer data will no longer be visible. It retains both databases and disables Actor
+execution until external effects have been reconciled:
+
+```sh
+bun run customer:move -- /private/movement.json rollback ENVIRONMENT_UUID CURRENT_RUNTIME RETAINED_RUNTIME CURRENT_GENERATION NEW_OPERATION_UUID RETAINED_OPERATION_UUID accept-divergence
+bun run customer:move -- /private/movement.json resume NEW_OPERATION_UUID
+```
+
+Resume rollback from the clean retained release checkout. Never clear unfinished Actor
+records merely to make movement succeed: determine the actual outcome of each external
+action first. Automated reconciliation and retirement are separate outstanding work.
+
+The driver verifies database component metadata, scoped reads and privileges. It does
+not yet perform a native-client or live-provider journey before activation. Run the
+isolated mechanism proof with:
+
+```sh
+bun run test:customer-movement
+```

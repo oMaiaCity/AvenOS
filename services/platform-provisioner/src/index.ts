@@ -13,7 +13,12 @@ controlPool.on('error', (error) => logger.error({ err: error }, 'control databas
 const catalog = await loadCatalog()
 const digest = catalogDigest(catalog)
 const instanceId = config.PROVISIONER_INSTANCE_ID ?? randomUUID()
-const control = new ControlStore(controlPool, instanceId, config.PROVISIONER_LEASE_SECONDS)
+const control = new ControlStore(
+	controlPool,
+	instanceId,
+	config.PROVISIONER_LEASE_SECONDS,
+	config.CUSTOMER_RUNTIME_ID
+)
 const databases = new CustomerDatabaseProvisioner(config.CLUSTER_DATABASE_URL, config)
 let stopped = false
 

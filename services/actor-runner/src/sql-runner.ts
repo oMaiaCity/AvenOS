@@ -16,6 +16,11 @@ import {
 import type pg from 'pg'
 
 export class PlanRunConflict extends Error {}
+export class CustomerExecutionPaused extends Error {
+	constructor() {
+		super('Work is paused while this workspace is recovered.')
+	}
+}
 
 const handle = (record: PlanRunRecord): PlanRunHandle => ({
 	runId: record.runId,
@@ -52,7 +57,8 @@ export class SqlPlanRunner implements PlanRunner {
 	constructor(
 		private readonly api: pg.Pool,
 		private readonly worker: pg.Pool,
-		private readonly executor: PlanRunExecutor
+		private readonly executor: PlanRunExecutor,
+		private readonly customerExecutionBarrier = false
 	) {}
 
 	async start(
@@ -62,6 +68,15 @@ export class SqlPlanRunner implements PlanRunner {
 		const admitted = portableRunClone(request)
 		if (admitted.executionEnvironment !== 'server')
 			throw new Error('the server runner accepts only server placement')
+		if (
+			this.customerExecutionBarrier &&
+			(
+				await this.api.query<{ execution_enabled: boolean }>(
+					'SELECT execution_enabled FROM aven_platform.environment_identity WHERE singleton'
+				)
+			).rows[0]?.execution_enabled !== true
+		)
+			throw new CustomerExecutionPaused()
 		const hash = materialHash(admitted)
 		const now = new Date().toISOString()
 		const record: PlanRunRecord = {
@@ -138,9 +153,55 @@ export class SqlPlanRunner implements PlanRunner {
 		submission: PlanRunContinuationSubmission,
 		context?: PlanRunExecutionContext
 	): Promise<PlanRunHandle> {
+		const connection = await this.worker.connect()
+		let executionLock = false
+		let claimed = false
+		try {
+			if (this.customerExecutionBarrier) {
+				await connection.query(
+					"SELECT pg_advisory_lock_shared(hashtextextended('aven-customer-execution',0))"
+				)
+				executionLock = true
+				if (
+					(
+						await connection.query<{ execution_enabled: boolean }>(
+							'SELECT execution_enabled FROM aven_platform.environment_identity WHERE singleton'
+						)
+					).rows[0]?.execution_enabled !== true
+				)
+					throw new CustomerExecutionPaused()
+			}
+			claimed =
+				(
+					await connection.query<{ claimed: boolean }>(
+						"SELECT pg_try_advisory_lock(hashtext('aven_actor_run'),hashtext($1)) AS claimed",
+						[runId]
+					)
+				).rows[0]?.claimed === true
+			if (!claimed) throw new PlanRunConflict('the Actor run is already executing')
+			return await this.resumeClaimed(connection, runId, submission, context)
+		} finally {
+			if (claimed)
+				await connection
+					.query("SELECT pg_advisory_unlock(hashtext('aven_actor_run'),hashtext($1))", [runId])
+					.catch(() => {})
+			if (executionLock)
+				await connection
+					.query("SELECT pg_advisory_unlock_shared(hashtextextended('aven-customer-execution',0))")
+					.catch(() => {})
+			connection.release()
+		}
+	}
+
+	private async resumeClaimed(
+		connection: pg.PoolClient,
+		runId: string,
+		submission: PlanRunContinuationSubmission,
+		context?: PlanRunExecutionContext
+	): Promise<PlanRunHandle> {
 		portableRunClone(submission)
 		const row = (
-			await this.worker.query<{ record: PlanRunRecord }>(
+			await connection.query<{ record: PlanRunRecord }>(
 				`SELECT record FROM runs WHERE id=$1 AND state='waiting_for_input'`,
 				[runId]
 			)
@@ -153,10 +214,11 @@ export class SqlPlanRunner implements PlanRunner {
 			continuation.state = 'postponed'
 			record.revision += 1
 			record.updatedAt = new Date().toISOString()
-			await this.#replaceWaiting(record, expectedRevision)
+			await this.#replaceWaiting(record, expectedRevision, connection)
 			return portableRunClone(handle(record))
 		}
 		if (submission.kind !== continuation.kind) throw new Error('continuation kind mismatch')
+		await this.beginExecution(connection, runId)
 		try {
 			assertPlanRunTransition(record.state, 'running')
 			const result = await this.executor(this.#request(record), { ...context, submission })
@@ -176,7 +238,8 @@ export class SqlPlanRunner implements PlanRunner {
 		}
 		record.revision += 1
 		record.updatedAt = new Date().toISOString()
-		await this.#replaceWaiting(record, expectedRevision)
+		await this.#replaceWaiting(record, expectedRevision, connection)
+		await this.endExecution(connection, runId)
 		return portableRunClone(handle(record))
 	}
 
@@ -200,7 +263,20 @@ export class SqlPlanRunner implements PlanRunner {
 	private async execute(runId: string, context?: PlanRunExecutionContext): Promise<boolean> {
 		const connection = await this.worker.connect()
 		let claimed = false
+		let executionLock = false
 		try {
+			if (this.customerExecutionBarrier) {
+				await connection.query(
+					"SELECT pg_advisory_lock_shared(hashtextextended('aven-customer-execution',0))"
+				)
+				executionLock = true
+				const state = (
+					await connection.query<{ execution_enabled: boolean }>(
+						'SELECT execution_enabled FROM aven_platform.environment_identity WHERE singleton'
+					)
+				).rows[0]
+				if (state?.execution_enabled !== true) return false
+			}
 			claimed =
 				(
 					await connection.query<{ claimed: boolean }>(
@@ -217,6 +293,7 @@ export class SqlPlanRunner implements PlanRunner {
 			).rows[0]
 			if (!row) return false
 			const record = row.record
+			await this.beginExecution(connection, runId)
 			try {
 				const result = await this.executor(this.#request(record), {
 					...context,
@@ -248,6 +325,7 @@ export class SqlPlanRunner implements PlanRunner {
 				 WHERE id=$1 AND state='accepted'`,
 				[runId, record.state, record.revision, record]
 			)
+			if (updated.rowCount) await this.endExecution(connection, runId)
 			return Boolean(updated.rowCount)
 		} finally {
 			try {
@@ -258,9 +336,36 @@ export class SqlPlanRunner implements PlanRunner {
 					)
 				}
 			} finally {
+				if (executionLock)
+					await connection
+						.query(
+							"SELECT pg_advisory_unlock_shared(hashtextextended('aven-customer-execution',0))"
+						)
+						.catch(() => {})
 				connection.release()
 			}
 		}
+	}
+
+	private async beginExecution(connection: pg.PoolClient, runId: string): Promise<void> {
+		if (!this.customerExecutionBarrier) return
+		const marked = await connection.query(
+			`UPDATE aven_platform.environment_identity SET execution_unsettled=array_append(execution_unsettled,$1::uuid)
+			 WHERE singleton AND execution_enabled AND NOT ($1::uuid=ANY(execution_unsettled)) RETURNING singleton`,
+			[runId]
+		)
+		if (!marked.rowCount)
+			throw new PlanRunConflict(
+				'customer execution is paused or a previous attempt requires reconciliation'
+			)
+	}
+
+	private async endExecution(connection: pg.PoolClient, runId: string): Promise<void> {
+		if (!this.customerExecutionBarrier) return
+		await connection.query(
+			'UPDATE aven_platform.environment_identity SET execution_unsettled=array_remove(execution_unsettled,$1::uuid) WHERE singleton',
+			[runId]
+		)
 	}
 
 	#request(record: PlanRunRecord): PlanRunStartRequest {
@@ -305,8 +410,12 @@ export class SqlPlanRunner implements PlanRunner {
 		record.checkpoints.push(checkpoint(record, result))
 	}
 
-	async #replaceWaiting(record: PlanRunRecord, expectedRevision: number): Promise<void> {
-		const updated = await this.worker.query(
+	async #replaceWaiting(
+		record: PlanRunRecord,
+		expectedRevision: number,
+		connection: pg.PoolClient
+	): Promise<void> {
+		const updated = await connection.query(
 			`UPDATE runs SET state=$2,revision=$3,record=$4,updated_at=clock_timestamp()
 			 WHERE id=$1 AND state='waiting_for_input' AND revision=$5`,
 			[record.runId, record.state, record.revision, record, expectedRevision]

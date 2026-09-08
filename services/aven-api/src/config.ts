@@ -35,6 +35,25 @@ const customerTarget = z.object({
 		.min(1)
 		.default(['user', 'admin'])
 })
+const runtimeTargets = z
+	.array(
+		z
+			.object({
+				id: z.string().regex(/^[a-z][a-z0-9-]{0,62}$/),
+				targets: z.array(customerTarget).min(1),
+				artifactStoreBaseUrl: z.url(),
+				artifactStoreBearerToken: z.string().min(32)
+			})
+			.strict()
+	)
+	.max(32)
+	.superRefine((values, context) => {
+		if (new Set(values.map((value) => value.id)).size !== values.length)
+			context.addIssue({ code: 'custom', message: 'runtime IDs must be unique' })
+		for (const runtime of values)
+			if (new Set(runtime.targets.map((value) => value.segment)).size !== runtime.targets.length)
+				context.addIssue({ code: 'custom', message: 'runtime segments must be unique' })
+	})
 export const facadeConfigSchema = z.object({
 	PORT: z.coerce.number().int().positive().default(3000),
 	DATABASE_URL: z.string().regex(/^postgres(ql)?:\/\//),
@@ -83,6 +102,21 @@ export const facadeConfigSchema = z.object({
 				return z.array(target).parse(JSON.parse(value))
 			} catch {
 				context.addIssue({ code: 'custom', message: 'must be a JSON array of downstream targets' })
+				return z.NEVER
+			}
+		}),
+	CUSTOMER_RUNTIMES_JSON: z
+		.string()
+		.max(262144)
+		.default('[]')
+		.transform((value, context) => {
+			try {
+				return runtimeTargets.parse(JSON.parse(value))
+			} catch {
+				context.addIssue({
+					code: 'custom',
+					message: 'must be a JSON array of runtime destinations'
+				})
 				return z.NEVER
 			}
 		}),
