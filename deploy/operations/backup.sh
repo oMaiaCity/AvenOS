@@ -62,17 +62,33 @@ for database in $databases; do
   if [ -n "$database_json" ]; then database_json="$database_json,$item"; else database_json=$item; fi
 done
 
+release_root=${BACKUP_RELEASE_ARCHIVE_ROOT:-}
+release_selection='null'
+if [ -n "$release_root" ]; then
+  [ "$release_root" = /var/lib/aven-release-archive ] || { echo 'invalid release archive mount' >&2; exit 64; }
+  [ -f "$release_root/current.json" ] || { echo 'retained release selection is missing' >&2; exit 1; }
+  cp "$release_root/current.json" "$stage/release-selection.json"
+  jq -e --arg environment "$BACKUP_ENVIRONMENT" --arg release "${BACKUP_RELEASE_ID:-unknown}" \
+    '.version == 1 and .target == $environment and .releaseSha == $release and (.release | test("^[a-f0-9]{64}$")) and (.configuration | test("^[a-f0-9]{64}$"))' \
+    "$stage/release-selection.json" >/dev/null || { echo 'retained release selection does not match this backup' >&2; exit 1; }
+  selection_digest=$(sha256sum "$stage/release-selection.json" | cut -d' ' -f1)
+  release_selection="\"$selection_digest\""
+fi
+
 created_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 release=${BACKUP_RELEASE_ID:-unknown}
 case "$release" in *[!A-Za-z0-9_.:@/-]*|'') echo 'invalid backup release id' >&2; exit 64 ;; esac
-printf '%s\n' "{\"formatVersion\":1,\"backupId\":\"$run_id\",\"environment\":\"$BACKUP_ENVIRONMENT\",\"host\":\"$BACKUP_HOST\",\"release\":\"$release\",\"createdAt\":\"$created_at\",\"postgresVersionNumber\":$pg_version,\"databases\":[$database_json]}" > "$stage/manifest.json"
+printf '%s\n' "{\"formatVersion\":1,\"backupId\":\"$run_id\",\"environment\":\"$BACKUP_ENVIRONMENT\",\"host\":\"$BACKUP_HOST\",\"release\":\"$release\",\"createdAt\":\"$created_at\",\"postgresVersionNumber\":$pg_version,\"releaseSelectionSha256\":$release_selection,\"databases\":[$database_json]}" > "$stage/manifest.json"
 sha256sum "$stage/manifest.json" | cut -d' ' -f1 > "$stage/manifest.sha256"
 
 if ! timeout "$repository_probe_timeout" restic snapshots --json >/dev/null; then
   echo 'backup repository is not initialized or temporarily unavailable; attempting initialization' >&2
   timeout "$repository_probe_timeout" restic init
 fi
-snapshot_id=$(timeout "$restic_timeout" restic backup "$stage" \
+set -- "$stage"
+if [ -n "$release_root" ]; then set -- "$@" "$release_root"; fi
+snapshot_id=$(timeout "$restic_timeout" restic backup "$@" \
+  --exclude '**/.preparing-*' --exclude '**/.current-*' \
   --host "$BACKUP_HOST" \
   --tag "environment:$BACKUP_ENVIRONMENT" \
   --tag 'kind:postgres-logical' \

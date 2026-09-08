@@ -12,6 +12,7 @@
 		"customer:move": "bun services/platform-provisioner/src/move-cli.ts",
 		"test:customer-movement": "bun deploy/e2e/customer-movement.ts",
 		"test:customer-runtime": "bun deploy/e2e/customer-runtime-journey.ts",
+		"test:release-archive": "python3 deploy/release/archive-test.py",
 		"release:promote": "bun scripts/promote-release.ts",
 		"check:secrets": "bash scripts/security-scan.sh",
 		"check:rust-advisories": "bun scripts/rust-advisories.ts",

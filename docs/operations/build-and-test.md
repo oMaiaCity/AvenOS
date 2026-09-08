@@ -126,6 +126,7 @@ bun run test:proxy-boundary
 bun run test:recovery
 bun run test:customer-movement
 bun run test:customer-runtime
+bun run test:release-archive
 ```
 
 - `test:infra` evaluates the Pulumi program, security-sensitive cloud-init output, and
@@ -149,8 +150,13 @@ bun run test:customer-runtime
   database restore, failed readiness and resume, controller contention, and retained
   rollback after new writes while another customer keeps its data. Its fixture adapter
   does not prove provider provisioning or a complete native journey through migration.
-- `test:recovery` creates source databases, takes encrypted backups, restores fresh
-  targets, compares exact data and access control lists, and proves bounded provider
+- `test:release-archive` requires Python 3 and Docker Compose. It restores pinned images
+  and private configuration without registry access, starts the retained image, and
+  refuses another target, inconsistent release identity, damaged configuration, or an
+  existing recovery destination.
+- `test:recovery` creates source databases, takes encrypted backups including a retained
+  release, removes the original release files, restores fresh targets, compares exact
+  data and access control lists, starts the retained image, and proves bounded provider
   failure, wrong-key, and populated-target rejection.
 
 ## Full-stack E2E release gate
@@ -380,6 +386,7 @@ bun run test:deploy
 bun run test:recovery
 bun run test:customer-movement
 bun run test:customer-runtime
+bun run test:release-archive
 bun run test:e2e:platform
 ```
 
