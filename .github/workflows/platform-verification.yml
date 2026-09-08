@@ -3,6 +3,11 @@ name: platform-verification
 # Both PR checks and release builds call this complete gate at their exact checkout.
 on:
   workflow_call:
+    inputs:
+      manifest:
+        type: string
+        required: false
+        default: ""
     secrets:
       PACKAGE_READ_TOKEN:
         required: false
@@ -175,6 +180,15 @@ jobs:
         with:
           token: ${{ secrets.PACKAGE_READ_TOKEN }}
       - uses: ./.github/actions/setup-platform-test-host
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Select the exact release images when verifying a release
+        env:
+          RELEASE_TEST_MANIFEST: ${{ inputs.manifest }}
+        run: bun scripts/configure-e2e-release.ts
       - name: Full-stack browser E2E
         env:
           NODE_AUTH_TOKEN: ${{ secrets.PACKAGE_READ_TOKEN }}

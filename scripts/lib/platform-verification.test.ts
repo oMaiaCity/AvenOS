@@ -8,7 +8,8 @@ interface Step {
 }
 interface Job {
 	uses?: string
-	needs?: string
+	needs?: string | string[]
+	with?: Record<string, string>
 	secrets?: Record<string, string>
 	steps: Step[]
 	environment?: string
@@ -36,7 +37,14 @@ test('CI and release require the same full verification without deployment crede
 	expect(ci.jobs.gate.if).toBe('always()')
 	expect(ci.jobs.gate.steps[0].run).toBe('test "$RESULT" = success')
 	const release = await workflow('platform-release')
-	expect(release.jobs.publish.needs).toBe('verify')
+	expect(release.jobs.publish.needs).toEqual(['build', 'verify'])
+	expect(release.jobs.publish.if).toBeUndefined()
+	expect(release.jobs.verify.needs).toBe('build')
+	expect(release.jobs.verify.with?.manifest).toBe(`\${{ needs.build.outputs.manifest }}`)
+	expect(release.jobs.build.if).toBe(
+		"github.ref == 'refs/heads/next' && github.event_name == 'workflow_dispatch'"
+	)
+	expect(release.jobs.build.environment).toBeUndefined()
 	const gate = await workflow('platform-verification')
 	expect(gate.permissions).toEqual({ contents: 'read', packages: 'read' })
 	expect(Object.keys(gate.on.workflow_call.secrets)).toEqual(['PACKAGE_READ_TOKEN'])
@@ -67,10 +75,25 @@ test('CI and release require the same full verification without deployment crede
 		'xvfb-run --auto-servernum bun run test:e2e:platform'
 	])
 		expect(commands.filter((c) => c === required)).toHaveLength(1)
-	const publication = release.jobs.publish.steps
+	const publication = release.jobs.build.steps
 	const scan = publication.findIndex((step: Step) => step.run?.includes('scan-container-os.sh'))
 	const manifest = publication.findIndex((step: Step) => step.uses === 'actions/upload-artifact@v4')
 	expect(scan).toBeGreaterThan(-1)
 	expect(scan).toBeLessThan(manifest)
 	expect(publication[scan].run).toContain("jq -r '.images[]' release.json")
+})
+
+test('release publication consumes the tested candidate without another build', async () => {
+	const release = await workflow('platform-release')
+	const steps = release.jobs.publish.steps
+	expect(steps.some((step) => step.run?.includes('. == $tested'))).toBe(true)
+	for (const step of steps) {
+		expect(step.if).toBeUndefined()
+		expect(step['continue-on-error']).toBeUndefined()
+		expect(step.uses ?? '').not.toContain('build-push')
+	}
+	const gate = await workflow('platform-verification')
+	expect(
+		gate.jobs.journey.steps.some((step) => step.run === 'bun scripts/configure-e2e-release.ts')
+	).toBe(true)
 })

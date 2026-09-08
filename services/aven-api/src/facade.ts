@@ -9,6 +9,7 @@ import { BodyLimitError, readBoundedBytes, readBoundedJson } from '@avenos/http-
 import { ArtifactHandler } from './artifacts/handler.js'
 import type { FacadeConfig } from './config.js'
 import type { CustomerHandler } from './customers/handler.js'
+import { RuntimeDirectory } from './customers/runtime-directory.js'
 import type { HostingHandler } from './hosting/handler.js'
 import { ArtifactFileService } from './lib/server/artifacts/service.js'
 import { AppError } from './lib/server/errors.js'
@@ -90,16 +91,7 @@ export function createFacadeHandler(
 	artifacts?: ArtifactHandler,
 	llmGateway?: LlmGatewayService | null
 ) {
-	const runtimeArtifacts = new Map(
-		config.CUSTOMER_RUNTIMES_JSON.map((runtime) => {
-			const service = ArtifactFileService.fromConfig({
-				ARTIFACT_STORE_BASE_URL: runtime.artifactStoreBaseUrl,
-				ARTIFACT_STORE_BEARER_TOKEN: runtime.artifactStoreBearerToken
-			})
-			if (!service) throw new Error('runtime artifact configuration is incomplete')
-			return [runtime.id, new ArtifactHandler(service)] as const
-		})
-	)
+	const runtimeDirectory = new RuntimeDirectory(config)
 	const allowedOrigins = new Set(
 		config.CORS_ORIGINS.split(',')
 			.map((value) => value.trim())
@@ -210,20 +202,32 @@ export function createFacadeHandler(
 					componentRef: targetConfig.componentRef,
 					actions: [action]
 				})
-				const runtime = config.CUSTOMER_RUNTIMES_JSON.find((entry) => entry.id === grant.runtimeId)
+				const runtime = (await runtimeDirectory.read()).find(
+					(entry) => entry.id === grant.runtimeId
+				)
+				const usePrimary =
+					grant.runtimeId === 'primary' && !runtime && !config.CUSTOMER_RUNTIMES_FILE
 				const destination =
 					runtime?.targets.find((entry) => entry.segment === customerMatch[2]) ??
-					(grant.runtimeId === 'primary' && !runtime ? targetConfig : undefined)
+					(usePrimary ? targetConfig : undefined)
 				if (!destination || destination.componentRef !== targetConfig.componentRef)
 					throw new AppError(
 						503,
 						'CUSTOMER_RUNTIME_UNAVAILABLE',
 						'The customer system is unavailable.'
 					)
-				const artifactHandler =
-					runtimeArtifacts.get(grant.runtimeId) ??
-					(grant.runtimeId === 'primary' && !runtime ? artifacts : undefined)
 				if (customerMatch[2] === 'artifacts') {
+					const artifactService = runtime
+						? ArtifactFileService.fromConfig({
+								ARTIFACT_STORE_BASE_URL: runtime.artifactStoreBaseUrl,
+								ARTIFACT_STORE_BEARER_TOKEN: runtime.artifactStoreBearerToken
+							})
+						: undefined
+					const artifactHandler = artifactService
+						? new ArtifactHandler(artifactService)
+						: usePrimary
+							? artifacts
+							: undefined
 					if (!artifactHandler)
 						throw new AppError(
 							503,

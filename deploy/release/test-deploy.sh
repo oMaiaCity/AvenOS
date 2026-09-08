@@ -77,6 +77,10 @@ curl() {
 }
 
 bun() {
+  if [[ "$1" == "$root/scripts/validate-deploy-manifest.ts" ]]; then
+    command bun "$@"
+    return
+  fi
   [[ "$1" == "$root/scripts/reconcile-deployed-polar-webhook.ts" ]]
   [[ "$DEPLOYMENT_TARGET" == next || "$DEPLOYMENT_TARGET" == production ]]
 }
@@ -123,6 +127,12 @@ run_target() (
   export LLM_GATEWAY_CREDENTIALS_JSON='{}'
   export GITHUB_RUN_ID=release-script-test
   export GITHUB_RUN_ATTEMPT=1
+  export DEPLOYED_REF_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  while read -r name image; do export "$name=$image"; done < <(
+    command bun -e 'import {releaseImages} from "./scripts/lib/platform-release.ts"; for(const [key,image] of Object.entries(releaseImages)) console.log(`${key} ghcr.io/myavenceo/${image}@sha256:${"a".repeat(64)}`)'
+  )
+  RELEASE_MANIFEST=$(command bun -e 'import {releaseImages} from "./scripts/lib/platform-release.ts"; console.log(JSON.stringify({version:1,sha:process.env.DEPLOYED_REF_SHA,runId:1,images:Object.fromEntries(Object.keys(releaseImages).map(key=>[key,process.env[key]]))}))')
+  export RELEASE_MANIFEST
   source "$root/deploy/release/deploy.sh"
 )
 

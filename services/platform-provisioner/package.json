@@ -6,7 +6,7 @@
 	"scripts": {
 		"dev": "bun --watch src/index.ts",
 		"start": "bun src/index.ts",
-		"build": "bun build src/index.ts src/ops.ts --target=bun --outdir=build",
+		"build": "bun build src/index.ts src/ops.ts src/move-cli.ts --target=bun --outdir=build",
 		"check": "tsc --noEmit",
 		"test": "vitest run"
 	},

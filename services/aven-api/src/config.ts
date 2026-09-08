@@ -1,3 +1,4 @@
+import { isAbsolute } from 'node:path'
 import { componentRefSchema } from '@avenos/aven-customer-contracts'
 import { z } from 'zod'
 
@@ -35,7 +36,7 @@ const customerTarget = z.object({
 		.min(1)
 		.default(['user', 'admin'])
 })
-const runtimeTargets = z
+export const runtimeTargets = z
 	.array(
 		z
 			.object({
@@ -79,6 +80,7 @@ export const facadeConfigSchema = z.object({
 	API_PUBLIC_BASE_URL: z.url().default('https://api.aven.ceo'),
 	CHECKOUT_CAPABILITIES_URL: z.url().optional(),
 	BACKUP_HEALTH_FILE: z.string().optional(),
+	CUSTOMER_RUNTIME_BACKUP_HEALTH_DIRECTORY: z.string().refine(isAbsolute).optional(),
 	CUSTOMER_ENTITLEMENT_TOKEN: z.string().regex(/^[A-Za-z0-9_-]{32,128}$/),
 	TENANT_GRANT_PRIVATE_KEY: z.string().min(80),
 	CORS_ORIGINS: z.string().default('https://portal.aven.ceo,https://aven.ceo'),
@@ -120,6 +122,10 @@ export const facadeConfigSchema = z.object({
 				return z.NEVER
 			}
 		}),
+	CUSTOMER_RUNTIMES_FILE: z.preprocess(
+		(value) => (value === '' ? undefined : value),
+		z.string().refine(isAbsolute).optional()
+	),
 	CUSTOMER_DOWNSTREAMS_JSON: z
 		.string()
 		.default('[]')

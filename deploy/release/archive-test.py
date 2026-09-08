@@ -18,7 +18,10 @@ with tempfile.TemporaryDirectory(prefix='aven-release-archive-') as temporary:
  manifest={'version':1,'sha':'a'*40,'runId':1,'images':{'DATABASE_IMAGE':image}}
  (bundle/'release.json').write_text(json.dumps(manifest))
  (bundle/'.env').write_text(f"DATABASE_IMAGE={image}\nPRIVATE_TEST_VALUE='retained-$PRIVATE_MISSING_VALUE-fixture'\n");os.chmod(bundle/'.env',0o600)
- (bundle/'docker-compose.yml').write_text('services:\n  database:\n    network_mode: none\n    image: ${DATABASE_IMAGE}\n    environment:\n      RECOVERY_FIXTURE: ${PRIVATE_TEST_VALUE}\n')
+ (bundle/'docker-compose.yml').write_text('services:\n  database:\n    network_mode: none\n    image: ${DATABASE_IMAGE}\n    environment:\n      RECOVERY_FIXTURE: ${PRIVATE_TEST_VALUE}\n  recovery:\n    profiles: [recovery]\n    network_mode: none\n    image: ${DATABASE_IMAGE}\n')
+ (bundle/'route.json').write_text('{"id":"fixture"}')
+ fleet={'version':1,'registry':{'target':'next'},'images':[image],'bundles':{},'tools':{}}
+ (bundle/'fleet.json').write_text(json.dumps(fleet))
  for name in ('db-init.sh','Caddyfile'): (bundle/name).write_text('fixture')
  saved=root/'retained'
  archive.create(bundle,saved,'next')
@@ -31,10 +34,24 @@ with tempfile.TemporaryDirectory(prefix='aven-release-archive-') as temporary:
  composition=json.loads((restored/'restored-compose.json').read_text())
  assert composition['services']['database']['image'].startswith('sha256:')
  assert composition['services']['database']['pull_policy']=='never'
+ assert composition['services']['recovery']['profiles']==['recovery']
+ assert (restored/'route.json').read_text()=='{"id":"fixture"}'
+ assert json.loads((restored/'fleet.json').read_text())==fleet
  assert composition['services']['database']['environment']['RECOVERY_FIXTURE']=='retained-$$PRIVATE_MISSING_VALUE-fixture'
  subprocess.run(['docker','compose','--project-directory',str(restored),'--file',str(restored/'restored-compose.json'),
                  'run','--rm','--no-deps','--pull','never','database','sh','-c',
                  'test "$RECOVERY_FIXTURE" = \'retained-$PRIVATE_MISSING_VALUE-fixture\''],check=True)
+ # Docker load need not retain registry digest aliases. Fault-inject that absence without
+ # deleting an image reference that another concurrent fixture may be using.
+ original_run=archive.run
+ def without_registry_alias(arguments):
+  if arguments==['docker','image','inspect','--format','{{.Id}}',image]:
+   raise subprocess.CalledProcessError(1,arguments)
+  return original_run(arguments)
+ archive.run=without_registry_alias
+ try: archive.create(restored,root/'retained-again','next')
+ finally: archive.run=original_run
+ archive.restore(root/'retained-again',root/'second-recovery','next')
  for target,destination in [('production',root/'wrong-target'),('next',restored)]:
   try: archive.restore(saved,destination,target)
   except ValueError: pass
@@ -46,6 +63,11 @@ with tempfile.TemporaryDirectory(prefix='aven-release-archive-') as temporary:
  try: archive.restore(saved,root/'wrong-release','next')
  except ValueError: pass
  else: raise AssertionError('inconsistent release identity was accepted')
+ index.write_bytes(original)
+ modified=json.loads(original);modified['images'][image]='sha256:'+'0'*64;index.write_text(json.dumps(modified))
+ try: archive.restore(saved,root/'wrong-image-map','next')
+ except ValueError: pass
+ else: raise AssertionError('changed image mapping was accepted')
  index.write_bytes(original)
  config=saved/pointer['release']/'configurations'/pointer['configuration']/'.env'
  config.write_text('corrupt')
