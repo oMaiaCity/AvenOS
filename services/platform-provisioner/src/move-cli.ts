@@ -6,7 +6,7 @@ import { loadCatalog } from './catalog.js'
 import { provisionerConfigSchema } from './config.js'
 import { CustomerMovementStore, resumeMovement } from './movement.js'
 import { PostgresMovementDriver } from './movement-postgres.js'
-import { CustomerDatabaseProvisioner } from './postgres.js'
+import { CustomerDatabaseProvisioner, restoreProvisionerAuthority } from './postgres.js'
 
 const runtimeId = z.string().regex(/^[a-z][a-z0-9-]{0,62}$/)
 const configSchema = z
@@ -20,6 +20,10 @@ const configSchema = z
 					.object({
 						id: runtimeId,
 						releaseSha: z.string().regex(/^[a-f0-9]{40}$/),
+						databaseToolsImage: z
+							.string()
+							.regex(/^(?:[a-zA-Z0-9][a-zA-Z0-9.:/_-]*@)?sha256:[a-f0-9]{64}$/)
+							.optional(),
 						recoveryDatabaseUrl: z.string().regex(/^postgres(ql)?:\/\//),
 						provisioner: provisionerConfigSchema
 					})
@@ -34,12 +38,20 @@ async function main(): Promise<void> {
 	const [file, action, ...args] = process.argv.slice(2)
 	if (
 		!file ||
-		!['register', 'begin', 'resume', 'status', 'rollback', 'default', 'return'].includes(
-			action ?? ''
-		)
+		![
+			'register',
+			'list',
+			'begin',
+			'resume',
+			'status',
+			'rollback',
+			'default',
+			'return',
+			'reconcile'
+		].includes(action ?? '')
 	)
 		throw new Error(
-			'Use customer:move -- CONFIG register|begin|resume|status|rollback|default|return; see the recovery handbook.'
+			'Use customer:move -- CONFIG register|list|begin|resume|status|rollback|default|return|reconcile; see the recovery handbook.'
 		)
 	const info = await lstat(file)
 	if (
@@ -70,6 +82,19 @@ async function main(): Promise<void> {
 	pool.on('error', () => {})
 	const store = new CustomerMovementStore(pool)
 	try {
+		if (action === 'list') {
+			if (args.length) throw new Error('List takes no additional arguments.')
+			console.info(
+				JSON.stringify(
+					(
+						await pool.query(
+							'SELECT id,runtime_id,routing_generation,desired_state,observed_state,movement_id FROM customer_environments ORDER BY id'
+						)
+					).rows
+				)
+			)
+			return
+		}
 		if (action === 'register') {
 			if (args.length) throw new Error('Register takes no additional arguments.')
 			for (const runtime of config.runtimes)
@@ -112,12 +137,13 @@ async function main(): Promise<void> {
 			throw new Error(
 				'Resume and status require one operation UUID; default requires one runtime ID.'
 			)
-		const id = action === 'default' ? runtimeId.parse(args[0]) : z.uuid().parse(args[0])
+		const runtimeAction = action === 'default' || action === 'reconcile'
+		const id = runtimeAction ? runtimeId.parse(args[0]) : z.uuid().parse(args[0])
 		if (action === 'status') {
 			console.info(JSON.stringify(await store.read(id), null, 2))
 			return
 		}
-		const movement = action === 'default' ? undefined : await store.read(id)
+		const movement = runtimeAction ? undefined : await store.read(id)
 		if (
 			movement &&
 			((action === 'resume' && ['completed', 'cancelled', 'superseded'].includes(movement.phase)) ||
@@ -130,29 +156,36 @@ async function main(): Promise<void> {
 		const destination = config.runtimes.find(
 			(runtime) =>
 				runtime.id ===
-				(action === 'default'
+				(runtimeAction
 					? id
 					: action === 'return' || movement?.phase === 'returning'
 						? movement?.source_runtime_id
 						: movement?.destination_runtime_id)
 		)
 		if (!destination) throw new Error('Destination runtime is absent from the configuration.')
-		// Migrations are executable source. The controller must use the destination release.
-		const revision = Bun.spawn(['git', 'rev-parse', 'HEAD'], {
-			cwd: resolve(import.meta.dir, '../../..'),
-			stdout: 'pipe',
-			stderr: 'ignore'
-		})
-		const currentSha = (await new Response(revision.stdout).text()).trim()
-		if ((await revision.exited) !== 0 || currentSha !== destination.releaseSha)
-			throw new Error('Run resume from the destination release checkout.')
-		const changes = Bun.spawn(['git', 'status', '--porcelain', '--untracked-files=normal'], {
-			cwd: resolve(import.meta.dir, '../../..'),
-			stdout: 'pipe',
-			stderr: 'ignore'
-		})
-		if ((await new Response(changes.stdout).text()).trim() || (await changes.exited) !== 0)
-			throw new Error('The destination release checkout must be clean.')
+		// The installed controller comes from the verified immutable provisioner image.
+		// Development invocations still require the destination's clean source checkout.
+		const releaseFile = resolve(import.meta.dir, '../release-sha')
+		if (await Bun.file(releaseFile).exists()) {
+			if ((await readFile(releaseFile, 'utf8')).trim() !== destination.releaseSha)
+				throw new Error('Use the controller from the destination release image.')
+		} else {
+			const revision = Bun.spawn(['git', 'rev-parse', 'HEAD'], {
+				cwd: resolve(import.meta.dir, '../../..'),
+				stdout: 'pipe',
+				stderr: 'ignore'
+			})
+			const currentSha = (await new Response(revision.stdout).text()).trim()
+			if ((await revision.exited) !== 0 || currentSha !== destination.releaseSha)
+				throw new Error('Run resume from the destination release checkout.')
+			const changes = Bun.spawn(['git', 'status', '--porcelain', '--untracked-files=normal'], {
+				cwd: resolve(import.meta.dir, '../../..'),
+				stdout: 'pipe',
+				stderr: 'ignore'
+			})
+			if ((await new Response(changes.stdout).text()).trim() || (await changes.exited) !== 0)
+				throw new Error('The destination release checkout must be clean.')
+		}
 		for (const runtime of config.runtimes) {
 			const registered = (
 				await pool.query<{ release_sha: string }>(
@@ -187,8 +220,53 @@ async function main(): Promise<void> {
 			destination.provisioner.CLUSTER_DATABASE_URL,
 			destination.provisioner
 		)
+		if (action === 'reconcile') {
+			// Queue work through the same placement-aware worker used for normal provisioning.
+			// This never reopens a retained database or changes a customer's generation/catalog.
+			const client = await pool.connect()
+			try {
+				await client.query('BEGIN')
+				const customers = await client.query<{ id: string }>(
+					"SELECT id FROM customer_environments WHERE runtime_id=$1 AND desired_state='ready' AND movement_id IS NULL ORDER BY id FOR UPDATE",
+					[id]
+				)
+				for (const customer of customers.rows) {
+					await restoreProvisionerAuthority(
+						destination.recoveryDatabaseUrl,
+						decodeURIComponent(new URL(destination.provisioner.CLUSTER_DATABASE_URL).username),
+						customer.id,
+						catalog.values()
+					)
+					await client.query(
+						`UPDATE customer_component_operations o SET status='queued',last_error=NULL,updated_at=now()
+						 FROM customer_environments e WHERE e.id=$1 AND o.environment_id=e.id
+						 AND o.routing_generation=e.routing_generation AND o.action='reconcile' AND o.status='succeeded'`,
+						[customer.id]
+					)
+					await client.query(
+						"UPDATE customer_environment_components SET observed_state='pending' WHERE environment_id=$1 AND desired_state='ready'",
+						[customer.id]
+					)
+					await client.query(
+						"UPDATE customer_environments SET observed_state='reconciling' WHERE id=$1",
+						[customer.id]
+					)
+				}
+				await client.query('COMMIT')
+				console.info(
+					`Queued reconciliation for ${customers.rowCount} customer environments at their existing generation.`
+				)
+			} catch (error) {
+				await client.query('ROLLBACK').catch(() => {})
+				throw error
+			} finally {
+				client.release()
+			}
+			return
+		}
 		const driver = new PostgresMovementDriver({
 			platformId: config.platformId,
+			databaseToolsImage: destination.databaseToolsImage,
 			archiveDirectory: config.archiveDirectory,
 			runtimes: Object.fromEntries(
 				config.runtimes.map((runtime) => [
@@ -197,6 +275,12 @@ async function main(): Promise<void> {
 				])
 			),
 			async prepareDestination(current, signal) {
+				await restoreProvisionerAuthority(
+					destination.recoveryDatabaseUrl,
+					decodeURIComponent(new URL(destination.provisioner.CLUSTER_DATABASE_URL).username),
+					current.environment_id,
+					catalog.values()
+				)
 				for (const entry of catalog.values()) {
 					signal.throwIfAborted()
 					await provisioner.reconcile(
@@ -243,10 +327,24 @@ async function main(): Promise<void> {
 
 await main().catch((error: unknown) => {
 	// PostgreSQL, URL and schema errors can contain connection material. Keep diagnostics bounded.
+	const databaseCode =
+		error && typeof error === 'object' && 'code' in error ? String(error.code) : ''
+	const code =
+		error instanceof z.ZodError
+			? 'CONFIGURATION_INVALID'
+			: ['28P01', '28000'].includes(databaseCode)
+				? 'DATABASE_AUTHENTICATION_FAILED'
+				: databaseCode === '42501'
+					? 'DATABASE_PERMISSION_DENIED'
+					: databaseCode === '42P01'
+						? 'CONTROL_SCHEMA_MISSING'
+						: ['ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT'].includes(databaseCode)
+							? 'DATABASE_UNREACHABLE'
+							: 'OPERATION_FAILED'
 	console.error(
 		error instanceof Error && !('code' in error) && !(error instanceof z.ZodError)
 			? error.message.replace(/postgres(?:ql)?:\/\/\S+/g, '[database connection]')
-			: 'Customer movement failed. Admission and recovery material are preserved; inspect the operation status.'
+			: `Customer movement failed (${code}). Admission and recovery material are preserved; inspect the operation status.`
 	)
 	process.exitCode = 1
 })

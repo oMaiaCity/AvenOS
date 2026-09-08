@@ -12,6 +12,56 @@ import type { Operation } from './control.js'
 
 const literal = (value: string) => `'${value.replaceAll("'", "''")}'`
 
+/** Restore the role administration normally granted automatically by CREATE ROLE. */
+export async function restoreProvisionerAuthority(
+	recoveryUrl: string,
+	provisionerRole: string,
+	environmentId: string,
+	catalog: Iterable<ComponentCatalogEntry>
+): Promise<void> {
+	const url = new URL(recoveryUrl)
+	url.pathname = `/${databaseNameForEnvironment(environmentId)}`
+	const client = new pg.Client({
+		connectionString: url.toString(),
+		connectionTimeoutMillis: 5000,
+		statement_timeout: 60000
+	})
+	await client.connect()
+	try {
+		await client.query('BEGIN')
+		const identity = (
+			await client.query<{ environment_id: string }>(
+				'SELECT environment_id FROM aven_platform.environment_identity WHERE singleton'
+			)
+		).rows[0]
+		if (identity?.environment_id !== environmentId)
+			throw new Error('restored customer identity differs')
+		const suffixes = new Set(['db_owner', 'platform_owner'])
+		for (const { manifest } of catalog) {
+			suffixes.add(manifest.ownerRoleSuffix)
+			for (const role of manifest.functionRoles) suffixes.add(role.roleSuffix)
+		}
+		const names = [...suffixes].map((suffix) => databaseRoleName(environmentId, suffix))
+		const roles = await client.query<{ rolname: string; privileged: boolean }>(
+			`SELECT rolname,(rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls) AS privileged
+			 FROM pg_roles WHERE rolname=ANY($1::text[])`,
+			[names]
+		)
+		if (roles.rows.some((role) => role.privileged))
+			throw new Error('customer role has unexpected cluster privileges')
+		for (const { rolname } of roles.rows)
+			await client.query(
+				`GRANT ${quoteIdentifier(rolname)} TO ${quoteIdentifier(provisionerRole)} WITH ADMIN TRUE, INHERIT FALSE, SET FALSE`
+			)
+		await client.query('COMMIT')
+	} catch (error) {
+		await client.query('ROLLBACK').catch(() => {})
+		throw error
+	} finally {
+		await client.end()
+	}
+}
+
 export class CustomerDatabaseProvisioner {
 	private readonly roots: Record<string, string>
 

@@ -140,7 +140,9 @@ bun run test:release-archive
   removing operator settings, and exact-bucket teardown planning across every partial
   checkpoint state without contacting a provider.
 - `test:deploy` validates shell scripts, production Compose files, Caddy
-  configuration, dependency order, non-root images, and secret-safe build contexts.
+  configuration, dependency order, non-root images, secret-safe build contexts, and
+  immutable runtime preparation with separate credentials, storage and routes, host
+  control/runtime separation, and interrupted cohort retry behavior.
 - `test:proxy-boundary` runs the production checkout Caddy block against a loopback
   fixture on Linux, proves distinct transport clients survive forwarding, rejects
   caller-selected forwarding identity, and checks the production Svelte one-hop settings.
@@ -158,6 +160,18 @@ bun run test:release-archive
   release, removes the original release files, restores fresh targets, compares exact
   data and access control lists, starts the retained image, and proves bounded provider
   failure, wrong-key, and populated-target rejection.
+
+`test:runtime-install` exercises the generation startup tool using the service images
+built by the full-stack harness. That harness invokes it after customer journeys, with
+package credentials already removed. An isolated loopback registry provides immutable
+image references; an internal control network and disposable database replace hosted
+infrastructure. The test uses a Docker tools container with the local engine socket to
+run the host-administrator operation. It never receives provider or deployment secrets.
+Run it separately only after building those images at the current checkout:
+
+```sh
+bun run test:runtime-install
+```
 
 ## Full-stack E2E release gate
 
@@ -428,3 +442,16 @@ build or verification step, and a cache miss runs the same assertions.
   dependency.
 - Re-run the complete gate after changing shared contracts, migrations, deployment
   sources, authentication, authorization, or recovery behavior.
+
+The runtime installation harness also contains a host-controller fixture. It uses the
+real API and customer services for entitlement admission, an Intent write, runtime
+rollout and the final HTTP read. Commerce workers and the public edge are inert in
+this fixture; the separate full native journey remains required for those services.
+The host fixture must pass before publishing a release with lifecycle changes.
+
+Release builds publish candidate image digests first, scan them, and pass their exact
+manifest to the full verification workflow. The release journey pulls those images
+and skips rebuilding service images; all customer and native tests still run. Only a
+successful complete gate publishes the deployable `aven-release` artifact. Pull
+request verification builds local fixture images because it has no release manifest.
+The build and verification jobs have no deployment Environment credentials.

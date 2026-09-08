@@ -11,6 +11,8 @@ RUN bun --cwd services/platform-provisioner build
 FROM oven/bun:1.3.13
 RUN apt-get update && apt-get upgrade --yes --no-install-recommends && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
+ARG SOURCE_REVISION=development
+RUN printf '%s\n' "$SOURCE_REVISION" > release-sha && chmod 0444 release-sha
 COPY --from=build /repo/services/platform-provisioner/build ./build
 COPY --from=build /repo/services/platform-provisioner/components ./components
 COPY --from=build /repo/services/artifact-store/crates/postgres/migrations ./artifact-migrations

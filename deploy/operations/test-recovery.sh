@@ -120,6 +120,32 @@ if docker run "${common[@]}" --volume "$scratch/source-state:/var/lib/aven-backu
 fi
 
 start_database "$target_db"
+source_snapshot=$(awk '{print $3}' "$scratch/source-state/last-success")
+for corruption in missing-dump corrupt-roles; do
+  mkdir "$scratch/$corruption"
+  docker run "${common[@]}" --entrypoint restic --volume "$scratch/$corruption:/mutation" \
+    "$image" restore "$source_snapshot" --target /mutation >/dev/null
+  damaged=$(find "$scratch/$corruption" -type d -name databases -print)
+  if [[ "$corruption" == missing-dump ]]; then
+    rm "$damaged/customer_00000000_0000_4000_8000_000000000001.dump"
+  else
+    printf 'unexpected role\n' >> "$damaged/customer_00000000_0000_4000_8000_000000000001.roles"
+  fi
+  corrupt_snapshot=$(docker run "${common[@]}" --entrypoint restic --volume "$scratch/$corruption:/mutation:ro" \
+    "$image" backup /mutation --host corrupt-fixture --tag environment:corrupt-fixture --json |
+    jq -r 'select(.message_type == "summary") | .snapshot_id')
+  if docker run "${common[@]}" --env PGHOST="$target_db" --env PGUSER=postgres --env PGPASSWORD=recovery-test \
+    --env BACKUP_ENVIRONMENT=ci --env RESTORE_CONFIRMATION=fresh-target-only --env RESTORE_SNAPSHOT="$corrupt_snapshot" \
+    --volume "$scratch/target-state:/var/lib/aven-backups" "$image" restore > "$scratch/$corruption.log" 2>&1; then
+    echo "restore unexpectedly accepted $corruption" >&2
+    exit 1
+  fi
+  expected_error='role manifest integrity check failed'
+  [[ "$corruption" == missing-dump ]] && expected_error='backup database inventory is incomplete'
+  grep -Fq "$expected_error" "$scratch/$corruption.log" || { cat "$scratch/$corruption.log"; exit 1; }
+  [[ "$(docker exec "$target_db" psql -U postgres -tAc "SELECT count(*) FROM pg_database WHERE datname='aven_identity'")" == 0 ]]
+  [[ "$(docker exec "$target_db" psql -U postgres -tAc "SELECT count(*) FROM pg_roles WHERE rolname='app_reader'")" == 0 ]]
+done
 if docker run "${common[@]}" --env PGHOST="$target_db" --env PGUSER=postgres --env PGPASSWORD=recovery-test \
   --env BACKUP_ENVIRONMENT=production --env RESTORE_CONFIRMATION=fresh-target-only \
   --volume "$scratch/target-state:/var/lib/aven-backups" "$image" restore; then
@@ -168,4 +194,5 @@ OPERATIONS_IMAGE="$image" DATABASE_IMAGE="$database_image" RESTIC_REPOSITORY=/re
   BACKUP_ENVIRONMENT=ci DRILL_LOCAL_REPOSITORY_DIR="$scratch/repository" DRILL_OUTPUT="$scratch/drill.json" \
   bash "$root/deploy/operations/drill-latest.sh"
 jq -e '.status == "healthy" and .databaseCount == 2 and (.snapshotId|length) == 64' "$scratch/drill.json" >/dev/null
+RECOVERY_DATABASE_IMAGE="$database_image" python3 "$root/deploy/operations/test-restored-roles.py"
 echo 'destructive backup/restore drill passed'

@@ -13,6 +13,7 @@
 		"test:customer-movement": "bun deploy/e2e/customer-movement.ts",
 		"test:customer-runtime": "bun deploy/e2e/customer-runtime-journey.ts",
 		"test:release-archive": "python3 deploy/release/archive-test.py",
+		"test:runtime-install": "python3 deploy/runtime/test-start.py",
 		"release:promote": "bun scripts/promote-release.ts",
 		"check:secrets": "bash scripts/security-scan.sh",
 		"check:rust-advisories": "bun scripts/rust-advisories.ts",

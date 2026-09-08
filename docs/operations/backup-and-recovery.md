@@ -112,7 +112,8 @@ The restore insertion point and the convergence gates after it are defined in
 
 The restore accepts only the internal `fresh-target-only` confirmation and refuses a
 database containing user relations. It verifies the manifest and every dump before
-restoring. A failed restore preserves its partial database for inspection; retry on a
+restoring, and checks the entire target for existing user relations or closed databases
+before changing roles or restoring the first dump. A failed restore preserves its partial database for inspection; retry on a
 fresh target. Missing historical role names are created `NOLOGIN`; password hashes are
 not restored. Current role initialization derives fresh passwords and reapplies
 least-privilege grants.
@@ -169,9 +170,12 @@ access, escrow, DNS, infrastructure creation, and operator timing.
 
 ## Retained release archive
 
-The release archive tool is available for installation integration. Hosted deployment
-has not yet enabled it automatically. Until that integration is complete, existing
-hosted snapshots contain database dumps without an independent release-image archive.
+Hosted platform rollout retains release images and private configuration before
+customer activation and includes them in encrypted backups. Snapshots produced by
+older deployments contain database dumps without an independent image archive.
+The archive tool can also be used independently as described below. The fleet recovery
+controller is implemented but its full host fixture remains an outstanding release gate;
+do not promote this lifecycle change until that proof passes.
 
 On a Docker host with Python 3, prepare a private bundle containing `release.json`,
 `.env` (mode `0600`), `docker-compose.yml`, `db-init.sh`, and `Caddyfile`. The release
@@ -182,7 +186,9 @@ match one of its immutable digests. After pulling those images, retain them with
 python3 deploy/release/archive.py create /private/bundle /private/release-archive --target next
 ```
 
-The tool exports images once per release and retains each configuration revision.
+The tool exports images once per release and retains each configuration revision,
+including optional generated runtime routes, movement configuration and preparation
+metadata. Recovery-profile services are included even while they are stopped.
 `current.json` selects the current pair. A retry checks existing content before reusing
 it. The archive includes credentials: keep every directory private and mount it
 read-only at `/var/lib/aven-release-archive` in the backup container. Its owner must
@@ -190,6 +196,11 @@ match that container's UID. Set `BACKUP_RELEASE_ARCHIVE_ROOT` to that mount path
 `BACKUP_RELEASE_ID` to the exact release commit. Backup then includes the retained
 images and configuration in the encrypted snapshot and binds its selected release
 to the database integrity manifest. Incomplete archive preparations are excluded.
+A newly prepared runtime enables `BACKUP_ALLOW_EMPTY=true`: before its first customer,
+it can back up its verified release with an explicitly empty database inventory. This
+mode requires a retained release archive; ordinary platform and identity backups still
+reject an empty inventory. Restore accepts such an empty snapshot only with its verified
+release selection and a fresh target.
 
 For a full release recovery, set `RESTORE_RELEASE_DESTINATION` to a new absolute path
 inside a persistent writable mount of the restore container. Restore preserves the
@@ -214,12 +225,14 @@ original files are removed. Neither fixture replaces the fresh-cloud-host drill.
 
 ## Customer movement development
 
-The customer movement controller is available for controlled development installations.
-It is not connected to hosted provisioning or the public installer. Do not interpret
-its database fixture proof as a completed cloud rollout. The
+The host lifecycle controller invokes customer movement after preparing and backing
+up a new runtime. The same operator command supports controlled diagnostic use.
+The public installer and fresh-host fleet recovery proof remain incomplete;
+do not interpret a database fixture proof as a completed cloud rollout. The
 [lifecycle specification](../customer-release-lifecycle.md) lists the remaining gates.
 
-Run on Linux from a clean checkout of the destination release with Bun, Docker and private
+Run on Linux from a clean checkout of the destination release, or with its installed
+bundled controller, with Bun, Docker and private
 network access or database tunnels to both already-prepared runtimes. Set the recovery
 URL SSL mode explicitly; the local tunnel fixture uses `sslmode=disable`, while dump
 tools otherwise require TLS. Remote certificate provisioning is not part of this command. The controller
@@ -244,7 +257,9 @@ Recover credentials through the existing escrow/access process. The installer do
 currently generate this movement configuration. It contains secrets; keep it outside
 Git. The local dump directory contains customer data and must be protected and retained
 until recovery is complete. These files are not a substitute for encrypted off-host
-backups. Registration binds runtime IDs permanently to releases; it does not establish
+backups. The installed controller verifies its image-embedded release identity before executing
+migrations. Source-checkout invocations still require a clean matching checkout.
+Registration binds runtime IDs permanently to releases; it does not establish
 that remote service images actually match those releases.
 
 Register both already-prepared runtime releases, then create a movement using a fresh
@@ -252,6 +267,7 @@ operation UUID and the currently observed customer generation:
 
 ```sh
 bun run customer:move -- /private/movement.json register
+bun run customer:move -- /private/movement.json list
 bun run customer:move -- /private/movement.json begin ENVIRONMENT_UUID SOURCE_RUNTIME DESTINATION_RUNTIME GENERATION OPERATION_UUID
 bun run customer:move -- /private/movement.json resume OPERATION_UUID
 bun run customer:move -- /private/movement.json status OPERATION_UUID
@@ -318,3 +334,64 @@ catalog and provisioners on two disposable PostgreSQL clusters. Signed HTTP requ
 exercise the facade and Intent Service, including phase interruption, continued writes
 for another customer, retained rollback, interrupted pre-activation return and default placement. It uses local identity
 signing keys and does not contact a live identity or cloud provider.
+
+The installed controller also supports `reconcile RUNTIME_ID`. It queues the existing
+component operations through the normal placement-aware worker, without changing a
+customer's generation or component catalog. It cannot reopen a retained copy whose
+customer is assigned elsewhere. The initial host transition waits for this work to
+finish before starting the customer-facing services.
+
+Hosted movement uses the destination release's retained database-tools image. This
+keeps dump and restore tooling with the release archive instead of relying on an
+unrecorded host package installation.
+
+Role initialization explicitly restores login for the current service accounts and
+reapplies the provisioner's database-creation privileges after restoration. Unknown
+historical roles remain `NOLOGIN`. The recovery gate authenticates the intended
+service accounts against fresh identity, platform and customer-runtime fixtures;
+reading restored tables as the database administrator alone is insufficient proof.
+
+## Runtime fleet recovery boundary
+
+After runtime rollout, the central backup binds each active customer placement to an
+exact customer-runtime snapshot. It checks snapshot freshness and customer generations,
+then checks that the directory did not change while its databases were dumped. A held
+movement or a generation mismatch makes that backup fail; the post-rollout backup runs
+after the destination snapshot completes. Snapshot receipts are private files, separate
+from the small public health records.
+
+Runtime snapshots are retained until an explicit retirement procedure proves that no
+retained central snapshot refers to them. Independent hourly pruning would invalidate
+those references. Automated retirement is not implemented, so operators must account
+for increasing backup storage. Central and identity repositories keep their existing
+retention policy.
+
+Each encrypted snapshot contains its selected complete fleet and configuration, rather
+than every historical local archive. Earlier snapshots retain their own selections.
+Runtime workers also notice database-inventory changes within 30 seconds and take a
+new backup, so a new customer's first backup does not wait for the hourly schedule.
+Deployment refreshes active runtime snapshots before taking the central snapshot.
+
+Platform recovery dispatches `deploy/runtime/recover.py` with only that target's
+credentials. It requires empty database and lifecycle storage, resolves one exact
+central snapshot, verifies and loads the retained fleet images, restores separate
+database clusters, and checks every customer's environment ID and routing generation
+against the restored directory before starting application services. It uses the
+retained installation paths. Select the verified release recorded by the backup;
+recovery refuses a different source commit, image set, repository or public origin.
+It does not record a newer deployment as successful while running older restored images.
+A failed attempt preserves partial recovery and requires
+fresh storage for retry. An unfinished movement requires selecting a completed recovery
+boundary; recovery never guesses which customer copy should win.
+
+Current service roles are reconciled through each retained release's controller. PostgreSQL grants the provisioner administration of customer roles when it creates them;
+restoring roles as the recovery administrator does not preserve that relationship. Before
+reconciliation, the controller verifies the customer database identity and restores the
+same administration membership for existing roles named by its trusted component catalog.
+It rejects customer roles with cluster privileges and grants no authority over unknown
+historical roles. The provisioner remains a non-superuser.
+Inactive customer copies keep their restored roles disabled. Actor execution remains
+paused because effects after a backup cannot be inferred from restored database rows;
+the operator must reconcile those effects before resuming execution. Successful database
+and image restoration alone does not establish that reconciliation or a fresh-cloud-host
+recovery drill has passed.

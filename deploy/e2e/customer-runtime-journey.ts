@@ -1,6 +1,16 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
-import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
+import {
+	chmod,
+	cp,
+	mkdir,
+	mkdtemp,
+	readdir,
+	readFile,
+	rename,
+	rm,
+	writeFile
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { exportJWK, generateKeyPair, SignJWT } from 'jose'
@@ -12,6 +22,7 @@ import {
 } from '../../libs/aven-customer-contracts/src/index.js'
 import { TenantPoolProvider } from '../../libs/aven-customer-runtime/src/index.js'
 import { IdentityVerifier } from '../../libs/aven-identity/src/index.js'
+import { provisioningHealthQuery } from '../../services/aven-api/src/capabilities.js'
 import { facadeConfigSchema } from '../../services/aven-api/src/config.js'
 import { CustomerHandler } from '../../services/aven-api/src/customers/handler.js'
 import { CustomerStore } from '../../services/aven-api/src/customers/store.js'
@@ -19,7 +30,10 @@ import { createFacadeHandler } from '../../services/aven-api/src/facade.js'
 import { createIntentHandler } from '../../services/intent-service/src/handler.js'
 import { IntentStore } from '../../services/intent-service/src/store.js'
 import { loadCatalog } from '../../services/platform-provisioner/src/catalog.js'
-import { provisionerConfigSchema } from '../../services/platform-provisioner/src/config.js'
+import {
+	type ProvisionerConfig,
+	provisionerConfigSchema
+} from '../../services/platform-provisioner/src/config.js'
 import { ControlStore, type Operation } from '../../services/platform-provisioner/src/control.js'
 import {
 	CustomerMovementStore,
@@ -28,7 +42,10 @@ import {
 	resumeMovement
 } from '../../services/platform-provisioner/src/movement.js'
 import { PostgresMovementDriver } from '../../services/platform-provisioner/src/movement-postgres.js'
-import { CustomerDatabaseProvisioner } from '../../services/platform-provisioner/src/postgres.js'
+import {
+	CustomerDatabaseProvisioner,
+	restoreProvisionerAuthority
+} from '../../services/platform-provisioner/src/postgres.js'
 
 const root = resolve(import.meta.dir, '../..')
 const scratch = await mkdtemp(join(tmpdir(), 'aven-runtime-journey-'))
@@ -119,7 +136,13 @@ try {
 	const claims = await verifier.verify(token)
 	const runtimes: Record<
 		string,
-		{ url: string; releaseSha: string; provisioner: CustomerDatabaseProvisioner; intents: string }
+		{
+			url: string
+			releaseSha: string
+			provisioner: CustomerDatabaseProvisioner
+			provisionerConfig: ProvisionerConfig
+			intents: string
+		}
 	> = {}
 	for (const [index, id] of ['primary', 'green'].entries()) {
 		const name = `aven-journey-${randomUUID()}`
@@ -142,7 +165,7 @@ try {
 		const admin = pool(url)
 		await eventually(() => admin.query('SELECT 1'))
 		await admin.query(
-			"COMMENT ON DATABASE postgres IS 'aven-platform:runtime-journey'; CREATE ROLE aven_backup NOLOGIN; CREATE ROLE aven_artifact_store_provisioner LOGIN PASSWORD 'journey-artifacts'"
+			"COMMENT ON DATABASE postgres IS 'aven-platform:runtime-journey'; CREATE ROLE aven_customer_provisioner LOGIN NOINHERIT CREATEDB CREATEROLE PASSWORD 'journey-provisioner'; CREATE ROLE aven_backup NOLOGIN; CREATE ROLE aven_artifact_store_provisioner LOGIN PASSWORD 'journey-artifacts'"
 		)
 		const reservation = serve(() => new Response())
 		const artifactPort = reservation.port
@@ -175,8 +198,11 @@ try {
 		await eventually(async () =>
 			assert.equal((await fetch(`http://127.0.0.1:${artifactPort}/health/ready`)).ok, true)
 		)
+		const provisionerUrl = new URL(url)
+		provisionerUrl.username = 'aven_customer_provisioner'
+		provisionerUrl.password = 'journey-provisioner'
 		const config = provisionerConfigSchema.parse({
-			CLUSTER_DATABASE_URL: url,
+			CLUSTER_DATABASE_URL: provisionerUrl.toString(),
 			CONTROL_DATABASE_URL: url,
 			CUSTOMER_RUNTIME_ID: id,
 			INTENTS_API_DB_CREDENTIAL_ROOT: credentialRoot,
@@ -209,7 +235,8 @@ try {
 		runtimes[id] = {
 			url,
 			releaseSha: String(index + 1).repeat(40),
-			provisioner: new CustomerDatabaseProvisioner(url, config),
+			provisioner: new CustomerDatabaseProvisioner(config.CLUSTER_DATABASE_URL, config),
+			provisionerConfig: config,
 			intents: intents.url.origin
 		}
 	}
@@ -240,6 +267,23 @@ try {
 		readAction: 'intents:read',
 		writeAction: 'intents:write'
 	})
+	const routeFile = join(scratch, 'runtime-routes.json')
+	async function publishRoutes(ids: string[]) {
+		await writeFile(
+			`${routeFile}.next`,
+			JSON.stringify(
+				ids.map((id) => ({
+					id,
+					targets: [target(id)],
+					artifactStoreBaseUrl: 'http://127.0.0.1:1',
+					artifactStoreBearerToken: serviceToken
+				}))
+			),
+			{ mode: 0o600 }
+		)
+		await rename(`${routeFile}.next`, routeFile)
+	}
+	await publishRoutes(['primary'])
 	const config = facadeConfigSchema.parse({
 		DATABASE_URL: runtimes.primary.url,
 		SITE_HOST_DIRECTORY_BEARER_TOKEN: serviceToken,
@@ -247,14 +291,7 @@ try {
 		TENANT_GRANT_PRIVATE_KEY: 'unused'.repeat(20),
 		IDENTITY_ISSUER: issuer,
 		CUSTOMER_DOWNSTREAMS_JSON: JSON.stringify([target('primary')]),
-		CUSTOMER_RUNTIMES_JSON: JSON.stringify([
-			{
-				id: 'green',
-				targets: [target('green')],
-				artifactStoreBaseUrl: 'http://127.0.0.1:1',
-				artifactStoreBearerToken: serviceToken
-			}
-		])
+		CUSTOMER_RUNTIMES_FILE: routeFile
 	})
 	const gateway = serve(createFacadeHandler(config, verifier, fetch, undefined, customerHandler))
 	async function request(env: string, path = '', method = 'GET', body?: unknown) {
@@ -303,6 +340,21 @@ try {
 	const a = await purchase('journey-a'),
 		b = await purchase('journey-b')
 	await install('primary')
+	// A restore must not turn a customer role into a path to cluster administration.
+	const roleAdmin = pool(runtimes.primary.url)
+	const owner = databaseRoleName(a, 'db_owner')
+	await roleAdmin.query(`ALTER ROLE "${owner}" CREATEDB`)
+	await assert.rejects(
+		restoreProvisionerAuthority(
+			runtimes.primary.url,
+			'aven_customer_provisioner',
+			a,
+			catalog.values()
+		),
+		/unexpected cluster privileges/
+	)
+	await roleAdmin.query(`ALTER ROLE "${owner}" NOCREATEDB`)
+	await roleAdmin.end()
 	const intent = randomUUID()
 	assert.equal(
 		(await request(a, '', 'POST', { id: intent, title: 'Preserve this Intent ☃' })).status,
@@ -346,6 +398,27 @@ try {
 		platformId: 'runtime-journey',
 		archiveDirectory: scratch,
 		async prepareDestination(m, signal) {
+			const admin = pool(runtimes[m.destination_runtime_id].url)
+			const unknownRole = databaseRoleName(m.environment_id, 'unknown_fixture')
+			await admin.query(
+				`DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='${unknownRole}') THEN CREATE ROLE "${unknownRole}" NOLOGIN; END IF; END $$`
+			)
+			await restoreProvisionerAuthority(
+				runtimes[m.destination_runtime_id].url,
+				'aven_customer_provisioner',
+				m.environment_id,
+				catalog.values()
+			)
+			assert.equal(
+				(
+					await admin.query(
+						`SELECT pg_has_role('aven_customer_provisioner',$1,'MEMBER') AS member`,
+						[unknownRole]
+					)
+				).rows[0].member,
+				false
+			)
+			await admin.end()
 			for (const ref of catalog.keys()) {
 				signal.throwIfAborted()
 				await runtimes[m.destination_runtime_id].provisioner.reconcile(
@@ -388,6 +461,8 @@ try {
 			assert.deepEqual(await response.json(), expectedByEnvironment.get(m.environment_id))
 		}
 	})
+	// Add the prepared runtime to the running facade before switching the directory.
+	await publishRoutes(['primary', 'green'])
 	const movement = await movementStore.begin({
 		environmentId: a,
 		sourceRuntimeId: 'primary',
@@ -474,6 +549,10 @@ try {
 		(await request(a, '', 'POST', { id: randomUUID(), title: 'New generation history' })).status,
 		201
 	)
+	await publishRoutes(['primary'])
+	assert.equal((await request(a)).status, 503)
+	assert.equal((await request(b)).status, 200)
+	await publishRoutes(['primary', 'green'])
 	const rollback = await movementStore.begin({
 		environmentId: a,
 		sourceRuntimeId: 'green',
@@ -624,8 +703,88 @@ try {
 		/only allowed before activation/
 	)
 
+	// Exercise the same bundled operator entry point installed from a release image.
+	const controller = join(scratch, 'controller')
+	await mkdir(controller)
+	await command([
+		'bun',
+		'build',
+		'services/platform-provisioner/src/move-cli.ts',
+		'--target=bun',
+		'--outdir',
+		join(controller, 'build')
+	])
+	await cp(join(root, 'services/platform-provisioner/components'), join(controller, 'components'), {
+		recursive: true
+	})
+	await cp(
+		join(root, 'services/artifact-store/crates/postgres/migrations'),
+		join(controller, 'artifact-migrations'),
+		{ recursive: true }
+	)
+	const controlUrl = new URL(runtimes.primary.url)
+	controlUrl.pathname = '/aven_api'
+	const configuration = join(scratch, 'movement.json')
+	await writeFile(
+		configuration,
+		JSON.stringify({
+			platformId: 'runtime-journey',
+			controlDatabaseUrl: controlUrl.toString(),
+			archiveDirectory: join(scratch, 'cli-dumps'),
+			runtimes: Object.entries(runtimes).map(([id, runtime]) => ({
+				id,
+				releaseSha: runtime.releaseSha,
+				recoveryDatabaseUrl: runtime.url,
+				provisioner: runtime.provisionerConfig
+			}))
+		}),
+		{ mode: 0o600 }
+	)
+	const cli = (...args: string[]) =>
+		command(['bun', join(controller, 'build/move-cli.js'), configuration, ...args])
+	const cliCustomer = await purchase('cli-customer')
+	await install('green')
+	assert.equal(
+		(
+			await request(cliCustomer, '', 'POST', {
+				id: intent,
+				title: 'Move with installed controller'
+			})
+		).status,
+		201
+	)
+	const cliBefore = await (await request(cliCustomer, `/${intent}`)).json()
+	await cli('register')
+	const inventory = JSON.parse(await cli('list')) as Array<{ id: string; runtime_id: string }>
+	assert.equal(inventory.find((row) => row.id === cliCustomer)?.runtime_id, 'green')
+	const cliOperation = randomUUID()
+	await cli('begin', cliCustomer, 'green', 'primary', '1', cliOperation)
+	await writeFile(join(controller, 'release-sha'), runtimes.green.releaseSha)
+	await assert.rejects(cli('resume', cliOperation), /failed/)
+	assert.equal((await movementStore.read(cliOperation)).phase, 'paused')
+	await writeFile(join(controller, 'release-sha'), runtimes.primary.releaseSha)
+	await cli('resume', cliOperation)
+	assert.equal((await movementStore.read(cliOperation)).phase, 'completed')
+	assert.deepEqual(await (await request(cliCustomer, `/${intent}`)).json(), cliBefore)
+	await chmod(configuration, 0o644)
+	await assert.rejects(cli('list'), /failed/)
+	await chmod(configuration, 0o600)
+	const primaryHeartbeat = new ControlStore(control, 'primary-health', 60, 'primary')
+	const greenHeartbeat = new ControlStore(control, 'green-health', 60, 'green')
+	await primaryHeartbeat.heartbeat('1'.repeat(64))
+	assert.equal((await control.query(provisioningHealthQuery)).rows[0].healthy, false)
+	await greenHeartbeat.heartbeat('2'.repeat(64))
+	assert.equal((await control.query(provisioningHealthQuery)).rows[0].healthy, true)
+	await control.query(
+		"UPDATE platform_worker_heartbeats SET last_heartbeat_at=now()-interval '5 minutes' WHERE worker_name='platform-provisioner'"
+	)
+	await greenHeartbeat.heartbeat('2'.repeat(64))
+	assert.equal((await control.query(provisioningHealthQuery)).rows[0].healthy, false)
+	await primaryHeartbeat.heartbeat('1'.repeat(64))
+	assert.equal((await control.query(provisioningHealthQuery)).rows[0].healthy, true)
+
 	console.info(
-		`Customer runtime journey passed in ${Math.round((performance.now() - started) / 1000)}s: real catalog and Artifact Store provisioning; signed identity and tenant grants; HTTP reads/writes across two clusters; interruption at every handover phase; unaffected second customer; stale source rejected; divergent rollback; explicit default placement; interrupted return from every pre-activation phase.`
+		`Customer runtime journey passed in ${Math.round((performance.now() - started) / 1000)}s: real catalog and Artifact Store provisioning; signed identity and tenant grants; HTTP reads/writes across two clusters; interruption at every handover phase; unaffected second customer; stale source rejected; divergent rollback; explicit default placement; interrupted return from every pre-activation phase; bundled release controller with wrong-release and insecure-configuration rejection.`
 	)
 } finally {
 	for (const server of servers) await server.stop(true)

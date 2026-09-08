@@ -132,10 +132,16 @@ The API directory records a runtime ID and an independent migration hold for eac
 customer environment. The facade reloads these with membership for every grant and
 selects an operator-configured runtime destination. Unknown destinations and held
 customers fail closed. Artifact translation uses that runtime's Artifact Store.
-`primary` is the initial composition; additional destinations are explicit.
+`primary` is the initial composition; additional destinations are explicit. An optional
+operator-managed file publishes runtime routes without restarting the facade. Each
+customer request validates the current file; invalid or missing current configuration
+fails closed rather than reviving cached routes.
 
 The provisioner claims work only for its configured runtime and skips customers under
 movement. Completion cannot publish readiness for a stale location or generation.
+Each runtime has a separate worker heartbeat; capability health requires a recent
+heartbeat for every customer placement and the selected default. A healthy generation
+cannot mask another generation that stopped.
 The central movement journal binds an idempotency key to source, destination and
 expected generation. A controller serializes operations, fences source access, copies
 a database, verifies its prepared components, and atomically publishes its destination.
@@ -164,17 +170,26 @@ Store provisioner, identity signature verification, facade and Intent Service ov
 It interrupts each physical phase before journal publication, resumes it, checks exact
 Intent and contribution content, rejects stale source access, retains divergent histories,
 provisions a new customer on the selected default runtime, and interrupts/resumes a
-return to the original database from each pre-activation phase. The full native journey
+return to the original database from each pre-activation phase. It also migrates through
+the bundled operator command, rejects another controller release, and publishes new
+runtime routes through the running facade. The full native journey
 and provider host replacement remain separate proofs.
 
 The operator command and its limits are in
 [Customer movement development](operations/backup-and-recovery.md#customer-movement-development).
-The hosted deployment workflow still installs its selected platform in place. It does
-not yet provision runtime generations or invoke the movement controller. Shared control
-services still reside on that platform host. New customer placement uses a serialized directory default and a release-bound immutable
-component catalog; changing the facade binary does not change that default. The public installer still requires the hosted three-target
-topology. Site bindings remain central and model requests remain
-identity-scoped. Full retained-release archival, automated effect reconciliation and old-generation
+The hosted platform controller prepares a new runtime and encrypted release backup,
+updates shared control services, publishes the complete route directory and moves
+customers individually. Interrupted operations resume from their journal; prior
+runtimes and credentials remain intact. Shared control services still reside on the
+platform host. New customer placement uses a serialized directory default and a
+release-bound immutable component catalog; changing the facade binary does not change
+that default. The first pre-movement transition requires a quiesced, encrypted backup
+and identical customer schema catalogs.
+
+The public installer still requires the hosted three-target topology. Site bindings
+remain central and model requests remain identity-scoped. The release archive retains
+exact images, configuration and the runtime directory, but automatic fresh-host fleet
+restoration remains incomplete. Automated effect reconciliation and old-generation
 retirement are not implemented.
 These are outstanding acceptance requirements of the
 [release lifecycle specification](customer-release-lifecycle.md), not deployment claims.

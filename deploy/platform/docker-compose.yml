@@ -40,14 +40,45 @@ services:
     volumes:
       - /var/lib/aven/postgres:/var/lib/postgresql/data
       - ./db-init.sh:/docker-entrypoint-initdb.d/10-platform.sql.sh:ro
-    ports:
-      - 127.0.0.1:5432:5432
     healthcheck:
       test: [CMD-SHELL, pg_isready -h 127.0.0.1 -U postgres -d aven_api]
       interval: 3s
       timeout: 3s
       retries: 40
     networks: [platform-private]
+    security_opt: [no-new-privileges:true]
+
+  database-access:
+    <<: *runtime-hardening
+    image: ${DATABASE_IMAGE:?required}
+    user: "65532:65532"
+    restart: unless-stopped
+    entrypoint: [socat]
+    command: ["TCP-LISTEN:5432,reuseaddr,fork", "TCP:database:5432"]
+    depends_on:
+      database:
+        condition: service_healthy
+    ports: ["127.0.0.1:5432:5432"]
+    networks: [platform-private, platform-access]
+    healthcheck:
+      test: [CMD, pg_isready, -h, 127.0.0.1, -U, postgres, -d, postgres]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    security_opt: [no-new-privileges:true]
+
+  artifact-provisioner-access:
+    <<: *runtime-hardening
+    image: ${DATABASE_IMAGE:?required}
+    user: "65532:65532"
+    restart: unless-stopped
+    entrypoint: [socat]
+    command: ["TCP-LISTEN:8088,reuseaddr,fork", "TCP:artifact-store-provisioner:8088"]
+    depends_on:
+      artifact-store-provisioner:
+        condition: service_healthy
+    ports: ["127.0.0.1:8088:8088"]
+    networks: [platform-private, platform-access]
     security_opt: [no-new-privileges:true]
 
   database-roles:
@@ -223,6 +254,7 @@ services:
       DOWNSTREAMS_JSON: ${DOWNSTREAMS_JSON:?required}
       CUSTOMER_DOWNSTREAMS_JSON: ${CUSTOMER_DOWNSTREAMS_JSON:?required}
       CUSTOMER_RUNTIMES_JSON: ${CUSTOMER_RUNTIMES_JSON:-[]}
+      CUSTOMER_RUNTIMES_FILE: ${CUSTOMER_RUNTIMES_FILE:-}
     networks: [platform-private]
     security_opt: [no-new-privileges:true]
 
@@ -440,6 +472,8 @@ services:
     environment: *api-environment
     volumes:
       - /var/lib/aven/backups/public-status:/backup-health:ro
+      - /var/lib/aven/runtime-routing:/runtime-routing:ro
+      - /var/lib/aven/runtime-backup-health:/runtime-backup-health:ro
     healthcheck:
       test: [CMD, bun, -e, "fetch('http://127.0.0.1:3000/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 5s
@@ -505,3 +539,5 @@ networks:
     internal: true
   platform-ingress:
   platform-egress:
+  # These credential-free TCP forwarders publish only to the host loopback interface.
+  platform-access:

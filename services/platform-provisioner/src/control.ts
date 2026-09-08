@@ -23,10 +23,16 @@ export class ControlStore {
 		await this.pool.query(
 			`INSERT INTO platform_worker_heartbeats
 			 (worker_name,instance_id,catalog_digest,started_at,last_heartbeat_at)
-			 VALUES('platform-provisioner',$1,$2,now(),now())
+			 VALUES($3,$1,$2,now(),now())
 			 ON CONFLICT(worker_name) DO UPDATE SET instance_id=EXCLUDED.instance_id,
 			 catalog_digest=EXCLUDED.catalog_digest,last_heartbeat_at=now()`,
-			[this.instanceId, catalogDigest]
+			[
+				this.instanceId,
+				catalogDigest,
+				this.runtimeId === 'primary'
+					? 'platform-provisioner'
+					: `platform-provisioner:${this.runtimeId}`
+			]
 		)
 	}
 

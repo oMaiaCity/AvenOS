@@ -39,9 +39,46 @@ pg_version=$(psql --no-psqlrc --tuples-only --no-align --dbname postgres \
   --command "SELECT current_setting('server_version_num')")
 databases=$(psql --no-psqlrc --tuples-only --no-align --dbname postgres --command \
   "SELECT datname FROM pg_database WHERE datallowconn AND NOT datistemplate AND datname <> 'postgres' ORDER BY datname")
-[ -n "$databases" ] || { echo 'no application databases found' >&2; exit 1; }
+allow_empty=${BACKUP_ALLOW_EMPTY:-false}
+case "$allow_empty" in true|false) ;; *) echo 'invalid empty-runtime backup setting' >&2; exit 64 ;; esac
+if [ -z "$databases" ]; then
+  [ "$allow_empty" = true ] && [ "${BACKUP_RELEASE_ARCHIVE_ROOT:-}" = /var/lib/aven-release-archive ] || {
+    echo 'no application databases found' >&2; exit 1;
+  }
+fi
 
 database_json=''
+customer_generations='{}'
+directory_before=''
+runtime_snapshots='{}'
+runtime_directory=${BACKUP_RUNTIME_DIRECTORY:-}
+directory_inventory() {
+  psql --no-psqlrc --tuples-only --no-align --dbname aven_api --command \
+    "SELECT coalesce(json_agg(e ORDER BY id),'[]') FROM (SELECT id,database_name,runtime_id,routing_generation,movement_id FROM customer_environments) e"
+}
+if [ -n "$runtime_directory" ]; then
+  [ "$runtime_directory" = /runtime-backup-health ] || { echo 'invalid runtime backup directory' >&2; exit 64; }
+  directory_before=$(directory_inventory)
+  printf '%s' "$directory_before" | jq -e 'all(.[]; .movement_id == null)' >/dev/null || {
+    echo 'customer movement is pending; wait for a completed recovery boundary' >&2; exit 1;
+  }
+  required_runtimes=$(printf '%s' "$directory_before" | jq -r '[.[].runtime_id] | unique | .[] | select(. != "primary")')
+  for runtime in $required_runtimes; do
+    case "$runtime" in *[!a-z0-9-]*|'') echo 'invalid runtime identity' >&2; exit 1 ;; esac
+    health="$runtime_directory/$runtime/snapshot.json"
+    [ -f "$health" ] && [ ! -L "$health" ] || { echo 'runtime snapshot is unavailable' >&2; exit 1; }
+    cp "$health" "$stage/runtime-$runtime.json"
+    jq -e --argjson now "$(date -u +%s)" --argjson customers "$directory_before" --arg runtime "$runtime" \
+      '. as $health | .status == "healthy" and ($now - .checkedAt < 7200) and
+       (.snapshotId | test("^[a-f0-9]{64}$")) and
+       all($customers[] | select(.runtime_id == $runtime); . as $customer |
+         $health.customerGenerations[$customer.database_name].environmentId == $customer.id and
+         $health.customerGenerations[$customer.database_name].generation == $customer.routing_generation)' \
+      "$stage/runtime-$runtime.json" >/dev/null || { echo 'runtime snapshot does not match current placement' >&2; exit 1; }
+    runtime_snapshots=$(printf '%s' "$runtime_snapshots" | jq -c --arg runtime "$runtime" \
+      --arg snapshot "$(jq -r .snapshotId "$stage/runtime-$runtime.json")" '. + {($runtime):$snapshot}')
+  done
+fi
 for database in $databases; do
   case "$database" in *[!A-Za-z0-9_-]*) echo "unsafe database name: $database" >&2; exit 1 ;; esac
   target="$stage/databases/$database.dump"
@@ -54,13 +91,30 @@ for database in $databases; do
   while IFS= read -r role; do
     case "$role" in ''|*[!a-z0-9_]*) echo "unsafe application role: $role" >&2; exit 1 ;; esac
   done < "$roles"
+  identity_before=''
+  case "$database" in cust_*)
+    has_identity=$(psql --no-psqlrc --tuples-only --no-align --dbname "$database" --command "SELECT to_regclass('aven_platform.environment_identity') IS NOT NULL")
+    if [ "$has_identity" = t ]; then
+      identity_before=$(psql --no-psqlrc --tuples-only --no-align --dbname "$database" --command \
+        'SELECT json_build_object('\''environmentId'\'',environment_id,'\''generation'\'',routing_generation) FROM aven_platform.environment_identity WHERE singleton')
+    fi
+  ;; esac
   pg_dump --format=custom --compress=6 --dbname "$database" --file "$target"
+  if [ -n "$identity_before" ]; then
+    identity_after=$(psql --no-psqlrc --tuples-only --no-align --dbname "$database" --command \
+      'SELECT json_build_object('\''environmentId'\'',environment_id,'\''generation'\'',routing_generation) FROM aven_platform.environment_identity WHERE singleton')
+    [ "$identity_before" = "$identity_after" ] || { echo 'customer generation changed during backup' >&2; exit 1; }
+    customer_generations=$(printf '%s' "$customer_generations" | jq -c --arg database "$database" --argjson identity "$identity_before" '. + {($database):$identity}')
+  fi
   pg_restore --list "$target" >/dev/null
   digest=$(sha256sum "$target" | cut -d' ' -f1)
   roles_digest=$(sha256sum "$roles" | cut -d' ' -f1)
   item=$(printf '{"name":"%s","owner":"%s","sha256":"%s","rolesSha256":"%s"}' "$database" "$database_owner" "$digest" "$roles_digest")
   if [ -n "$database_json" ]; then database_json="$database_json,$item"; else database_json=$item; fi
 done
+if [ -n "$runtime_directory" ]; then
+  [ "$directory_before" = "$(directory_inventory)" ] || { echo 'customer directory changed during backup' >&2; exit 1; }
+fi
 
 release_root=${BACKUP_RELEASE_ARCHIVE_ROOT:-}
 release_selection='null'
@@ -78,7 +132,7 @@ fi
 created_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 release=${BACKUP_RELEASE_ID:-unknown}
 case "$release" in *[!A-Za-z0-9_.:@/-]*|'') echo 'invalid backup release id' >&2; exit 64 ;; esac
-printf '%s\n' "{\"formatVersion\":1,\"backupId\":\"$run_id\",\"environment\":\"$BACKUP_ENVIRONMENT\",\"host\":\"$BACKUP_HOST\",\"release\":\"$release\",\"createdAt\":\"$created_at\",\"postgresVersionNumber\":$pg_version,\"releaseSelectionSha256\":$release_selection,\"databases\":[$database_json]}" > "$stage/manifest.json"
+printf '%s\n' "{\"formatVersion\":1,\"backupId\":\"$run_id\",\"environment\":\"$BACKUP_ENVIRONMENT\",\"host\":\"$BACKUP_HOST\",\"release\":\"$release\",\"createdAt\":\"$created_at\",\"postgresVersionNumber\":$pg_version,\"releaseSelectionSha256\":$release_selection,\"allowEmpty\":$allow_empty,\"runtimeSnapshots\":$runtime_snapshots,\"databases\":[$database_json]}" > "$stage/manifest.json"
 sha256sum "$stage/manifest.json" | cut -d' ' -f1 > "$stage/manifest.sha256"
 
 if ! timeout "$repository_probe_timeout" restic snapshots --json >/dev/null; then
@@ -86,7 +140,15 @@ if ! timeout "$repository_probe_timeout" restic snapshots --json >/dev/null; the
   timeout "$repository_probe_timeout" restic init
 fi
 set -- "$stage"
-if [ -n "$release_root" ]; then set -- "$@" "$release_root"; fi
+if [ -n "$release_root" ]; then
+  selected_release="$release_root/$(jq -r .release "$stage/release-selection.json")"
+  selected_configuration="$selected_release/configurations/$(jq -r .configuration "$stage/release-selection.json")"
+  # The selected fleet already contains every retained runtime. Older control snapshots
+  # keep their own release selection; copying the entire local archive here would make
+  # every fresh-host recovery download all historical configurations and image sets.
+  set -- "$@" "$selected_release/index.json" "$selected_release/release.json" \
+    "$selected_release/images.tar" "$selected_configuration"
+fi
 snapshot_id=$(timeout "$restic_timeout" restic backup "$@" \
   --exclude '**/.preparing-*' --exclude '**/.current-*' \
   --host "$BACKUP_HOST" \
@@ -95,11 +157,23 @@ snapshot_id=$(timeout "$restic_timeout" restic backup "$@" \
   --json | awk -F'"' '/"message_type":"summary"/{for(i=1;i<=NF;i++) if($i=="snapshot_id") {print $(i+2); exit}}')
 [ -n "$snapshot_id" ] || { echo 'restic did not return a snapshot id' >&2; exit 1; }
 
-timeout "$restic_timeout" restic forget --host "$BACKUP_HOST" --tag 'kind:postgres-logical' \
-  --keep-within 14d --keep-weekly 8 --keep-monthly 12 --prune
+case "${BACKUP_RETAIN_RUNTIME_SNAPSHOTS:-false}" in
+  false)
+    timeout "$restic_timeout" restic forget --host "$BACKUP_HOST" --tag 'kind:postgres-logical' \
+      --keep-within 14d --keep-weekly 8 --keep-monthly 12 --prune ;;
+  true)
+    [ -n "$release_root" ] || { echo 'runtime retention requires its release archive' >&2; exit 64; }
+    # Central snapshots reference exact runtime snapshots. Independent pruning would break recovery.
+    # Runtime retirement must first prove that no retained central snapshot references this repository.
+    ;;
+  *) echo 'invalid runtime retention setting' >&2; exit 64 ;;
+esac
 timeout "$restic_timeout" restic check
 snapshot_count=$(timeout "$repository_probe_timeout" restic snapshots --host "$BACKUP_HOST" --tag "environment:$BACKUP_ENVIRONMENT" --json | jq length)
 case "$snapshot_count" in ''|*[!0-9]*) echo 'invalid snapshot count' >&2; exit 1 ;; esac
+printf '{"status":"healthy","checkedAt":%s,"snapshotId":"%s","customerGenerations":%s}\n' "$(date -u +%s)" "$snapshot_id" "$customer_generations" > "$public_status/snapshot.next"
+chmod 0600 "$public_status/snapshot.next"
+mv "$public_status/snapshot.next" "$public_status/snapshot.json"
 printf '{"status":"healthy","checkedAt":%s,"snapshotCount":%s}\n' "$(date -u +%s)" "$snapshot_count" > "$public_status/health.next"
 chmod 0644 "$public_status/health.next"
 mv "$public_status/health.next" "$public_status/health.json"

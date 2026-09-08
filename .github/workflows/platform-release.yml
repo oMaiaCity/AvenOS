@@ -14,27 +14,22 @@ concurrency:
 
 jobs:
   verify:
+    needs: build
     if: github.ref == 'refs/heads/next' && github.event_name == 'workflow_dispatch'
     uses: ./.github/workflows/platform-verification.yml
+    with:
+      manifest: ${{ needs.build.outputs.manifest }}
     permissions:
       contents: read
       packages: read
     secrets:
       PACKAGE_READ_TOKEN: ${{ secrets.PACKAGE_READ_TOKEN }}
 
-  publish:
-    needs: verify
+  build:
+    if: github.ref == 'refs/heads/next' && github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     outputs:
-      identity: ghcr.io/myavenceo/aven-identity@${{ steps.identity.outputs.digest }}
-      api: ghcr.io/myavenceo/aven-api@${{ steps.api.outputs.digest }}
-      checkout: ghcr.io/myavenceo/aven-checkout@${{ steps.checkout.outputs.digest }}
-      static_host: ghcr.io/myavenceo/aven-static-site-host@${{ steps.static_host.outputs.digest }}
-      provisioner: ghcr.io/myavenceo/aven-platform-provisioner@${{ steps.provisioner.outputs.digest }}
-      intent: ghcr.io/myavenceo/aven-intent-service@${{ steps.intent.outputs.digest }}
-      actor: ghcr.io/myavenceo/aven-actor-runner@${{ steps.actor.outputs.digest }}
-      artifact: ghcr.io/myavenceo/aven-artifact-store@${{ steps.artifact.outputs.digest }}
-      operations: ghcr.io/myavenceo/aven-operations@${{ steps.operations.outputs.digest }}
+      manifest: ${{ steps.manifest.outputs.manifest }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -111,6 +106,7 @@ jobs:
         with:
           context: .
           file: services/platform-provisioner/Dockerfile
+          build-args: SOURCE_REVISION=${{ github.sha }}
           cache-from: type=gha,scope=release-services-platform-provisioner
           cache-to: type=gha,mode=max,scope=release-services-platform-provisioner
           push: true
@@ -159,7 +155,8 @@ jobs:
           tags: ghcr.io/myavenceo/aven-operations:run-${{ github.run_id }}-${{ github.run_attempt }}
 
 
-      - name: Record immutable release manifest
+      - name: Record immutable candidate manifest
+        id: manifest
         env:
           IDENTITY_IMAGE: ghcr.io/myavenceo/aven-identity@${{ steps.identity.outputs.digest }}
           DATABASE_IMAGE: ghcr.io/myavenceo/aven-database@${{ steps.database.outputs.digest }}
@@ -175,10 +172,31 @@ jobs:
         run: |
           jq -n --arg sha "$GITHUB_SHA" --arg run "$GITHUB_RUN_ID" \
             '{version:1,sha:$sha,runId:($run|tonumber),images:env|with_entries(select(.key|endswith("_IMAGE")))}' > release.json
+          echo "manifest=$(jq -c . release.json)" >> "$GITHUB_OUTPUT"
       - name: Audit the exact published runtime images before releasing their manifest
         run: |
           mapfile -t images < <(jq -r '.images[]' release.json)
           bash scripts/scan-container-os.sh "${images[@]}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aven-release-candidate
+          path: release.json
+          retention-days: 90
+          if-no-files-found: error
+
+  publish:
+    needs: [build, verify]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: aven-release-candidate
+      - name: Match the tested candidate exactly
+        env:
+          TESTED_MANIFEST: ${{ needs.build.outputs.manifest }}
+        run: jq --exit-status --argjson tested "$TESTED_MANIFEST" '. == $tested' release.json >/dev/null
       - uses: actions/upload-artifact@v4
         with:
           name: aven-release

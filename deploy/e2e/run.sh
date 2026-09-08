@@ -120,7 +120,7 @@ if [ "${E2E_SKIP_IMAGE_BUILD:-false}" != "true" ]; then
   docker build --secret id=npm_token,env=NODE_AUTH_TOKEN --file "$root/services/identity/Dockerfile" --tag "$E2E_IDENTITY_IMAGE" "$root"
   docker build --secret id=npm_token,env=NODE_AUTH_TOKEN --file "$root/services/aven-api/Dockerfile" --tag "$E2E_API_IMAGE" "$root"
   docker build --secret id=npm_token,env=NODE_AUTH_TOKEN --file "$root/services/checkout/Dockerfile" --tag "$E2E_CHECKOUT_IMAGE" "$root"
-  docker build --secret id=npm_token,env=NODE_AUTH_TOKEN --file "$root/services/platform-provisioner/Dockerfile" --tag "$E2E_PLATFORM_PROVISIONER_IMAGE" "$root"
+  docker build --secret id=npm_token,env=NODE_AUTH_TOKEN --build-arg "SOURCE_REVISION=$(git -C "$root" rev-parse HEAD)" --file "$root/services/platform-provisioner/Dockerfile" --tag "$E2E_PLATFORM_PROVISIONER_IMAGE" "$root"
   docker build --secret id=npm_token,env=NODE_AUTH_TOKEN --file "$root/services/intent-service/Dockerfile" --tag "$E2E_INTENT_SERVICE_IMAGE" "$root"
   docker build --secret id=npm_token,env=NODE_AUTH_TOKEN --file "$root/services/actor-runner/Dockerfile" --tag "$E2E_ACTOR_RUNNER_IMAGE" "$root"
   docker build --file "$root/services/artifact-store/Dockerfile" --tag "$E2E_ARTIFACT_STORE_IMAGE" "$root"
@@ -176,3 +176,4 @@ E2E_SILENT_DUPLEX_FIXTURE="$E2E_SILENT_DUPLEX_FIXTURE" \
 bunx playwright test --config "$root/deploy/e2e/playwright.config.ts"
 
 docker compose --project-name "$project" --file "$compose" --file "$hardening" ps
+bun run --cwd "$root" test:runtime-install

@@ -24,6 +24,13 @@ bash -n \
   "$root/deploy/validate.sh" \
   "$root/deploy/operations/test-recovery.sh"
 bash "$root/deploy/release/test-deploy.sh"
+sh -n "$root/deploy/runtime/db-init.sh"
+python3 "$root/deploy/runtime/prepare-test.py"
+python3 "$root/deploy/runtime/rollout-test.py"
+python3 "$root/deploy/runtime/host-test.py"
+python3 "$root/deploy/runtime/transition-test.py"
+python3 "$root/deploy/runtime/recover-test.py"
+grep -Fq 'test:runtime-install' "$root/deploy/e2e/run.sh"
 bun test "$root/deploy/local/llm-catalog.test.ts" "$root/deploy/e2e/llm-catalog.test.ts"
 
 grep -Fq "if: inputs.target != 'identity'" "$root/.github/workflows/platform-deploy-target.yml"

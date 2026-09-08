@@ -25,6 +25,7 @@ export class PostgresMovementDriver implements MovementDriver {
 			runtimes: Record<string, MovementDatabase>
 			archiveDirectory: string
 			platformId: string
+			databaseToolsImage?: string
 			prepareDestination: (movement: Movement, signal: AbortSignal) => Promise<void>
 			verifyApplication: (movement: Movement, signal: AbortSignal) => Promise<void>
 		}
@@ -280,7 +281,8 @@ export class PostgresMovementDriver implements MovementDriver {
 					'PGCONNECT_TIMEOUT',
 					'PGOPTIONS'
 				].flatMap((name) => ['--env', name]),
-				'postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73',
+				this.config.databaseToolsImage ??
+					'postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73',
 				...args
 			],
 			{
