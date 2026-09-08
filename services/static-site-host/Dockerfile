@@ -1,4 +1,4 @@
-FROM oven/bun:1.3.13-alpine
+FROM oven/bun:1.4.2-alpine
 ARG OS_SECURITY_REFRESH=local
 RUN test -n "$OS_SECURITY_REFRESH" && apk upgrade --no-cache \
   && apk add --no-cache ca-certificates git \
