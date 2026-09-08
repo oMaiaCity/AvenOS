@@ -88,6 +88,23 @@ export class CustomerStore {
 				return { environmentId: existing.rows[0].id, replay: true }
 			}
 
+			// Serialize default selection with promotion so a new purchase cannot land on
+			// the retired side of a concurrent default change.
+			if (!existing.rows[0])
+				await client.query(
+					"SELECT pg_advisory_xact_lock_shared(hashtextextended('customer-runtime-default',0))"
+				)
+			const placement = existing.rows[0]
+				? undefined
+				: (
+						await client.query<{ runtime_id: string; component_catalog: typeof defaults | null }>(
+							`SELECT d.runtime_id,r.component_catalog FROM customer_runtime_defaults d
+					 JOIN customer_runtimes r ON r.id=d.runtime_id
+					 WHERE d.singleton AND r.retired_at IS NULL`
+						)
+					).rows[0]
+			if (!existing.rows[0] && !placement)
+				throw new Error('default customer runtime is unavailable')
 			const environmentId = existing.rows[0]?.id ?? randomUUID()
 			const desiredState = event.eventType === 'purchase_granted' ? 'ready' : 'suspended'
 			if (existing.rows[0]) {
@@ -101,14 +118,15 @@ export class CustomerStore {
 			} else {
 				await client.query(
 					`INSERT INTO customer_environments
-					 (id,purchased_name,owner_subject_id,database_name,desired_state,observed_state,routing_generation)
-					 VALUES($1,$2,$3,$4,$5,'pending',1)`,
+					 (id,purchased_name,owner_subject_id,database_name,desired_state,observed_state,routing_generation,runtime_id)
+					 VALUES($1,$2,$3,$4,$5,'pending',1,$6)`,
 					[
 						environmentId,
 						event.purchasedName,
 						event.subjectId,
 						databaseNameForEnvironment(environmentId),
-						desiredState
+						desiredState,
+						placement?.runtime_id
 					]
 				)
 			}
@@ -139,7 +157,8 @@ export class CustomerStore {
 						targetSchemaVersion: row.target_schema_version,
 						migrationSetDigest: row.migration_set_digest
 					}))
-				: defaults
+				: (placement?.component_catalog ?? (placement?.runtime_id === 'primary' ? defaults : []))
+			if (!components.length) throw new Error('default runtime has no component catalog')
 			for (const component of components) {
 				await client.query(
 					`INSERT INTO customer_environment_components

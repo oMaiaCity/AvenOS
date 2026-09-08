@@ -144,30 +144,38 @@ Production Actor execution, including continuation submission, holds a shared da
 barrier and records unfinished execution in customer metadata. Handover closes new
 execution and waits for the exclusive barrier. A lost worker connection leaves its
 unfinished record; movement refuses to infer that its external effects stopped.
-Source customer roles become `NOLOGIN` and their remaining sessions are terminated
+Fencing waits for the physical provisioning lock; reconciliation rejects a lower routing
+generation. Source customer roles become `NOLOGIN` and their remaining sessions are terminated
 before the final dump. A cluster marker rejects copying across installation targets.
 
 The movement driver uses pinned PostgreSQL 17 tools, private local dump files, an
-operation-bound destination marker, and transactional restore. It never overwrites an
+operation-bound destination marker, a closed staging database and transactional restore. It never overwrites an
 existing unrecognized database or deletes recovery copies. Rollback advances generation,
 preserves both histories, and leaves Actor execution disabled pending reconciliation.
+Forward movement enables execution only after the directory publishes the destination;
+a crash between publication and enabling execution keeps Actors paused until resume.
 
 The isolated movement drill proves two physical clusters, a running Actor delaying
 handover, another customer continuing to write, failed readiness and resume, directory
 routing, controller contention, entitlement holds and rollback after divergent writes, including
 a failed observation after activation.
-It uses a small database fixture and a supplied destination preparation adapter. The
-full native journey and provider host replacement remain separate proofs.
+A second journey uses the real component catalog, PostgreSQL provisioner, Rust Artifact
+Store provisioner, identity signature verification, facade and Intent Service over HTTP.
+It interrupts each physical phase before journal publication, resumes it, checks exact
+Intent and contribution content, rejects stale source access, retains divergent histories,
+provisions a new customer on the selected default runtime, and interrupts/resumes a
+return to the original database from each pre-activation phase. The full native journey
+and provider host replacement remain separate proofs.
 
 The operator command and its limits are in
 [Customer movement development](operations/backup-and-recovery.md#customer-movement-development).
 The hosted deployment workflow still installs its selected platform in place. It does
 not yet provision runtime generations or invoke the movement controller. Shared control
-services still reside on that platform host. New customer environments still start on `primary`; selecting a new default runtime
-and catalog is outstanding. The public installer still requires the hosted three-target
+services still reside on that platform host. New customer placement uses a serialized directory default and a release-bound immutable
+component catalog; changing the facade binary does not change that default. The public installer still requires the hosted three-target
 topology. Site bindings remain central and model requests remain
-identity-scoped. Full retained-release archival, safe cancellation before activation,
-automated effect reconciliation and old-generation retirement are not implemented.
+identity-scoped. Full retained-release archival, automated effect reconciliation and old-generation
+retirement are not implemented.
 These are outstanding acceptance requirements of the
 [release lifecycle specification](customer-release-lifecycle.md), not deployment claims.
 

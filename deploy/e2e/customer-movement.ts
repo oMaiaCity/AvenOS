@@ -99,7 +99,12 @@ try {
 		'aven_api_migrator'
 	])
 		await source.query(`CREATE ROLE ${role} NOLOGIN`)
-	for (const file of ['0001_customer_platform.sql', '0002_customer_movement.sql'])
+	for (const file of [
+		'0001_customer_platform.sql',
+		'0002_customer_movement.sql',
+		'0003_runtime_catalog.sql',
+		'0004_customer_return.sql'
+	])
 		await control.query(await readFile(join(root, 'services/aven-api/migrations', file), 'utf8'))
 	const store = new CustomerMovementStore(control)
 	await store.registerRuntime('primary', 'a'.repeat(40))

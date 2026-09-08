@@ -27,11 +27,12 @@ bash "$root/deploy/release/test-deploy.sh"
 bun test "$root/deploy/local/llm-catalog.test.ts" "$root/deploy/e2e/llm-catalog.test.ts"
 
 grep -Fq "if: inputs.target != 'identity'" "$root/.github/workflows/platform-deploy-target.yml"
-bun test "$root/scripts/lib/platform-release.test.ts" "$root/deploy/e2e/mail-topology.test.ts"
+bun "$root/app/node_modules/typescript/bin/tsc" --noEmit --skipLibCheck --module esnext --moduleResolution bundler --target es2023 --typeRoots "$root/app/node_modules/@types" --types bun "$root/deploy/e2e/customer-runtime-journey.ts" "$root/scripts/lib/platform-verification.test.ts"
+bun test "$root/scripts/lib/platform-verification.test.ts" "$root/scripts/lib/platform-release.test.ts" "$root/deploy/e2e/mail-topology.test.ts"
 bun test "$root/scripts/lib/client-release.test.ts"
 bun "$root/app/node_modules/typescript/bin/tsc" --noEmit --skipLibCheck --module esnext --moduleResolution bundler --target es2023 --typeRoots "$root/app/node_modules/@types" --types bun "$root/scripts/build-client-release.ts" "$root/scripts/client-release-manifest.ts" "$root/scripts/lib/client-release.ts" "$root/scripts/lib/client-release.test.ts" "$root/scripts/smoke-client-linux.ts"
 bun test "$root/scripts/reconcile-deployed-polar-webhook.test.ts"
-for workflow in platform-ci.yml platform-release.yml; do
+for workflow in platform-verification.yml; do
   grep -Fq 'uses: ./.github/actions/setup-platform-test-host' "$root/.github/workflows/$workflow" || {
     echo "$workflow must use the shared native platform test-host setup" >&2
     exit 1
@@ -45,7 +46,7 @@ grep -Fq 'bunx playwright install chromium' "$root/.github/actions/setup-platfor
   echo 'the platform test host must install the Chromium binary required by the browser E2E test' >&2
   exit 1
 }
-for workflow in platform-ci.yml platform-release.yml; do
+for workflow in platform-verification.yml; do
   install_line=$(grep -n 'uses: ./.github/actions/bun-install' "$root/.github/workflows/$workflow" | head -1 | cut -d: -f1)
   host_line=$(grep -n 'uses: ./.github/actions/setup-platform-test-host' "$root/.github/workflows/$workflow" | head -1 | cut -d: -f1)
   if [[ -z "$install_line" || -z "$host_line" || "$install_line" -ge "$host_line" ]]; then
