@@ -410,8 +410,10 @@ The required Platform release gate also fails when verification fails or is canc
 
 ## CI scheduling and caches
 
-Platform verification runs four independent jobs concurrently: static checks and builds,
-unit/infrastructure tests, migration/recovery drills, and the full native/browser journey.
+Platform verification runs five independent jobs concurrently: static checks and builds,
+unit/infrastructure tests, migration/recovery drills, the native/browser journey, and
+host rollout with fresh fleet recovery. The last two jobs consume the same verified
+release manifest and run independently; neither waits for the other to finish.
 Every job is required. Security scans still run for each source revision; no path filter,
 previous green run or cache hit substitutes for verification. The checks have read-only
 repository/package permissions and receive no deployment Environment credentials. Package
@@ -453,6 +455,13 @@ the public edge are inert in this fixture; the separate full native journey rema
 required for those services. The independent identity fixture survives the simulated
 platform loss. This test does not replace infrastructure through a cloud provider.
 The host fixture must pass before publishing a release with lifecycle changes.
+
+`bun run test:e2e:platform` remains the complete local native and host proof. CI uses
+`bun run test:e2e:native` and `bun run test:e2e:runtime` as separate required jobs.
+The runtime command builds and scans its service images from the clean checkout;
+image builds require `NODE_AUTH_TOKEN` with package-read access. For release verification,
+both jobs instead pull the exact manifest images and run all their assertions. The
+lower-level `test:runtime-install` command still consumes already available images.
 
 Release builds publish candidate image digests first, scan them, and pass their exact
 manifest to the full verification workflow. The release journey pulls those images

@@ -1,6 +1,9 @@
 #!/bin/sh
 set -eu
 
+proof=${1:-full}
+case "$proof" in full|native) ;; *) echo 'Usage: run.sh [full|native]' >&2; exit 64 ;; esac
+
 root=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
 compose="$root/deploy/e2e/docker-compose.yml"
 project=${COMPOSE_PROJECT_NAME:-aven-e2e-$$}
@@ -178,4 +181,6 @@ E2E_SILENT_DUPLEX_FIXTURE="$E2E_SILENT_DUPLEX_FIXTURE" \
 bunx playwright test --config "$root/deploy/e2e/playwright.config.ts"
 
 docker compose --project-name "$project" --file "$compose" --file "$hardening" ps
-bun run --cwd "$root" test:runtime-install
+if [ "$proof" = full ]; then
+  bun run --cwd "$root" test:runtime-install
+fi
