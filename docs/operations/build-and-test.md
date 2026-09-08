@@ -455,3 +455,11 @@ and skips rebuilding service images; all customer and native tests still run. On
 successful complete gate publishes the deployable `aven-release` artifact. Pull
 request verification builds local fixture images because it has no release manifest.
 The build and verification jobs have no deployment Environment credentials.
+
+Each release build refreshes the runtime OS package layer using a unique run/attempt
+build argument. Compiler and dependency caches remain reusable; a cached package-update
+layer cannot silently preserve a vulnerability after an upstream fix becomes available.
+Local image-building test runs also supply a fresh OS-layer identifier. The normal
+container security scan still blocks fixable high/critical findings on the resulting
+images. Verifying an existing release manifest does not read a package token to rebuild
+images.
