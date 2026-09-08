@@ -38,6 +38,8 @@ bun test "$root/deploy/local/llm-catalog.test.ts" "$root/deploy/e2e/llm-catalog.
 grep -Fq "if: inputs.target != 'identity'" "$root/.github/workflows/platform-deploy-target.yml"
 bun "$root/app/node_modules/typescript/bin/tsc" --noEmit --skipLibCheck --module esnext --moduleResolution bundler --target es2023 --typeRoots "$root/app/node_modules/@types" --types bun "$root/deploy/e2e/customer-runtime-journey.ts" "$root/scripts/lib/platform-verification.test.ts"
 bun test "$root/scripts/lib/platform-verification.test.ts" "$root/scripts/lib/platform-release.test.ts" "$root/deploy/e2e/mail-topology.test.ts"
+bun test "$root/scripts/lib/release-promotion.test.ts"
+bun "$root/app/node_modules/typescript/bin/tsc" --noEmit --skipLibCheck --module esnext --moduleResolution bundler --target es2023 --typeRoots "$root/app/node_modules/@types" --types bun "$root/scripts/promote-release.ts" "$root/scripts/lib/release-promotion.test.ts"
 bun test "$root/scripts/lib/client-release.test.ts"
 bun "$root/app/node_modules/typescript/bin/tsc" --noEmit --skipLibCheck --module esnext --moduleResolution bundler --target es2023 --typeRoots "$root/app/node_modules/@types" --types bun "$root/scripts/build-client-release.ts" "$root/scripts/client-release-manifest.ts" "$root/scripts/lib/client-release.ts" "$root/scripts/lib/client-release.test.ts" "$root/scripts/smoke-client-linux.ts"
 bun test "$root/scripts/reconcile-deployed-polar-webhook.test.ts"

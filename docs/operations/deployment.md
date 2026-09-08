@@ -263,8 +263,16 @@ bun run release:promote next
 bun run release:promote prod
 ```
 
-The command creates or finds the corresponding `main → next` or `next → prod` PR.
-Review its diff and successful checks, then use the exact-head merge command it prints.
+The command selects the current source commit for `main → next` or `next → prod`.
+It prepares a `codex/promote-…` branch from the current target and merges the selected
+source into that branch. Before opening or reusing its PR, it verifies both commit
+ancestries and requires the candidate tree to equal the selected source tree exactly.
+This preserves the release merge history while satisfying the target's requirement
+for an up-to-date PR branch. It does not check out or rewrite the workstation's branch.
+If release-only changes prevent an exact source match or cause a conflict, reconcile
+them into the source and retry. Repeating an unchanged selection reuses its prepared
+branch and PR; an already-contained source with the same tree needs no new promotion.
+Review the PR diff and successful checks, then use the exact-head merge command it prints.
 Use a merge commit, not squash, so release ancestry remains verifiable. Rules require
 the `Platform release gate` and resolved threads; one administrator can operate this
 without another account. Changes to workflows, infrastructure, authentication and
