@@ -1,4 +1,4 @@
-FROM oven/bun:1.3.13 AS manifests
+FROM oven/bun:1.4.2 AS manifests
 WORKDIR /repo
 COPY . .
 
@@ -35,7 +35,7 @@ RUN --mount=type=cache,target=/root/.bun/install/cache,sharing=locked \
   && bun install --frozen-lockfile --production --filter '!./' --filter @avenos/checkout \
   && rm -f "$HOME/.npmrc"
 
-FROM oven/bun:1.3.13
+FROM oven/bun:1.4.2
 ARG OS_SECURITY_REFRESH=local
 RUN test -n "$OS_SECURITY_REFRESH" && apt-get update && apt-get upgrade --yes --no-install-recommends && rm -rf /var/lib/apt/lists/*
 WORKDIR /repo/services/checkout
