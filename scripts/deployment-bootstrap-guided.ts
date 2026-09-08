@@ -858,7 +858,7 @@ async function completeInitialRollout(input: BootstrapInput): Promise<boolean> {
 		label: 'Install identity, verify next, then install production',
 		repository,
 		ref: defaultBranch,
-		inputs: { target: 'all', release_run_id: String(generated.initialRollout.releaseRunId), recover_from_backup: 'false' },
+		inputs: { target: 'all', initial_installation: 'true', release_run_id: String(generated.initialRollout.releaseRunId), recover_from_backup: 'false' },
 		timeoutMs: 3 * 60 * 60_000,
 		refreshCredentials: () => refreshCompletedCredentials(input)
 	})

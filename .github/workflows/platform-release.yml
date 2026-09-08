@@ -97,6 +97,7 @@ jobs:
           bun run test:bootstrap
           bun run test:deploy
           bun run test:proxy-boundary
+          bun run test:customer-movement
           bun run test:recovery
       - name: Test app integration
         run: bun test

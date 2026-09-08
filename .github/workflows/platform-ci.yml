@@ -114,6 +114,8 @@ jobs:
       - name: Validate shell and Compose sources
         run: bun run test:deploy
       - run: bun run test:proxy-boundary
+      - name: Prove individual customer migration and rollback
+        run: bun run test:customer-movement
       - name: Build and drill database recovery image
         run: bun run test:recovery
       - name: Full-stack browser E2E

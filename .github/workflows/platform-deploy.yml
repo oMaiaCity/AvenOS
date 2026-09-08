@@ -4,11 +4,16 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: Selected target; all installs identity, verifies next, then installs production
-        default: all
+        description: Select one deployment; all is reserved for initial installation
+        default: next
         required: true
         type: choice
         options: [all, identity, next, production]
+      initial_installation:
+        description: Explicitly install all three targets for a fresh installation
+        default: false
+        required: true
+        type: boolean
       release_run_id:
         description: Successful platform-release run from protected next (immutable images)
         required: true
@@ -49,6 +54,7 @@ jobs:
           RELEASE_RUN_ID: ${{ inputs.release_run_id }}
           NEXT_PROOF_RUN_ID: ${{ inputs.next_proof_run_id }}
           DEPLOYMENT_TARGET: ${{ inputs.target }}
+          INITIAL_INSTALLATION: ${{ inputs.initial_installation }}
           RECOVER_FROM_BACKUP: ${{ inputs.recover_from_backup }}
           DEPLOYMENT_ENVIRONMENT_PREFIX: ${{ vars.DEPLOYMENT_ENVIRONMENT_PREFIX }}
           DEPLOYMENT_TARGETS_JSON: ${{ vars.DEPLOYMENT_TARGETS_JSON }}

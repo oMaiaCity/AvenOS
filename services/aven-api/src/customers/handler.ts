@@ -65,14 +65,18 @@ export class CustomerHandler {
 		environmentId: string
 		componentRef: string
 		actions: string[]
-	}): Promise<{ claims: Omit<TenantGrantClaims, 'iat' | 'exp'>; token: string }> {
-		const claims = await this.authorizationStore.authorize(
+	}): Promise<{
+		claims: Omit<TenantGrantClaims, 'iat' | 'exp'>
+		token: string
+		runtimeId: string
+	}> {
+		const { runtimeId, ...claims } = await this.authorizationStore.authorize(
 			input.claims,
 			input.environmentId,
 			input.componentRef,
 			input.actions
 		)
-		return { claims, token: await signTenantGrant(claims, this.tenantGrantPrivateKey) }
+		return { claims, runtimeId, token: await signTenantGrant(claims, this.tenantGrantPrivateKey) }
 	}
 
 	failure(error: unknown): Response | null {

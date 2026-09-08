@@ -126,6 +126,51 @@ For a customer request:
 Suspension, restore, ownership changes, or credential rotation advance the routing
 generation. Old grants and old derived passwords then fail closed.
 
+## Customer movement
+
+The API directory records a runtime ID and an independent migration hold for each
+customer environment. The facade reloads these with membership for every grant and
+selects an operator-configured runtime destination. Unknown destinations and held
+customers fail closed. Artifact translation uses that runtime's Artifact Store.
+`primary` is the initial composition; additional destinations are explicit.
+
+The provisioner claims work only for its configured runtime and skips customers under
+movement. Completion cannot publish readiness for a stale location or generation.
+The central movement journal binds an idempotency key to source, destination and
+expected generation. A controller serializes operations, fences source access, copies
+a database, verifies its prepared components, and atomically publishes its destination.
+
+Production Actor execution, including continuation submission, holds a shared database
+barrier and records unfinished execution in customer metadata. Handover closes new
+execution and waits for the exclusive barrier. A lost worker connection leaves its
+unfinished record; movement refuses to infer that its external effects stopped.
+Source customer roles become `NOLOGIN` and their remaining sessions are terminated
+before the final dump. A cluster marker rejects copying across installation targets.
+
+The movement driver uses pinned PostgreSQL 17 tools, private local dump files, an
+operation-bound destination marker, and transactional restore. It never overwrites an
+existing unrecognized database or deletes recovery copies. Rollback advances generation,
+preserves both histories, and leaves Actor execution disabled pending reconciliation.
+
+The isolated movement drill proves two physical clusters, a running Actor delaying
+handover, another customer continuing to write, failed readiness and resume, directory
+routing, controller contention, entitlement holds and rollback after divergent writes, including
+a failed observation after activation.
+It uses a small database fixture and a supplied destination preparation adapter. The
+full native journey and provider host replacement remain separate proofs.
+
+The operator command and its limits are in
+[Customer movement development](operations/backup-and-recovery.md#customer-movement-development).
+The hosted deployment workflow still installs its selected platform in place. It does
+not yet provision runtime generations or invoke the movement controller. Shared control
+services still reside on that platform host. New customer environments still start on `primary`; selecting a new default runtime
+and catalog is outstanding. The public installer still requires the hosted three-target
+topology. Site bindings remain central and model requests remain
+identity-scoped. Full retained-release archival, safe cancellation before activation,
+automated effect reconciliation and old-generation retirement are not implemented.
+These are outstanding acceptance requirements of the
+[release lifecycle specification](customer-release-lifecycle.md), not deployment claims.
+
 ## Static hosting
 
 The facade owns site bindings and the private directory contract. The static host

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
 	assertDeploymentAuthority,
+	assertInitialDeployment,
 	assertNextReleaseCommit,
 	assertRunProvenance,
 	releaseImages,
@@ -20,6 +21,15 @@ const manifest = () => ({
 	)
 })
 describe('release trust boundary', () => {
+	test('normal updates cannot redeploy every target including shared identity', () => {
+		expect(() => assertInitialDeployment('all', false, false)).toThrow()
+		expect(() => assertInitialDeployment('all', true, true)).toThrow()
+		expect(() => assertInitialDeployment('all', true, false)).not.toThrow()
+		for (const target of ['next', 'production', 'identity']) {
+			expect(() => assertInitialDeployment(target, false, false)).not.toThrow()
+			expect(() => assertInitialDeployment(target, true, false)).toThrow()
+		}
+	})
 	test('next requires its current commit while prod can restore an earlier verified release into next', () => {
 		expect(() =>
 			assertNextReleaseCommit('refs/heads/next', 'next', 'a'.repeat(40), 'b'.repeat(40))

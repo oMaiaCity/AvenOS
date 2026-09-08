@@ -9,8 +9,9 @@ Shared identity follows production trust because both platforms depend on it.
 Three workflows own separate operations: `platform-infrastructure` manages hosts,
 `platform-release` verifies and publishes images without deployment credentials, and
 `platform-deploy` installs a verified release manifest without rebuilding application
-source. Infrastructure and deployment accept `all` and process identity, next, production
-in that order. Selecting a branch does not itself deploy anything.
+source. Infrastructure accepts `all`. Deployment accepts it only with
+`initial_installation: true` and processes identity, next, production in that order.
+Normal deployment defaults to `next` and selects one target. Selecting a branch does not itself deploy anything.
 
 ## Deployment targets
 
@@ -117,7 +118,7 @@ artifact contains the source SHA and all eleven image digests. No infrastructure
 database, SMTP, Polar, backup, or identity credential is available to this build.
 
 Run **platform-deploy** on `prod`, select `target: all`, enter that `release_run_id`,
-and keep `recover_from_backup: false`. The protected coordinator verifies the run's
+set `initial_installation: true`, and keep `recover_from_backup: false`. The protected coordinator verifies the run's
 repository, workflow, branch, successful status, source ancestry and exact image set
 before selecting any Environment. It installs identity, next, production serially;
 production cannot run after a failed next deployment. There is no free-form `ref` input.
@@ -201,6 +202,16 @@ path. Confirm that its account appears in shared identity and that no resulting
 commerce, customer, Intent, Artifact, or Actor record exists in `next`.
 
 ## Deploy an update
+
+Shared identity is updated only by an explicit identity deployment. Normal next and
+production deployments do not run it. `target: all` is reserved for explicitly declared
+initial installation; it is not a platform-update shortcut.
+
+The current hosted update still replaces the selected platform services in place.
+Customer movement is available as a development mechanism, but new-runtime host
+provisioning and automatic cohort rollout are not connected to this workflow yet.
+See [customer movement](backup-and-recovery.md#customer-movement-development).
+
 
 Promote source into `next`, run `platform-release` there, and deploy its successful
 `release_run_id` to next. Promote the reviewed source into `prod`, then deploy the
