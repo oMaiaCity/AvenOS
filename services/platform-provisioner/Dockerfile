@@ -9,7 +9,8 @@ RUN --mount=type=cache,target=/root/.bun/install/cache,sharing=locked \
 RUN bun --cwd services/platform-provisioner build
 
 FROM oven/bun:1.3.13
-RUN apt-get update && apt-get upgrade --yes --no-install-recommends && rm -rf /var/lib/apt/lists/*
+ARG OS_SECURITY_REFRESH=local
+RUN test -n "$OS_SECURITY_REFRESH" && apt-get update && apt-get upgrade --yes --no-install-recommends && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 ARG SOURCE_REVISION=development
 RUN printf '%s\n' "$SOURCE_REVISION" > release-sha && chmod 0444 release-sha

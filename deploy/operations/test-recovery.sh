@@ -18,8 +18,8 @@ trap cleanup EXIT
 
 mkdir -p "$scratch/repository" "$scratch/source-state" "$scratch/target-state"
 chmod 0777 "$scratch/repository" "$scratch/source-state" "$scratch/target-state"
-docker build --file "$root/deploy/operations/Dockerfile" --tag "$image" "$root"
-docker build --file "$root/deploy/database/Dockerfile" --tag "$database_image" "$root"
+docker build --build-arg "OS_SECURITY_REFRESH=$image" --file "$root/deploy/operations/Dockerfile" --tag "$image" "$root"
+docker build --build-arg "OS_SECURITY_REFRESH=$image" --file "$root/deploy/database/Dockerfile" --tag "$database_image" "$root"
 bash "$root/scripts/scan-container-os.sh" "$image"
 [[ "$(docker image inspect --format '{{.Config.User}}' "$image")" == '65532:65532' ]]
 docker network create "$network" >/dev/null

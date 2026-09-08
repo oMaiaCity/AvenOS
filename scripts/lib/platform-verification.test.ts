@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 
 interface Step {
+	with?: Record<string, string>
 	if?: string
 	run?: string
 	uses?: string
@@ -96,4 +97,20 @@ test('release publication consumes the tested candidate without another build', 
 	expect(
 		gate.jobs.journey.steps.some((step) => step.run === 'bun scripts/configure-e2e-release.ts')
 	).toBe(true)
+})
+
+test('each release image refreshes OS packages without disabling build caches', async () => {
+	const release = await workflow('platform-release')
+	const builds = release.jobs.build.steps.filter(
+		(step) => step.uses === 'docker/build-push-action@v6'
+	)
+	expect(builds).toHaveLength(11)
+	for (const build of builds) {
+		expect(build.with?.['build-args']).toContain('OS_SECURITY_REFRESH=')
+		expect(build.with?.['build-args']).toContain('github.run_attempt')
+		expect(build.with?.['cache-from']).toContain('type=gha')
+		const dockerfile = await Bun.file(new URL(`../../${build.with?.file}`, import.meta.url)).text()
+		expect(dockerfile).toContain('ARG OS_SECURITY_REFRESH=local')
+		expect(dockerfile).toContain('RUN test -n "$OS_SECURITY_REFRESH" && ')
+	}
 })

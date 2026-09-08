@@ -56,7 +56,7 @@ try:
         run(['docker', 'pull', operations_image])
     else:
         operations_image = f'{test_id}-operations:local'
-        run(['docker', 'build', '--file', str(repository / 'deploy/operations/Dockerfile'), '--tag', operations_image, str(repository)])
+        run(['docker', 'build', '--build-arg', 'OS_SECURITY_REFRESH='+test_id, '--file', str(repository / 'deploy/operations/Dockerfile'), '--tag', operations_image, str(repository)])
     run(['bash', str(repository / 'scripts/scan-container-os.sh'), operations_image])
     images = {
         'DATABASE_IMAGE': os.environ.get('E2E_DATABASE_IMAGE', 'aven-e2e-database:local'),
