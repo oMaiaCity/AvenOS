@@ -186,11 +186,18 @@ release-bound immutable component catalog; changing the facade binary does not c
 that default. The first pre-movement transition requires a quiesced, encrypted backup
 and identical customer schema catalogs.
 
+The host-controller fixture proves quiesced adoption, two consecutive customer
+rollouts, retry without replacing the selected database, and recovery after removing
+all platform databases and release configuration. Only encrypted backup repositories
+and the independent identity fixture survive. Recovery restores the retained runtime
+fleet, verifies exact customer placement, reconciles current-generation component
+jobs, preserves customer content and admits new authenticated writes. Actor execution
+remains paused for effect reconciliation. Commerce and edge behavior are covered by
+the separate native journey; replacing a cloud provider host remains a separate proof.
+
 The public installer still requires the hosted three-target topology. Site bindings
-remain central and model requests remain identity-scoped. The release archive retains
-exact images, configuration and the runtime directory, but automatic fresh-host fleet
-restoration remains incomplete. Automated effect reconciliation and old-generation
-retirement are not implemented.
+remain central and model requests remain identity-scoped. Automated effect
+reconciliation and old-generation retirement are not implemented.
 These are outstanding acceptance requirements of the
 [release lifecycle specification](customer-release-lifecycle.md), not deployment claims.
 
