@@ -118,6 +118,16 @@ jobs:
           image=(dist/client-release/*.dmg)
           hdiutil verify "${image[0]}"
           codesign --verify --deep --strict target/rust/aarch64-apple-darwin/release/bundle/macos/avenOS.app
+      - name: Retain failed Linux packages for reproduction
+        if: failure() && runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostic-linux-packages
+          path: |
+            dist/client-release/*.AppImage
+            dist/client-release/*.deb
+          if-no-files-found: ignore
+          retention-days: 1
       - uses: actions/upload-artifact@v4
         with:
           name: client-${{ matrix.platform }}

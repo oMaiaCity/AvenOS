@@ -60,6 +60,11 @@ created until all installers exist. If uploading fails, the release remains a dr
 retry accepts only a draft naming the same source commit. It never replaces an
 already published release. A new workflow run creates a new version.
 
+When Linux verification fails, `diagnostic-linux-packages` retains the built DEB
+and AppImage in the workflow's artifacts for one day so the exact failing package
+can be reproduced. These are unverified diagnostic files. The publisher only
+downloads `client-*` artifacts from successful jobs and cannot include them.
+
 Package verification checks Linux architecture and runtime contents, launches the
 AppImage with a fresh profile to verify WebKit and the native sign-in screen, checks the Mac disk
 image and application signature, and Android signature, alignment, minimum SDK,
