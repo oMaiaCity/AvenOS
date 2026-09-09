@@ -97,10 +97,10 @@
 		"@types/terminal-kit": "2.5.7",
 		"conventional-changelog-cli": "^5.0.0",
 		"jose": "6.2.9",
-		"nodemailer": "9.0.3",
+		"nodemailer": "9.1.1",
 		"pg": "8.16.3",
 		"semver": "^7.8.4",
-		"sharp": "^0.35.3",
+		"sharp": "^0.35.4",
 		"terminal-kit": "3.1.4"
 	},
 	"overrides": {
