@@ -30,6 +30,8 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.13
+      - name: Audit the locked dependencies before building installers
+        run: bun audit
       - id: plan
         name: Require protected source and identify every installer
         run: |
@@ -117,7 +119,21 @@ jobs:
           set -euo pipefail
           image=(dist/client-release/*.dmg)
           hdiutil verify "${image[0]}"
-          codesign --verify --deep --strict target/rust/aarch64-apple-darwin/release/bundle/macos/avenOS.app
+          mount="$RUNNER_TEMP/client-dmg"
+          mkdir -p "$mount"
+          hdiutil attach -readonly -nobrowse -mountpoint "$mount" "${image[0]}"
+          trap 'hdiutil detach "$mount"' EXIT
+          codesign --verify --deep --strict "$mount/avenOS.app"
+      - name: Retain failed Linux packages for reproduction
+        if: failure() && runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostic-linux-packages
+          path: |
+            dist/client-release/*.AppImage
+            dist/client-release/*.deb
+          if-no-files-found: ignore
+          retention-days: 1
       - uses: actions/upload-artifact@v4
         with:
           name: client-${{ matrix.platform }}
