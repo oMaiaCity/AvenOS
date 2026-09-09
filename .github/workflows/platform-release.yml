@@ -31,18 +31,18 @@ jobs:
     outputs:
       manifest: ${{ steps.manifest.outputs.manifest }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: database
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: deploy/database/Dockerfile
@@ -53,7 +53,7 @@ jobs:
           push: true
           tags: ghcr.io/myavenceo/aven-database:run-${{ github.run_id }}-${{ github.run_attempt }}
       - id: proxy
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: deploy/proxy/Dockerfile
@@ -64,7 +64,7 @@ jobs:
           push: true
           tags: ghcr.io/myavenceo/aven-proxy:run-${{ github.run_id }}-${{ github.run_attempt }}
       - id: identity
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: services/identity/Dockerfile
@@ -77,7 +77,7 @@ jobs:
           secrets: |
             npm_token=${{ secrets.PACKAGE_READ_TOKEN }}
       - id: api
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: services/aven-api/Dockerfile
@@ -90,7 +90,7 @@ jobs:
           secrets: |
             npm_token=${{ secrets.PACKAGE_READ_TOKEN }}
       - id: checkout
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: services/checkout/Dockerfile
@@ -103,7 +103,7 @@ jobs:
           secrets: |
             npm_token=${{ secrets.PACKAGE_READ_TOKEN }}
       - id: static_host
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: services/static-site-host/Dockerfile
@@ -114,7 +114,7 @@ jobs:
           push: true
           tags: ghcr.io/myavenceo/aven-static-site-host:run-${{ github.run_id }}-${{ github.run_attempt }}
       - id: provisioner
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: services/platform-provisioner/Dockerfile
@@ -128,7 +128,7 @@ jobs:
           secrets: |
             npm_token=${{ secrets.PACKAGE_READ_TOKEN }}
       - id: intent
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: services/intent-service/Dockerfile
@@ -141,7 +141,7 @@ jobs:
           secrets: |
             npm_token=${{ secrets.PACKAGE_READ_TOKEN }}
       - id: actor
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: services/actor-runner/Dockerfile
@@ -154,7 +154,7 @@ jobs:
           secrets: |
             npm_token=${{ secrets.PACKAGE_READ_TOKEN }}
       - id: artifact
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: services/artifact-store/Dockerfile
@@ -165,7 +165,7 @@ jobs:
           push: true
           tags: ghcr.io/myavenceo/aven-artifact-store:run-${{ github.run_id }}-${{ github.run_attempt }}
       - id: operations
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: deploy/operations/Dockerfile
@@ -199,7 +199,7 @@ jobs:
         run: |
           mapfile -t images < <(jq -r '.images[]' release.json)
           bash scripts/scan-container-os.sh "${images[@]}"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: aven-release-candidate
           path: release.json
@@ -212,14 +212,14 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: aven-release-candidate
       - name: Match the tested candidate exactly
         env:
           TESTED_MANIFEST: ${{ needs.build.outputs.manifest }}
         run: jq --exit-status --argjson tested "$TESTED_MANIFEST" '. == $tested' release.json >/dev/null
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: aven-release
           path: release.json
