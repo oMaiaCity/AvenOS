@@ -17,6 +17,47 @@ permissions:
   packages: read
 
 jobs:
+  client-package:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    env:
+      # This verifies packaging before promotion; it never publishes a release.
+      CLIENT_RELEASE_VERSION: 0.0.0-next.1
+      CLIENT_ANDROID_VERSION_CODE: '30000001'
+      AVEN_API_BASE_URL: https://api.next.aven.ceo
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.93.1
+          targets: x86_64-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri -> ../../target/rust
+          key: client-linux-x64-release
+      - uses: ./.github/actions/bun-install
+        with:
+          token: ${{ secrets.PACKAGE_READ_TOKEN }}
+      - run: bash scripts/setup-client-linux.sh
+      - run: bun scripts/build-client-release.ts linux-x64
+      - run: bash scripts/verify-client-linux.sh
+      - name: Retain failed packages for reproduction
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostic-linux-package-check
+          path: |
+            dist/client-release/*.AppImage
+            dist/client-release/*.deb
+          if-no-files-found: ignore
+          retention-days: 1
+
   static:
     runs-on: ubuntu-latest
     timeout-minutes: 45

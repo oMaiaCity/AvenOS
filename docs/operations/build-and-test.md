@@ -82,6 +82,12 @@ after verification passes. Secret-bearing deployment jobs consume its verified m
 they do not rebuild candidate application code. `Platform release gate` is the stable
 required promotion check emitted by `platform-ci`, including documentation-only changes.
 
+The gate also builds Linux DEB/AppImage packages and runs the same packaged-app
+verification used by the download publisher. This runs alongside the other checks
+and catches packaging failures before promotion. See the
+[client download checks](client-releases.md#retry-and-verification) for its isolated
+desktop session and diagnostic artifacts.
+
 The Linux full-stack E2E and release publisher also run `bash scripts/scan-container-os.sh`
 against their exact built image references. This requires Docker, curl, jq and network
 access to the pinned scanner release and its advisory database. To scan an existing
