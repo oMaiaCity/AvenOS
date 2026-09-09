@@ -52,6 +52,10 @@ the shared temporary registry-authentication step. No deployment Environment or
 server credentials are used. The publishing job alone receives `contents: write`.
 Every build checks out the workflow's exact commit, uses frozen JavaScript dependencies
 and locked Cargo dependencies, and selects deployment origins explicitly.
+Before any native build starts, the workflow audits the JavaScript lockfile again
+against current advisories. A source that passed promotion earlier can still be
+blocked by a newly reported vulnerability; update it through the normal PR and
+promotion checks before publishing.
 
 ## Retry and verification
 
@@ -60,9 +64,14 @@ created until all installers exist. If uploading fails, the release remains a dr
 retry accepts only a draft naming the same source commit. It never replaces an
 already published release. A new workflow run creates a new version.
 
+When Linux verification fails, `diagnostic-linux-packages` retains the built DEB
+and AppImage in the workflow's artifacts for one day so the exact failing package
+can be reproduced. These are unverified diagnostic files. The publisher only
+downloads `client-*` artifacts from successful jobs and cannot include them.
+
 Package verification checks Linux architecture and runtime contents, launches the
 AppImage with a fresh profile to verify WebKit and the native sign-in screen, checks the Mac disk
-image and application signature, and Android signature, alignment, minimum SDK,
+image and the application signature inside its read-only mounted contents, and Android signature, alignment, minimum SDK,
 ABI, package name, and version code. The normal full-stack E2E checks the Linux
 client's account, document, invoice, and chat flows; it does not establish macOS or
 Android runtime compatibility. Those platforms still need native smoke testing.
