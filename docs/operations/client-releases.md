@@ -69,6 +69,18 @@ and AppImage in the workflow's artifacts for one day so the exact failing packag
 can be reproduced. These are unverified diagnostic files. The publisher only
 downloads `client-*` artifacts from successful jobs and cannot include them.
 
+The required platform gate also builds and verifies the Linux packages in parallel
+with its other checks, before promotion. It uses version `0.0.0-next.1` only for
+verification and never publishes those files. Failed gate packages are retained
+for one day as `diagnostic-linux-package-check`.
+
+Both paths use `scripts/setup-client-linux.sh` for the Ubuntu dependencies and
+tauri-driver 2.0.6, then `scripts/verify-client-linux.sh` for package verification.
+The smoke test starts a private D-Bus session inside its virtual display so desktop
+services inherit the correct display. It keeps the normal startup deadline and
+fresh application profile. Extraction checks use a temporary directory that is
+removed after verification.
+
 Package verification checks Linux architecture and runtime contents, launches the
 AppImage with a fresh profile to verify WebKit and the native sign-in screen, checks the Mac disk
 image and the application signature inside its read-only mounted contents, and Android signature, alignment, minimum SDK,

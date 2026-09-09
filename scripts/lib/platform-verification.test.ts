@@ -56,11 +56,20 @@ test('CI and release require the same full verification without deployment crede
 		expect(job['continue-on-error']).toBeUndefined()
 		for (const step of job.steps) {
 			expect(step['continue-on-error']).toBeUndefined()
-			expect(step.if).toBeUndefined()
+			if (step.if !== undefined) {
+				// Only failure diagnostics are conditional; verification cannot be skipped.
+				expect(step.if).toBe('failure()')
+				expect(step.uses).toBe('actions/upload-artifact@v4')
+				expect(step.with?.name).toBe('diagnostic-linux-package-check')
+				expect(step.with?.path).toBe('dist/client-release/*.AppImage\ndist/client-release/*.deb\n')
+			}
 			if (step.run) commands.push(...step.run.trim().split('\n'))
 		}
 	}
 	for (const required of [
+		'bash scripts/setup-client-linux.sh',
+		'bun scripts/build-client-release.ts linux-x64',
+		'bash scripts/verify-client-linux.sh',
 		'bun run check:secrets',
 		'bun audit',
 		'bun run check:rust-advisories',

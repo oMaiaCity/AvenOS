@@ -91,28 +91,14 @@ jobs:
           token: ${{ secrets.PACKAGE_READ_TOKEN }}
       - name: Install Linux packaging dependencies
         if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes build-essential libwebkit2gtk-4.1-dev libsoup-3.0-dev libasound2-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf libfuse2 libxdo-dev webkit2gtk-driver xvfb
-          cargo install tauri-driver --locked
+        run: bash scripts/setup-client-linux.sh
       - name: Build the native installers with locked Rust dependencies
         run: bun scripts/build-client-release.ts "$CLIENT_PLATFORM"
         env:
           CLIENT_PLATFORM: ${{ matrix.platform }}
       - name: Verify Linux packages and bundled runtime
         if: runner.os == 'Linux'
-        run: |
-          set -euo pipefail
-          deb=(dist/client-release/*.deb)
-          test "$(dpkg-deb --field "${deb[0]}" Architecture)" = amd64
-          dpkg-deb --contents "${deb[0]}" > "$RUNNER_TEMP/deb-contents.txt"
-          grep -q 'onnxruntime/libonnxruntime.so' "$RUNNER_TEMP/deb-contents.txt"
-          image=(dist/client-release/*.AppImage)
-          chmod +x "${image[0]}"
-          "${image[0]}" --appimage-extract >/dev/null
-          test -x squashfs-root/usr/bin/aven-os-app
-          test -n "$(find squashfs-root -name libonnxruntime.so -print -quit)"
-          TAURI_DRIVER_BIN="$HOME/.cargo/bin/tauri-driver" xvfb-run --auto-servernum bun scripts/smoke-client-linux.ts "${image[0]}"
+        run: bash scripts/verify-client-linux.sh
       - name: Verify Mac disk image and ad-hoc application signature
         if: runner.os == 'macOS'
         run: |
